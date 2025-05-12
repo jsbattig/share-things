@@ -236,26 +236,71 @@ check_sshpass() {
 detect_linux_distribution() {
     log_message "INFO" "Detecting Linux distribution..."
     
-    # Check for common distribution identifiers
+    # Try multiple methods to detect the distribution
+    
+    # Method 1: Check /etc/os-release file
     if $SSH_CMD "[ -f /etc/os-release ]" >> $LOG_FILE 2>&1; then
-        DISTRO=$($SSH_CMD "source /etc/os-release && echo \$ID" 2>> $LOG_FILE)
-        log_message "INFO" "Detected distribution: $DISTRO"
-    else
-        # Try to detect using other methods
-        if $SSH_CMD "command -v apt-get" >> $LOG_FILE 2>&1; then
-            DISTRO="debian"
-            log_message "INFO" "Detected Debian-based distribution"
-        elif $SSH_CMD "command -v dnf" >> $LOG_FILE 2>&1; then
-            DISTRO="fedora"
-            log_message "INFO" "Detected Fedora-based distribution"
-        elif $SSH_CMD "command -v yum" >> $LOG_FILE 2>&1; then
+        # Dump the entire os-release file to the log for debugging
+        $SSH_CMD "cat /etc/os-release" >> $LOG_FILE 2>&1
+        
+        # Try to get the ID directly
+        DISTRO=$($SSH_CMD "grep -E '^ID=' /etc/os-release | cut -d= -f2 | tr -d '\"'" 2>> $LOG_FILE)
+        
+        # If that fails, try to get the ID_LIKE field
+        if [[ -z "$DISTRO" || "$DISTRO" == "unknown" ]]; then
+            ID_LIKE=$($SSH_CMD "grep -E '^ID_LIKE=' /etc/os-release | cut -d= -f2 | tr -d '\"'" 2>> $LOG_FILE)
+            
+            if [[ "$ID_LIKE" == *"rhel"* || "$ID_LIKE" == *"fedora"* || "$ID_LIKE" == *"centos"* ]]; then
+                DISTRO="rhel"
+            elif [[ "$ID_LIKE" == *"debian"* || "$ID_LIKE" == *"ubuntu"* ]]; then
+                DISTRO="debian"
+            fi
+        fi
+        
+        log_message "INFO" "Detected distribution from os-release: $DISTRO"
+    fi
+    
+    # Method 2: Check for specific files that identify distributions
+    if [[ -z "$DISTRO" || "$DISTRO" == "unknown" ]]; then
+        if $SSH_CMD "[ -f /etc/rocky-release ]" >> $LOG_FILE 2>&1; then
+            DISTRO="rocky"
+            log_message "INFO" "Detected Rocky Linux from /etc/rocky-release"
+        elif $SSH_CMD "[ -f /etc/redhat-release ]" >> $LOG_FILE 2>&1; then
             DISTRO="rhel"
-            log_message "INFO" "Detected RHEL-based distribution"
-        else
-            DISTRO="unknown"
-            log_message "WARNING" "Could not detect distribution, assuming Debian-based"
+            log_message "INFO" "Detected RHEL-based distribution from /etc/redhat-release"
+        elif $SSH_CMD "[ -f /etc/fedora-release ]" >> $LOG_FILE 2>&1; then
+            DISTRO="fedora"
+            log_message "INFO" "Detected Fedora from /etc/fedora-release"
+        elif $SSH_CMD "[ -f /etc/debian_version ]" >> $LOG_FILE 2>&1; then
+            DISTRO="debian"
+            log_message "INFO" "Detected Debian-based distribution from /etc/debian_version"
         fi
     fi
+    
+    # Method 3: Check for package managers
+    if [[ -z "$DISTRO" || "$DISTRO" == "unknown" ]]; then
+        if $SSH_CMD "command -v dnf" >> $LOG_FILE 2>&1; then
+            DISTRO="rhel"
+            log_message "INFO" "Detected RHEL-based distribution (dnf found)"
+        elif $SSH_CMD "command -v yum" >> $LOG_FILE 2>&1; then
+            DISTRO="rhel"
+            log_message "INFO" "Detected RHEL-based distribution (yum found)"
+        elif $SSH_CMD "command -v apt-get" >> $LOG_FILE 2>&1; then
+            DISTRO="debian"
+            log_message "INFO" "Detected Debian-based distribution (apt-get found)"
+        else
+            DISTRO="unknown"
+            log_message "WARNING" "Could not detect distribution, will try to use yum as fallback"
+        fi
+    fi
+    
+    # Force RHEL-based for Rocky Linux
+    if [[ "$REMOTE_OS" == *"Rocky"* ]]; then
+        DISTRO="rhel"
+        log_message "INFO" "Forcing RHEL-based distribution for Rocky Linux"
+    fi
+    
+    log_message "INFO" "Final distribution detection: $DISTRO"
 }
 
 # Function to install system dependencies on remote server
@@ -278,12 +323,25 @@ install_system_dependencies() {
             ;;
             
         "fedora"|"rhel"|"centos"|"rocky"|"almalinux")
-            # Update package lists
-            $SSH_CMD "sudo dnf check-update || true" >> $LOG_FILE 2>&1
+            log_message "INFO" "Using dnf/yum for RHEL-based distribution"
             
-            # Install essential packages
-            $SSH_CMD "sudo dnf install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
-            check_command "Install essential packages"
+            # Check if dnf is available
+            if $SSH_CMD "command -v dnf" >> $LOG_FILE 2>&1; then
+                # Update package lists (don't fail if this returns non-zero)
+                $SSH_CMD "sudo dnf check-update || true" >> $LOG_FILE 2>&1
+                
+                # Install essential packages
+                $SSH_CMD "sudo dnf install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+                check_command "Install essential packages with dnf"
+            else
+                # Fallback to yum
+                log_message "INFO" "dnf not found, falling back to yum"
+                $SSH_CMD "sudo yum check-update || true" >> $LOG_FILE 2>&1
+                
+                # Install essential packages
+                $SSH_CMD "sudo yum install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+                check_command "Install essential packages with yum"
+            fi
             ;;
             
         *)
@@ -323,8 +381,15 @@ install_nodejs() {
                 $SSH_CMD "curl -fsSL https://rpm.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo -E bash -" >> $LOG_FILE 2>&1
                 check_command "Add Node.js repository"
                 
-                $SSH_CMD "sudo dnf install -y nodejs" >> $LOG_FILE 2>&1
-                check_command "Install Node.js"
+                # Check if dnf is available
+                if $SSH_CMD "command -v dnf" >> $LOG_FILE 2>&1; then
+                    $SSH_CMD "sudo dnf install -y nodejs" >> $LOG_FILE 2>&1
+                    check_command "Install Node.js with dnf"
+                else
+                    # Fallback to yum
+                    $SSH_CMD "sudo yum install -y nodejs" >> $LOG_FILE 2>&1
+                    check_command "Install Node.js with yum"
+                fi
                 ;;
                 
             *)
@@ -567,6 +632,15 @@ main() {
     log_message "INFO" "Getting remote system information..."
     REMOTE_OS=$($SSH_CMD "cat /etc/os-release | grep PRETTY_NAME" 2>> $LOG_FILE)
     log_message "INFO" "Remote system: $REMOTE_OS"
+    
+    # Check for Rocky Linux specifically
+    if $SSH_CMD "[ -f /etc/rocky-release ]" >> $LOG_FILE 2>&1; then
+        log_message "INFO" "Detected Rocky Linux from /etc/rocky-release"
+        ROCKY_VERSION=$($SSH_CMD "cat /etc/rocky-release" 2>> $LOG_FILE)
+        log_message "INFO" "Rocky Linux version: $ROCKY_VERSION"
+        # Force RHEL-based for Rocky Linux
+        DISTRO="rhel"
+    fi
     
     # Install dependencies
     install_system_dependencies
