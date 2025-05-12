@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "ES2019",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "sourceMap": true,
+    "outDir": "../../../dist/test",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../../../*"]
+    },
+    "types": ["node", "@playwright/test"]
+  },
+  "include": ["**/*.ts", "types/**/*.d.ts"]
+}

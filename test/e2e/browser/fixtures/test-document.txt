@@ -1,0 +1,7 @@
+This is a test document for ShareThings E2E browser tests.
+
+It contains multiple lines of text to test file sharing functionality.
+
+The ShareThings application should be able to share this file between browsers.
+
+End of test document.
