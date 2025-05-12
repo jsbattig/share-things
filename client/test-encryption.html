@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Encryption Test</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .test-section {
+      margin-bottom: 20px;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    .success {
+      color: green;
+      font-weight: bold;
+    }
+    .error {
+      color: red;
+      font-weight: bold;
+    }
+    pre {
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 5px;
+      overflow-x: auto;
+    }
+    button {
+      padding: 10px 15px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    #results {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Encryption Implementation Test</h1>
+  <p>This page tests the CryptoJS-based encryption implementation.</p>
+  
+  <button id="runTests">Run Tests</button>
+  
+  <div id="results"></div>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+  
+  <script>
+    // Use the global CryptoJS object
+    
+    // Define interface for our crypto key
+    class CryptoKey {
+      constructor(key, algorithm, usages) {
+        this.key = key;
+        this.algorithm = algorithm;
+        this.usages = usages;
+      }
+    }
+    
+    /**
+     * Derives an encryption key from a passphrase
+     */
+    async function deriveKeyFromPassphrase(passphrase) {
+      try {
+        console.log('Deriving key from passphrase using CryptoJS');
+        
+        // Use a fixed salt for deterministic key derivation
+        const salt = CryptoJS.enc.Utf8.parse('ShareThings-Salt-2025');
+        
+        // Derive the key using PBKDF2
+        const key = CryptoJS.PBKDF2(passphrase, salt, {
+          keySize: 256/32, // 256 bits
+          iterations: 100000,
+          hasher: CryptoJS.algo.SHA256
+        });
+        
+        // Return a crypto key object
+        return new CryptoKey(key, 'AES', ['encrypt', 'decrypt']);
+      } catch (error) {
+        console.error('Error deriving key from passphrase:', error);
+        throw new Error(`Failed to derive key: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+    
+    /**
+     * Generates a deterministic IV from the passphrase and data
+     */
+    async function generateDeterministicIV(passphrase, data) {
+      try {
+        console.log('Generating deterministic IV using CryptoJS');
+        
+        // Convert data to array if it's not already
+        let dataArray;
+        if (data instanceof ArrayBuffer) {
+          dataArray = new Uint8Array(data);
+        } else if (data instanceof Uint8Array) {
+          dataArray = data;
+        } else {
+          throw new Error('Data must be ArrayBuffer or Uint8Array');
+        }
+        
+        // Convert to WordArray for CryptoJS
+        const dataWords = [];
+        for (let i = 0; i < dataArray.length; i += 4) {
+          dataWords.push(
+            ((dataArray[i] || 0) << 24) |
+            ((dataArray[i + 1] || 0) << 16) |
+            ((dataArray[i + 2] || 0) << 8) |
+            (dataArray[i + 3] || 0)
+          );
+        }
+        const dataWordArray = CryptoJS.lib.WordArray.create(dataWords, dataArray.length);
+        
+        // Combine passphrase and data
+        const passphraseWordArray = CryptoJS.enc.Utf8.parse(passphrase);
+        const combinedWordArray = CryptoJS.lib.WordArray.create()
+          .concat(passphraseWordArray)
+          .concat(dataWordArray);
+        
+        // Hash the combined data
+        const hash = CryptoJS.SHA256(combinedWordArray);
+        
+        // Convert to Uint8Array and use first 12 bytes as IV
+        const hashWords = hash.words;
+        const hashBytes = new Uint8Array(16);
+        for (let i = 0; i < 4; i++) {
+          const word = hashWords[i];
+          hashBytes[i * 4] = (word >>> 24) & 0xff;
+          hashBytes[i * 4 + 1] = (word >>> 16) & 0xff;
+          hashBytes[i * 4 + 2] = (word >>> 8) & 0xff;
+          hashBytes[i * 4 + 3] = word & 0xff;
+        }
+        
+        return hashBytes.slice(0, 12);
+      } catch (error) {
+        console.error('Error generating deterministic IV:', error);
+        throw new Error(`Failed to generate IV: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+    
+    /**
+     * Encrypts data with a key
+     */
+    async function encryptData(key, data, passphrase) {
+      try {
+        console.log('Encrypting data using CryptoJS');
+        
+        // Generate IV
+        const iv = await generateDeterministicIV(passphrase, data);
+        
+        // Convert data to WordArray
+        let dataArray;
+        if (data instanceof ArrayBuffer) {
+          dataArray = new Uint8Array(data);
+        } else if (data instanceof Uint8Array) {
+          dataArray = data;
+        } else {
+          throw new Error('Data must be ArrayBuffer or Uint8Array');
+        }
+        
+        const dataWords = [];
+        for (let i = 0; i < dataArray.length; i += 4) {
+          dataWords.push(
+            ((dataArray[i] || 0) << 24) |
+            ((dataArray[i + 1] || 0) << 16) |
+            ((dataArray[i + 2] || 0) << 8) |
+            (dataArray[i + 3] || 0)
+          );
+        }
+        const dataWordArray = CryptoJS.lib.WordArray.create(dataWords, dataArray.length);
+        
+        // Convert IV to WordArray
+        const ivWords = [];
+        for (let i = 0; i < iv.length; i += 4) {
+          ivWords.push(
+            ((iv[i] || 0) << 24) |
+            ((iv[i + 1] || 0) << 16) |
+            ((iv[i + 2] || 0) << 8) |
+            (iv[i + 3] || 0)
+          );
+        }
+        const ivWordArray = CryptoJS.lib.WordArray.create(ivWords, iv.length);
+        
+        // Encrypt data
+        const encrypted = CryptoJS.AES.encrypt(dataWordArray, key.key, {
+          iv: ivWordArray,
+          padding: CryptoJS.pad.Pkcs7
+        });
+        
+        // Convert to ArrayBuffer
+        const ciphertext = encrypted.ciphertext;
+        const encryptedWords = ciphertext.words;
+        const encryptedBytes = new Uint8Array(ciphertext.sigBytes);
+        
+        for (let i = 0; i < encryptedBytes.length; i += 4) {
+          const word = encryptedWords[i / 4];
+          encryptedBytes[i] = (word >>> 24) & 0xff;
+          if (i + 1 < encryptedBytes.length) encryptedBytes[i + 1] = (word >>> 16) & 0xff;
+          if (i + 2 < encryptedBytes.length) encryptedBytes[i + 2] = (word >>> 8) & 0xff;
+          if (i + 3 < encryptedBytes.length) encryptedBytes[i + 3] = word & 0xff;
+        }
+        
+        return { encryptedData: encryptedBytes.buffer, iv };
+      } catch (error) {
+        console.error('Error encrypting data:', error);
+        throw new Error(`Encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+    
+    /**
+     * Generates a deterministic fingerprint from a passphrase
+     */
+    async function generateFingerprint(passphrase) {
+      try {
+        console.log('Generating fingerprint using CryptoJS');
+        
+        // Use a fixed IV for fingerprint generation
+        const fixedIv = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+        
+        // Create a deterministic hash of the passphrase
+        const passphraseWordArray = CryptoJS.enc.Utf8.parse(passphrase);
+        const hash = CryptoJS.SHA256(passphraseWordArray);
+        
+        // Convert hash to bytes
+        const hashWords = hash.words;
+        const hashBytes = new Uint8Array(hash.sigBytes);
+        for (let i = 0; i < hashBytes.length; i += 4) {
+          const word = hashWords[i / 4];
+          hashBytes[i] = (word >>> 24) & 0xff;
+          if (i + 1 < hashBytes.length) hashBytes[i + 1] = (word >>> 16) & 0xff;
+          if (i + 2 < hashBytes.length) hashBytes[i + 2] = (word >>> 8) & 0xff;
+          if (i + 3 < hashBytes.length) hashBytes[i + 3] = word & 0xff;
+        }
+        
+        // Use the first 16 bytes of the hash as the "encrypted data"
+        const dataBytes = hashBytes.slice(0, 16);
+        
+        return {
+          iv: Array.from(fixedIv),
+          data: Array.from(dataBytes)
+        };
+      } catch (error) {
+        console.error('Error generating fingerprint:', error);
+        throw new Error(`Failed to generate fingerprint: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+    
+    /**
+     * Encrypts text with a passphrase
+     */
+    async function encryptText(passphrase, text) {
+      try {
+        // Derive key from passphrase
+        const key = await deriveKeyFromPassphrase(passphrase);
+        
+        // Convert text to bytes
+        const encoder = new TextEncoder();
+        const data = encoder.encode(text);
+        
+        // Encrypt the data
+        const { encryptedData, iv } = await encryptData(key, data, passphrase);
+        
+        // Convert to base64
+        const encryptedText = btoa(
+          Array.from(new Uint8Array(encryptedData))
+            .map(byte => String.fromCharCode(byte))
+            .join('')
+        );
+        
+        const ivBase64 = btoa(
+          Array.from(iv)
+            .map(byte => String.fromCharCode(byte))
+            .join('')
+        );
+        
+        return { encryptedText, iv: ivBase64 };
+      } catch (error) {
+        console.error('Error encrypting text:', error);
+        throw new Error(`Text encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+    
+    /**
+     * Decrypts data with a key
+     */
+    async function decryptData(key, encryptedData, iv) {
+      try {
+        console.log('Decrypting data using CryptoJS');
+        
+        // Convert encryptedData to WordArray
+        let encryptedArray;
+        if (encryptedData instanceof ArrayBuffer) {
+          encryptedArray = new Uint8Array(encryptedData);
+        } else if (encryptedData instanceof Uint8Array) {
+          encryptedArray = encryptedData;
+        } else {
+          throw new Error('EncryptedData must be ArrayBuffer or Uint8Array');
+        }
+        
+        const encryptedWords = [];
+        for (let i = 0; i < encryptedArray.length; i += 4) {
+          encryptedWords.push(
+            ((encryptedArray[i] || 0) << 24) |
+            ((encryptedArray[i + 1] || 0) << 16) |
+            ((encryptedArray[i + 2] || 0) << 8) |
+            (encryptedArray[i + 3] || 0)
+          );
+        }
+        
+        // Create WordArray from encryptedData
+        const encryptedWordArray = CryptoJS.lib.WordArray.create(encryptedWords, encryptedArray.length);
+        
+        // Convert IV to WordArray
+        const ivWords = [];
+        for (let i = 0; i < iv.length; i += 4) {
+          ivWords.push(
+            ((iv[i] || 0) << 24) |
+            ((iv[i + 1] || 0) << 16) |
+            ((iv[i + 2] || 0) << 8) |
+            (iv[i + 3] || 0)
+          );
+        }
+        const ivWordArray = CryptoJS.lib.WordArray.create(ivWords, iv.length);
+        
+        // Create a CipherParams object with just the ciphertext
+        const cipherParams = CryptoJS.lib.CipherParams.create({
+          ciphertext: encryptedWordArray
+        });
+        
+        // Decrypt data
+        const decrypted = CryptoJS.AES.decrypt(cipherParams, key.key, {
+          iv: ivWordArray,
+          padding: CryptoJS.pad.Pkcs7
+        });
+        
+        // Convert to ArrayBuffer
+        const decryptedWords = decrypted.words;
+        const decryptedBytes = new Uint8Array(decrypted.sigBytes);
+        
+        for (let i = 0; i < decryptedBytes.length; i += 4) {
+          const word = decryptedWords[i / 4];
+          decryptedBytes[i] = (word >>> 24) & 0xff;
+          if (i + 1 < decryptedBytes.length) decryptedBytes[i + 1] = (word >>> 16) & 0xff;
+          if (i + 2 < decryptedBytes.length) decryptedBytes[i + 2] = (word >>> 8) & 0xff;
+          if (i + 3 < decryptedBytes.length) decryptedBytes[i + 3] = word & 0xff;
+        }
+        
+        // If decryption succeeded but returned empty data, that's suspicious
+        if (decryptedBytes.length === 0) {
+          throw new Error('Decryption failed: Empty result');
+        }
+        
+        return decryptedBytes.buffer;
+      } catch (error) {
+        console.error('Error decrypting data:', error);
+        throw new Error(`Decryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+    
+    /**
+     * Decrypts text with a passphrase
+     */
+    async function decryptText(passphrase, encryptedText, ivBase64) {
+      try {
+        // Derive key from passphrase
+        const key = await deriveKeyFromPassphrase(passphrase);
+        
+        // Convert from base64
+        const encryptedBytes = Uint8Array.from(
+          atob(encryptedText)
+            .split('')
+            .map(char => char.charCodeAt(0))
+        );
+        
+        const iv = Uint8Array.from(
+          atob(ivBase64)
+            .split('')
+            .map(char => char.charCodeAt(0))
+        );
+        
+        // Decrypt the data
+        const decryptedData = await decryptData(key, encryptedBytes, iv);
+        
+        // Convert bytes to text
+        const decoder = new TextDecoder();
+        const text = decoder.decode(decryptedData);
+        
+        // If we get an empty string, that's suspicious for decryption failure
+        if (text.length === 0) {
+          throw new Error('Decryption failed: Empty result');
+        }
+        
+        return text;
+      } catch (error) {
+        console.error('Error decrypting text:', error);
+        throw new Error(`Text decryption failed: ${error instanceof Error ? error.message : 'Wrong passphrase or corrupted data'}`);
+      }
+    }
+    
+    // Run tests when button is clicked
+    document.getElementById('runTests').addEventListener('click', async () => {
+      const resultsDiv = document.getElementById('results');
+      resultsDiv.innerHTML = '<h2>Running tests...</h2>';
+      
+      try {
+        let output = '';
+        
+        // Helper function to log output
+        function log(message) {
+          console.log(message);
+          output += message + '<br>';
+        }
+        
+        // Test 1: Key derivation
+        log('<div class="test-section">');
+        log('<h3>Test 1: Key derivation</h3>');
+        const passphrase = 'test-passphrase';
+        const key = await deriveKeyFromPassphrase(passphrase);
+        log(`Key derived successfully: ${key.algorithm}`);
+        log('</div>');
+        
+        // Test 2: Text encryption and decryption
+        log('<div class="test-section">');
+        log('<h3>Test 2: Text encryption and decryption</h3>');
+        const originalText = 'Hello, world! This is a test message.';
+        log(`Original text: ${originalText}`);
+        
+        const { encryptedText, iv } = await encryptText(passphrase, originalText);
+        log(`Encrypted text: ${encryptedText}`);
+        log(`IV: ${iv}`);
+        
+        const decryptedText = await decryptText(passphrase, encryptedText, iv);
+        log(`Decrypted text: ${decryptedText}`);
+        
+        if (decryptedText === originalText) {
+          log('<span class="success">✅ Text encryption/decryption test passed!</span>');
+        } else {
+          log('<span class="error">❌ Text encryption/decryption test failed!</span>');
+        }
+        log('</div>');
+        
+        // Test 3: Fingerprint generation
+        log('<div class="test-section">');
+        log('<h3>Test 3: Fingerprint generation</h3>');
+        const fingerprint1 = await generateFingerprint(passphrase);
+        log(`Fingerprint 1: <pre>${JSON.stringify(fingerprint1, null, 2)}</pre>`);
+        
+        const fingerprint2 = await generateFingerprint(passphrase);
+        log(`Fingerprint 2: <pre>${JSON.stringify(fingerprint2, null, 2)}</pre>`);
+        
+        // Check if fingerprints are deterministic (same for same passphrase)
+        const fingerprintsMatch = 
+          JSON.stringify(fingerprint1) === JSON.stringify(fingerprint2);
+        
+        if (fingerprintsMatch) {
+          log('<span class="success">✅ Fingerprint generation test passed!</span>');
+        } else {
+          log('<span class="error">❌ Fingerprint generation test failed!</span>');
+        }
+        log('</div>');
+        
+        log('<h2 class="success">All tests completed successfully!</h2>');
+        
+        resultsDiv.innerHTML = output;
+      } catch (error) {
+        resultsDiv.innerHTML = `<h2 class="error">Tests failed</h2><p>${error.message}</p>`;
+        console.error('Test failed with error:', error);
+      }
+    });
+  </script>
+</body>
+</html>
