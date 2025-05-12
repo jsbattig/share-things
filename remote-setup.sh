@@ -141,6 +141,90 @@ generate_ssh_command() {
     fi
 }
 
+# Function to create a sudo helper script on the remote server
+create_sudo_helper() {
+    log_message "INFO" "Creating sudo helper script on remote server..."
+    
+    # Create a script that uses expect to handle sudo with password
+    $SSH_CMD "cat > /tmp/sudo_expect.sh << 'EOL'
+#!/usr/bin/expect -f
+set timeout 60
+set password [lindex \$argv 0]
+set command [lrange \$argv 1 end]
+
+# Run the command with sudo
+spawn sudo -S {*}\$command
+expect {
+    \"*password*\" {
+        send \"\$password\r\"
+        exp_continue
+    }
+    timeout {
+        puts \"Command timed out\"
+        exit 1
+    }
+    eof {
+        # Command completed
+        catch wait result
+        exit [lindex \$result 3]
+    }
+}
+EOL" >> $LOG_FILE 2>&1
+    
+    # Make the script executable
+    $SSH_CMD "chmod +x /tmp/sudo_expect.sh" >> $LOG_FILE 2>&1
+    
+    # Create a wrapper script that calls the expect script
+    $SSH_CMD "cat > /tmp/sudo_with_pass.sh << 'EOL'
+#!/bin/bash
+# This script runs sudo commands with a password
+PASSWORD=\"$SSH_PASS\"
+/tmp/sudo_expect.sh \"\$PASSWORD\" \"\$@\"
+EOL" >> $LOG_FILE 2>&1
+    
+    # Make the wrapper script executable
+    $SSH_CMD "chmod +x /tmp/sudo_with_pass.sh" >> $LOG_FILE 2>&1
+    
+    log_message "INFO" "Sudo helper scripts created"
+}
+
+# Function to generate sudo command with password
+generate_sudo_command() {
+    # Check if we need to use sudo with password
+    log_message "INFO" "Testing sudo access..."
+    SUDO_NEEDS_PASS=$($SSH_CMD "sudo -n true 2>/dev/null || echo 'needs_password'" 2>> $LOG_FILE)
+    
+    if [[ "$SUDO_NEEDS_PASS" == "needs_password" ]]; then
+        log_message "INFO" "Sudo requires password, configuring sudo with password"
+        
+        # Check if expect is installed on the remote server
+        if ! $SSH_CMD "command -v expect" >> $LOG_FILE 2>&1; then
+            log_message "WARNING" "expect not found on remote server, installing..."
+            
+            # Try to install expect using various package managers
+            if $SSH_CMD "command -v apt-get" >> $LOG_FILE 2>&1; then
+                $SSH_CMD "echo '$SSH_PASS' | sudo -S apt-get update && sudo -S apt-get install -y expect" >> $LOG_FILE 2>&1
+            elif $SSH_CMD "command -v dnf" >> $LOG_FILE 2>&1; then
+                $SSH_CMD "echo '$SSH_PASS' | sudo -S dnf install -y expect" >> $LOG_FILE 2>&1
+            elif $SSH_CMD "command -v yum" >> $LOG_FILE 2>&1; then
+                $SSH_CMD "echo '$SSH_PASS' | sudo -S yum install -y expect" >> $LOG_FILE 2>&1
+            else
+                log_message "ERROR" "Could not install expect on remote server"
+                exit 1
+            fi
+        fi
+        
+        # Create sudo helper scripts
+        create_sudo_helper
+        
+        # Use the sudo wrapper script
+        SUDO_CMD="/tmp/sudo_with_pass.sh"
+    else
+        log_message "INFO" "Sudo does not require password"
+        SUDO_CMD="sudo"
+    fi
+}
+
 # Function to test SSH connection
 test_ssh_connection() {
     log_message "INFO" "Testing SSH connection..."
@@ -331,7 +415,15 @@ install_system_dependencies() {
                 $SSH_CMD "sudo dnf check-update || true" >> $LOG_FILE 2>&1
                 
                 # Install essential packages
-                $SSH_CMD "sudo dnf install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+                if [[ "$SUDO_NEEDS_PASS" == "needs_password" ]]; then
+                    $SSH_CMD "/tmp/sudo_with_pass.sh dnf install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+                else
+                    if [[ "$SUDO_NEEDS_PASS" == "needs_password" ]]; then
+                        $SSH_CMD "/tmp/sudo_with_pass.sh dnf install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+                    else
+                        $SSH_CMD "sudo dnf install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+                    fi
+                fi
                 check_command "Install essential packages with dnf"
             else
                 # Fallback to yum
@@ -339,7 +431,15 @@ install_system_dependencies() {
                 $SSH_CMD "sudo yum check-update || true" >> $LOG_FILE 2>&1
                 
                 # Install essential packages
-                $SSH_CMD "sudo yum install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+                if [[ "$SUDO_NEEDS_PASS" == "needs_password" ]]; then
+                    $SSH_CMD "/tmp/sudo_with_pass.sh yum install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+                else
+                    if [[ "$SUDO_NEEDS_PASS" == "needs_password" ]]; then
+                        $SSH_CMD "/tmp/sudo_with_pass.sh yum install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+                    else
+                        $SSH_CMD "sudo yum install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+                    fi
+                fi
                 check_command "Install essential packages with yum"
             fi
             ;;
@@ -651,6 +751,9 @@ main() {
     log_message "INFO" "Getting remote system information..."
     REMOTE_OS=$($SSH_CMD "cat /etc/os-release | grep PRETTY_NAME" 2>> $LOG_FILE)
     log_message "INFO" "Remote system: $REMOTE_OS"
+    
+    # Setup sudo with password if needed
+    generate_sudo_command
     
     # Check for Rocky Linux specifically
     if $SSH_CMD "[ -f /etc/rocky-release ]" >> $LOG_FILE 2>&1; then
