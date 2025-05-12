@@ -322,7 +322,7 @@ install_system_dependencies() {
             check_command "Install essential packages"
             ;;
             
-        "fedora"|"rhel"|"centos"|"rocky"|"almalinux")
+        "fedora"|"rhel"|"centos"|"almalinux")
             log_message "INFO" "Using dnf/yum for RHEL-based distribution"
             
             # Check if dnf is available
@@ -342,6 +342,16 @@ install_system_dependencies() {
                 $SSH_CMD "sudo yum install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
                 check_command "Install essential packages with yum"
             fi
+            ;;
+            
+        "rocky")
+            log_message "INFO" "Using dnf for Rocky Linux"
+            # For Rocky Linux, we know dnf works
+            $SSH_CMD "sudo dnf check-update || true" >> $LOG_FILE 2>&1
+            
+            # Install essential packages
+            $SSH_CMD "sudo dnf install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+            check_command "Install essential packages with dnf on Rocky Linux"
             ;;
             
         *)
@@ -377,7 +387,7 @@ install_nodejs() {
                 check_command "Install Node.js"
                 ;;
                 
-            "fedora"|"rhel"|"centos"|"rocky"|"almalinux")
+            "fedora"|"rhel"|"centos"|"almalinux")
                 $SSH_CMD "curl -fsSL https://rpm.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo -E bash -" >> $LOG_FILE 2>&1
                 check_command "Add Node.js repository"
                 
@@ -390,6 +400,15 @@ install_nodejs() {
                     $SSH_CMD "sudo yum install -y nodejs" >> $LOG_FILE 2>&1
                     check_command "Install Node.js with yum"
                 fi
+                ;;
+                
+            "rocky")
+                $SSH_CMD "curl -fsSL https://rpm.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo -E bash -" >> $LOG_FILE 2>&1
+                check_command "Add Node.js repository"
+                
+                # For Rocky Linux, we know dnf works
+                $SSH_CMD "sudo dnf install -y nodejs" >> $LOG_FILE 2>&1
+                check_command "Install Node.js with dnf on Rocky Linux"
                 ;;
                 
             *)
@@ -638,8 +657,16 @@ main() {
         log_message "INFO" "Detected Rocky Linux from /etc/rocky-release"
         ROCKY_VERSION=$($SSH_CMD "cat /etc/rocky-release" 2>> $LOG_FILE)
         log_message "INFO" "Rocky Linux version: $ROCKY_VERSION"
-        # Force RHEL-based for Rocky Linux
-        DISTRO="rhel"
+        # Force Rocky Linux
+        DISTRO="rocky"
+        log_message "INFO" "Forcing distribution to 'rocky'"
+        
+        # Verify dnf is available
+        if $SSH_CMD "command -v dnf" >> $LOG_FILE 2>&1; then
+            log_message "INFO" "Confirmed dnf is available on Rocky Linux"
+        else
+            log_message "WARNING" "dnf not found on Rocky Linux, will try yum"
+        fi
     fi
     
     # Install dependencies
