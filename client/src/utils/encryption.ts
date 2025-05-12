@@ -127,17 +127,27 @@ export async function decryptData(
   encryptedData: ArrayBuffer | Uint8Array,
   iv: Uint8Array
 ): Promise<ArrayBuffer> {
-  // Decrypt the data
-  const decryptedData = await crypto.subtle.decrypt(
-    {
-      name: 'AES-GCM',
-      iv
-    },
-    key,
-    encryptedData
-  );
-  
-  return decryptedData;
+  try {
+    // Decrypt the data
+    const decryptedData = await crypto.subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv
+      },
+      key,
+      encryptedData
+    );
+    
+    // If decryption succeeded but returned empty data, that's suspicious
+    if (decryptedData.byteLength === 0) {
+      throw new Error('Decryption failed: Empty result');
+    }
+    
+    return decryptedData;
+  } catch (error) {
+    // Rethrow the error with a more descriptive message
+    throw new Error(`Decryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 /**
@@ -188,30 +198,40 @@ export async function decryptText(
   encryptedText: string,
   ivBase64: string
 ): Promise<string> {
-  // Derive key from passphrase
-  const key = await deriveKeyFromPassphrase(passphrase);
-  
-  // Convert from base64
-  const encryptedBytes = Uint8Array.from(
-    atob(encryptedText)
-      .split('')
-      .map(char => char.charCodeAt(0))
-  );
-  
-  const iv = Uint8Array.from(
-    atob(ivBase64)
-      .split('')
-      .map(char => char.charCodeAt(0))
-  );
-  
-  // Decrypt the data
-  const decryptedData = await decryptData(key, encryptedBytes, iv);
-  
-  // Convert bytes to text
-  const decoder = new TextDecoder();
-  const text = decoder.decode(decryptedData);
-  
-  return text;
+  try {
+    // Derive key from passphrase
+    const key = await deriveKeyFromPassphrase(passphrase);
+    
+    // Convert from base64
+    const encryptedBytes = Uint8Array.from(
+      atob(encryptedText)
+        .split('')
+        .map(char => char.charCodeAt(0))
+    );
+    
+    const iv = Uint8Array.from(
+      atob(ivBase64)
+        .split('')
+        .map(char => char.charCodeAt(0))
+    );
+    
+    // Decrypt the data
+    const decryptedData = await decryptData(key, encryptedBytes, iv);
+    
+    // Convert bytes to text
+    const decoder = new TextDecoder();
+    const text = decoder.decode(decryptedData);
+    
+    // If we get an empty string, that's suspicious for decryption failure
+    if (text.length === 0) {
+      throw new Error('Decryption failed: Empty result');
+    }
+    
+    return text;
+  } catch (error) {
+    // Explicitly throw an error for wrong passphrase
+    throw new Error(`Decryption failed: ${error instanceof Error ? error.message : 'Wrong passphrase or corrupted data'}`);
+  }
 }
 
 /**
@@ -253,17 +273,22 @@ export async function decryptBlob(
   iv: Uint8Array,
   mimeType: string
 ): Promise<Blob> {
-  // Derive key from passphrase
-  const key = await deriveKeyFromPassphrase(passphrase);
-  
-  // Convert blob to array buffer
-  const encryptedData = await encryptedBlob.arrayBuffer();
-  
-  // Decrypt the data
-  const decryptedData = await decryptData(key, encryptedData, iv);
-  
-  // Convert to blob
-  const decryptedBlob = new Blob([decryptedData], { type: mimeType });
-  
-  return decryptedBlob;
+  try {
+    // Derive key from passphrase
+    const key = await deriveKeyFromPassphrase(passphrase);
+    
+    // Convert blob to array buffer
+    const encryptedData = await encryptedBlob.arrayBuffer();
+    
+    // Decrypt the data
+    const decryptedData = await decryptData(key, encryptedData, iv);
+    
+    // Convert to blob
+    const decryptedBlob = new Blob([decryptedData], { type: mimeType });
+    
+    return decryptedBlob;
+  } catch (error) {
+    // Explicitly throw an error for wrong passphrase
+    throw new Error(`Blob decryption failed: ${error instanceof Error ? error.message : 'Wrong passphrase or corrupted data'}`);
+  }
 }
