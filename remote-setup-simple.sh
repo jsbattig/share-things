@@ -657,7 +657,8 @@ setup_systemd_services() {
     
     if [[ "$SETUP_SERVICES" == "y" || "$SETUP_SERVICES" == "Y" ]]; then
         # Create systemd service file for ShareThings
-        run_remote_command "cat > /tmp/sharethings.service << 'EOL'
+        if [[ "$USE_KEY" == true ]]; then
+            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cat > /tmp/sharethings.service << 'EOL'
 [Unit]
 Description=ShareThings Application
 After=docker.service
@@ -674,14 +675,130 @@ RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
-EOL" "Create systemd service file"
+EOL" >> $LOG_FILE 2>&1
+        else
+            sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cat > /tmp/sharethings.service << 'EOL'
+[Unit]
+Description=ShareThings Application
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=$SSH_USER
+WorkingDirectory=$INSTALL_DIR
+ExecStart=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+ExecStop=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml down
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOL" >> $LOG_FILE 2>&1
+        fi
         
-        run_remote_command "sudo mv /tmp/sharethings.service /etc/systemd/system/" "Move service file to systemd directory"
-        run_remote_command "sudo systemctl daemon-reload" "Reload systemd"
-        run_remote_command "sudo systemctl enable sharethings.service" "Enable ShareThings service"
-        run_remote_command "sudo systemctl start sharethings.service" "Start ShareThings service"
+        log_message "INFO" "Created systemd service file"
         
-        log_message "SUCCESS" "Systemd services setup complete"
+        # Try to move service file to systemd directory
+        if [[ "$USE_KEY" == true ]]; then
+            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo mv /tmp/sharethings.service /etc/systemd/system/" >> $LOG_FILE 2>&1
+        else
+            sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo mv /tmp/sharethings.service /etc/systemd/system/" >> $LOG_FILE 2>&1
+        fi
+        
+        # Check if service file was moved successfully
+        if [[ "$USE_KEY" == true ]]; then
+            SERVICE_EXISTS=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "[ -f /etc/systemd/system/sharethings.service ] && echo 'yes' || echo 'no'" 2>/dev/null)
+        else
+            SERVICE_EXISTS=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "[ -f /etc/systemd/system/sharethings.service ] && echo 'yes' || echo 'no'" 2>/dev/null)
+        fi
+        
+        if [[ "$SERVICE_EXISTS" == "yes" ]]; then
+            log_message "SUCCESS" "Moved service file to systemd directory"
+            
+            # Reload systemd and enable/start service
+            if [[ "$USE_KEY" == true ]]; then
+                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo systemctl daemon-reload" >> $LOG_FILE 2>&1
+                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo systemctl enable sharethings.service" >> $LOG_FILE 2>&1
+                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo systemctl start sharethings.service" >> $LOG_FILE 2>&1
+            else
+                sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo systemctl daemon-reload" >> $LOG_FILE 2>&1
+                sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo systemctl enable sharethings.service" >> $LOG_FILE 2>&1
+                sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo systemctl start sharethings.service" >> $LOG_FILE 2>&1
+            fi
+            
+            log_message "SUCCESS" "Systemd services setup complete"
+        else
+            log_message "WARNING" "Failed to move service file to systemd directory, trying alternative approach"
+            
+            # Try to create service file directly in systemd directory
+            if [[ "$USE_KEY" == true ]]; then
+                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo bash -c 'cat > /etc/systemd/system/sharethings.service << EOL
+[Unit]
+Description=ShareThings Application
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=$SSH_USER
+WorkingDirectory=$INSTALL_DIR
+ExecStart=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+ExecStop=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml down
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOL'" >> $LOG_FILE 2>&1
+            else
+                sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo bash -c 'cat > /etc/systemd/system/sharethings.service << EOL
+[Unit]
+Description=ShareThings Application
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=$SSH_USER
+WorkingDirectory=$INSTALL_DIR
+ExecStart=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml up
+ExecStop=/usr/bin/docker-compose -f docker-compose.yml -f docker-compose.prod.yml down
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOL'" >> $LOG_FILE 2>&1
+            fi
+            
+            # Check if service file was created successfully
+            if [[ "$USE_KEY" == true ]]; then
+                SERVICE_EXISTS=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "[ -f /etc/systemd/system/sharethings.service ] && echo 'yes' || echo 'no'" 2>/dev/null)
+            else
+                SERVICE_EXISTS=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "[ -f /etc/systemd/system/sharethings.service ] && echo 'yes' || echo 'no'" 2>/dev/null)
+            fi
+            
+            if [[ "$SERVICE_EXISTS" == "yes" ]]; then
+                log_message "SUCCESS" "Created service file in systemd directory"
+                
+                # Reload systemd and enable/start service
+                if [[ "$USE_KEY" == true ]]; then
+                    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo systemctl daemon-reload" >> $LOG_FILE 2>&1
+                    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo systemctl enable sharethings.service" >> $LOG_FILE 2>&1
+                    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo systemctl start sharethings.service" >> $LOG_FILE 2>&1
+                else
+                    sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo systemctl daemon-reload" >> $LOG_FILE 2>&1
+                    sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo systemctl enable sharethings.service" >> $LOG_FILE 2>&1
+                    sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo systemctl start sharethings.service" >> $LOG_FILE 2>&1
+                fi
+                
+                log_message "SUCCESS" "Systemd services setup complete"
+            else
+                log_message "WARNING" "Failed to create service file in systemd directory, skipping systemd setup"
+                log_message "INFO" "You can manually create the service file later"
+            fi
+        fi
     else
         log_message "INFO" "Skipping systemd services setup"
     fi
