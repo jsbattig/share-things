@@ -2,48 +2,91 @@
  * Encryption utilities for client-side end-to-end encryption
  */
 
+// Import the webcrypto-shim polyfill
+import 'webcrypto-shim';
+
+// Polyfill for browsers that don't support the Web Crypto API
+// This is a fallback mechanism that will be used if the native Web Crypto API is not available
+if (typeof window !== 'undefined' && (!window.crypto || !window.crypto.subtle)) {
+  console.warn('Web Crypto API not detected. Using polyfill...');
+  // The webcrypto-shim polyfill should have been loaded and applied
+  if (!window.crypto || !window.crypto.subtle) {
+    console.error('Polyfill failed to initialize Web Crypto API. Crypto operations will fail.');
+  } else {
+    console.log('Polyfill successfully initialized Web Crypto API.');
+  }
+}
+
+// Check if Web Crypto API is available
+const isWebCryptoAvailable = () => {
+  return typeof window !== 'undefined' &&
+         window.crypto !== undefined &&
+         window.crypto.subtle !== undefined;
+};
+
+// Throw a helpful error if Web Crypto API is not available
+const checkWebCryptoSupport = () => {
+  if (!isWebCryptoAvailable()) {
+    throw new Error(
+      'Web Crypto API is not available in this browser or context. ' +
+      'This could be because you are using an older browser, ' +
+      'or because you are not in a secure context (HTTPS). ' +
+      'Try using a modern browser like Chrome, Firefox, or Edge, ' +
+      'and make sure you are accessing the site over HTTPS.'
+    );
+  }
+};
+
 /**
  * Derives an encryption key from a passphrase
  * @param passphrase The passphrase to derive the key from
  * @returns The derived key
  */
 export async function deriveKeyFromPassphrase(passphrase: string): Promise<CryptoKey> {
-  // Convert passphrase to bytes
-  const encoder = new TextEncoder();
-  const passphraseData = encoder.encode(passphrase);
+  try {
+    // Check if Web Crypto API is available
+    checkWebCryptoSupport();
+    
+    // Convert passphrase to bytes
+    const encoder = new TextEncoder();
+    const passphraseData = encoder.encode(passphrase);
+    
+    console.log('Deriving key from passphrase - about to import key');
+    
+    // Create a key derivation key
+    const baseKey = await window.crypto.subtle.importKey(
+      'raw',
+      passphraseData,
+      { name: 'PBKDF2' },
+      false, // Changed from true to false - KDF keys must not be extractable
+      ['deriveKey']
+    );
   
-  console.log('Deriving key from passphrase - about to import key');
-  
-  // Create a key derivation key
-  const baseKey = await crypto.subtle.importKey(
-    'raw',
-    passphraseData,
-    { name: 'PBKDF2' },
-    false, // Changed from true to false - KDF keys must not be extractable
-    ['deriveKey']
-  );
-  
-  console.log('Successfully imported key with extractable=false');
-  
-  // Use a fixed salt for deterministic key derivation
-  // This is safe because the passphrase is the shared secret
-  const salt = encoder.encode('ShareThings-Salt-2025');
-  
-  // Derive the actual encryption key
-  const key = await crypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt,
-      iterations: 100000,
-      hash: 'SHA-256'
-    },
-    baseKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  );
+    console.log('Successfully imported key with extractable=false');
+    
+    // Use a fixed salt for deterministic key derivation
+    // This is safe because the passphrase is the shared secret
+    const salt = encoder.encode('ShareThings-Salt-2025');
+    
+    // Derive the actual encryption key
+    const key = await window.crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt,
+        iterations: 100000,
+        hash: 'SHA-256'
+      },
+      baseKey,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    );
 
-  return key;
+    return key;
+  } catch (error) {
+    console.error('Error deriving key from passphrase:', error);
+    throw new Error(`Failed to derive key: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 /**
@@ -57,20 +100,28 @@ export async function encryptData(
   data: ArrayBuffer | Uint8Array,
   passphrase: string
 ): Promise<{ encryptedData: ArrayBuffer; iv: Uint8Array }> {
-  // Generate a deterministic IV from the passphrase and data
-  const iv = await generateDeterministicIV(passphrase, data);
+  try {
+    // Check if Web Crypto API is available
+    checkWebCryptoSupport();
+    
+    // Generate a deterministic IV from the passphrase and data
+    const iv = await generateDeterministicIV(passphrase, data);
 
-  // Encrypt the data
-  const encryptedData = await crypto.subtle.encrypt(
-    {
-      name: 'AES-GCM',
-      iv
-    },
-    key,
-    data
-  );
-  
-  return { encryptedData, iv };
+    // Encrypt the data
+    const encryptedData = await window.crypto.subtle.encrypt(
+      {
+        name: 'AES-GCM',
+        iv
+      },
+      key,
+      data
+    );
+    
+    return { encryptedData, iv };
+  } catch (error) {
+    console.error('Error encrypting data:', error);
+    throw new Error(`Encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 /**
@@ -80,17 +131,25 @@ export async function encryptData(
  * @returns The deterministic IV
  */
 async function generateDeterministicIV(passphrase: string, data: ArrayBuffer | Uint8Array): Promise<Uint8Array> {
-  // Combine passphrase and data
-  const encoder = new TextEncoder();
-  const passphraseData = encoder.encode(passphrase);
-  const combinedData = new Uint8Array([...passphraseData, ...new Uint8Array(data)]);
+  try {
+    // Check if Web Crypto API is available
+    checkWebCryptoSupport();
+    
+    // Combine passphrase and data
+    const encoder = new TextEncoder();
+    const passphraseData = encoder.encode(passphrase);
+    const combinedData = new Uint8Array([...passphraseData, ...new Uint8Array(data)]);
 
-  // Hash the combined data
-  const hashBuffer = await crypto.subtle.digest('SHA-256', combinedData);
-  const hashArray = new Uint8Array(hashBuffer);
+    // Hash the combined data
+    const hashBuffer = await window.crypto.subtle.digest('SHA-256', combinedData);
+    const hashArray = new Uint8Array(hashBuffer);
 
-  // Use the first 12 bytes as the IV
-  return hashArray.slice(0, 12);
+    // Use the first 12 bytes as the IV
+    return hashArray.slice(0, 12);
+  } catch (error) {
+    console.error('Error generating deterministic IV:', error);
+    throw new Error(`Failed to generate IV: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 /**
@@ -128,8 +187,11 @@ export async function decryptData(
   iv: Uint8Array
 ): Promise<ArrayBuffer> {
   try {
+    // Check if Web Crypto API is available
+    checkWebCryptoSupport();
+    
     // Decrypt the data
-    const decryptedData = await crypto.subtle.decrypt(
+    const decryptedData = await window.crypto.subtle.decrypt(
       {
         name: 'AES-GCM',
         iv
