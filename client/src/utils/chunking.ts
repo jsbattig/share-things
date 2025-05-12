@@ -79,7 +79,7 @@ export async function chunkAndEncryptBlob(
     const chunkData = new Uint8Array(arrayBuffer);
 
     // Encrypt chunk
-    const { encryptedData, iv } = await encryptData(key, chunkData);
+    const { encryptedData, iv } = await encryptData(key, chunkData, passphrase);
     
     // Create chunk
     chunks.push({

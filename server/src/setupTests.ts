@@ -1,38 +1,19 @@
 // This file is automatically loaded by Jest
-// It adds Jest globals to the TypeScript compiler
+// It's kept for reference but not actively used since @types/jest provides the types
+
+// The types below are now provided by @types/jest package
+// No need to declare them here, which was causing TypeScript errors
 
 export {};
 
+// If you need to extend Jest's types, you can do it like this:
+/*
 declare global {
-  // eslint-disable-next-line no-var
-  var describe: (name: string, fn: () => void) => void;
-  // eslint-disable-next-line no-var
-  var test: (name: string, fn: (done?: jest.DoneCallback) => void | Promise<void>) => void;
-  // eslint-disable-next-line no-var
-  var expect: jest.Expect;
-  // eslint-disable-next-line no-var
-  var beforeAll: (fn: (done?: jest.DoneCallback) => void | Promise<void>) => void;
-  // eslint-disable-next-line no-var
-  var afterAll: (fn: (done?: jest.DoneCallback) => void | Promise<void>) => void;
-  // eslint-disable-next-line no-var
-  var beforeEach: (fn: (done?: jest.DoneCallback) => void | Promise<void>) => void;
-  // eslint-disable-next-line no-var
-  var afterEach: (fn: (done?: jest.DoneCallback) => void | Promise<void>) => void;
-  // eslint-disable-next-line no-var
-  var jest: jest.Jest;
-}
-
-namespace jest {
-  export interface Jest {
-    [key: string]: any;
-  }
-
-  export interface Expect {
-    [key: string]: any;
-  }
-
-  export interface DoneCallback {
-    (...args: any[]): any;
-    fail(error?: Error | string): any;
+  namespace jest {
+    interface Matchers<R> {
+      // Add your custom matchers here
+      // Example: toBeWithinRange(min: number, max: number): R;
+    }
   }
 }
+*/

@@ -9,6 +9,7 @@
     "build": "tsc",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:e2e": "cd ../test/e2e/functional && npx jest simple-test.test.ts",
     "lint": "eslint . --ext .ts",
     "clean": "rimraf dist"
   },

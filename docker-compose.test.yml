@@ -1,0 +1,32 @@
+# Test configuration for ShareThings Docker Compose
+
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.test
+    environment:
+      - NODE_ENV=test
+    ports:
+      - "${BACKEND_PORT}:3001"
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile.test
+    ports:
+      - "${FRONTEND_PORT}:3000"
+
+  e2e-tests:
+    build:
+      context: ./test/e2e/browser
+      dockerfile: Dockerfile.test
+    depends_on:
+      - frontend
+      - backend
+    environment:
+      - FRONTEND_URL=http://frontend
+      - BACKEND_URL=http://backend:3001
+    volumes:
+      - ./test:/app/test
+      - ./test-results:/app/test-results

@@ -83,7 +83,7 @@ export class UrlRegistry {
    * @param activeContentIds Set of active content IDs
    * @param preserveLatest Whether to preserve the latest URL for each content
    */
-  cleanupOrphanedUrls(activeContentIds: Set<string>, preserveLatest: boolean = true): void {
+  cleanupOrphanedUrls(activeContentIds: Set<string>, preserveLatest: boolean = false): void {
     for (const [contentId, urls] of this.urls.entries()) {
       if (!activeContentIds.has(contentId)) {
         if (preserveLatest && urls.length > 0) {

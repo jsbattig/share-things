@@ -1,0 +1,20 @@
+# Test Dockerfile for ShareThings Server
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Set environment variables
+ENV NODE_ENV=test
+
+# Copy package files and install all dependencies (including dev dependencies)
+COPY package*.json ./
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Expose the port
+EXPOSE 3001
+
+# Default command (can be overridden)
+CMD ["npm", "test"]

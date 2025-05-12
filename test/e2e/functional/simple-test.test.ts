@@ -1,3 +1,4 @@
+import './setupTests'; // Import the setupTests file first
 import { TestOrchestrator } from './test-orchestrator';
 
 // Simple test that just tests text sharing

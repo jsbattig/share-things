@@ -1,7 +1,7 @@
 import 'blob-polyfill';
 
 // Enhanced mock for Web Crypto API in test environment
-if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
+if (typeof global.crypto === 'undefined' || !global.crypto.subtle) {
   // Store encryption keys and data for consistent encryption/decryption
   const encryptionStore = new Map<string, string>();
   
@@ -9,11 +9,11 @@ if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
   const mockSubtle = {
     // Mock importKey method
     importKey: async (
-      format: string,
-      keyData: ArrayBuffer | ArrayBufferView,
-      algorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm,
-      extractable: boolean,
-      keyUsages: KeyUsage[]
+      format: string, 
+      keyData: ArrayBuffer | ArrayBufferView, 
+      algorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, 
+      extractable: boolean, 
+      keyUsages: string[]
     ) => {
       console.log('Mock importKey called');
       // Create a unique key identifier
@@ -32,11 +32,11 @@ if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
     
     // Mock deriveKey method
     deriveKey: async (
-      algorithm: AlgorithmIdentifier | AesDerivedKeyParams | HmacImportParams | HkdfParams | Pbkdf2Params,
-      baseKey: CryptoKey,
-      derivedKeyAlgorithm: AlgorithmIdentifier | AesDerivedKeyParams | HmacImportParams | HkdfParams | Pbkdf2Params,
-      extractable: boolean,
-      keyUsages: KeyUsage[]
+      algorithm: any, 
+      baseKey: any, 
+      derivedKeyAlgorithm: any, 
+      extractable: boolean, 
+      keyUsages: string[]
     ) => {
       console.log('Mock deriveKey called');
       // Use the base key's ID as part of the derived key
@@ -45,54 +45,70 @@ if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
         algorithm: derivedKeyAlgorithm,
         extractable: extractable,
         usages: keyUsages,
-        _keyId: (baseKey as any)._keyId // Pass through the key ID
+        _keyId: baseKey._keyId // Pass through the key ID
       };
     },
     
     // Mock encrypt method
     encrypt: async (
-      algorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams,
-      key: CryptoKey,
+      algorithm: any, 
+      key: any, 
       data: ArrayBuffer | ArrayBufferView
     ) => {
       console.log('Mock encrypt called');
       const dataArray = new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer);
-      const dataStr = new TextDecoder().decode(dataArray);
+      let dataStr = '';
+      
+      try {
+        // Try to decode as UTF-8 text
+        dataStr = new TextDecoder().decode(dataArray);
+      } catch (e) {
+        // If it's not valid UTF-8, use a hex representation
+        dataStr = Array.from(dataArray)
+          .map(b => b.toString(16).padStart(2, '0'))
+          .join('');
+      }
       
       // Store the original data with the key ID
-      encryptionStore.set(`${(key as any)._keyId}-${(algorithm as any).iv ? Array.from((algorithm as any).iv).join(',') : 'no-iv'}`, dataStr);
+      const keyId = `${key._keyId}-${algorithm.iv ? Array.from(algorithm.iv).join(',') : 'no-iv'}`;
+      encryptionStore.set(keyId, dataStr);
       
       // Return a dummy encrypted buffer
-      return new TextEncoder().encode(dataStr).buffer;
+      return dataArray.buffer;
     },
     
     // Mock decrypt method
     decrypt: async (
-      algorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams,
-      key: CryptoKey,
+      algorithm: any, 
+      key: any, 
       data: ArrayBuffer | ArrayBufferView
     ) => {
       console.log('Mock decrypt called');
-      const keyId = `${(key as any)._keyId}-${(algorithm as any).iv ? Array.from((algorithm as any).iv).join(',') : 'no-iv'}`;
+      const keyId = `${key._keyId}-${algorithm.iv ? Array.from(algorithm.iv).join(',') : 'no-iv'}`;
       
       // If we have stored data for this key and IV, return it
       if (encryptionStore.has(keyId)) {
         const originalData = encryptionStore.get(keyId);
-        return new TextEncoder().encode(originalData || '').buffer;
+        try {
+          return new TextEncoder().encode(originalData || '').buffer;
+        } catch (e) {
+          // If encoding fails, return the original data buffer
+          return data instanceof ArrayBuffer ? data : data.buffer;
+        }
       }
       
       // If wrong passphrase is used (key ID doesn't match), throw an error
-      if ((key as any)._keyId.includes('wrong-passphrase')) {
+      if (key._keyId.includes('wrong-passphrase')) {
         throw new Error('Decryption failed');
       }
       
-      // Return empty data if not found
-      return new TextEncoder().encode('').buffer;
+      // Return the original data if not found in store
+      return data instanceof ArrayBuffer ? data : data.buffer;
     },
     
     // Mock digest method
     digest: async (
-      algorithm: AlgorithmIdentifier,
+      algorithm: string, 
       data: ArrayBuffer | ArrayBufferView
     ) => {
       console.log('Mock digest called');
@@ -124,5 +140,5 @@ if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
   // Add mock crypto to global scope
   global.crypto = mockCrypto as any;
   
-  console.log('Enhanced WebCrypto mock installed');
+  console.log('Enhanced WebCrypto mock installed for Node.js environment');
 }

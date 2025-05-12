@@ -728,11 +728,15 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
             console.log(`[decryptAndReassemble] New content count: ${newContents.size}`);
             console.log(`[decryptAndReassemble] Content IDs in new map:`, Array.from(newContents.keys()));
             
+            // Store a reference to the updated content for logging outside this function
+            const contentForLogging = updatedContent;
+            
             return newContents;
           });
           
           console.log(`[decryptAndReassemble] Content updated with Blob data, isComplete set to true`);
-          console.log(`[decryptAndReassemble] Image info:`, updatedContent.metadata.metadata.imageInfo);
+          // Use the content from the latest state instead of the variable from inside the state updater function
+          console.log(`[decryptAndReassemble] Image info:`, contents.get(contentId)?.metadata.metadata.imageInfo);
           
           // Double-check after a short delay to ensure content is marked as complete
           setTimeout(() => {
