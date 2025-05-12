@@ -1,12 +1,12 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { io, Socket } from 'socket.io-client';
+import socketIOClient from 'socket.io-client';
 
 // Socket.IO client instance
-let socket: Socket | null = null;
+let socket: any | null = null;
 
 // Socket context interface
 interface SocketContextType {
-  socket: Socket | null;
+  socket: any | null;
   isConnected: boolean;
   connect: () => void;
   disconnect: () => void;
@@ -36,7 +36,22 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   useEffect(() => {
     // Create socket instance if it doesn't exist
     if (!socket) {
-      socket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001', {
+      // Dynamically determine the backend URL based on the current window location
+      const getBackendUrl = () => {
+        // If an environment variable is set, use it
+        if (import.meta.env.VITE_SOCKET_URL) {
+          return import.meta.env.VITE_SOCKET_URL;
+        }
+        
+        // Otherwise, derive from the current URL
+        const currentUrl = new URL(window.location.href);
+        // Use the same hostname but with port 3001
+        return `${currentUrl.protocol}//${currentUrl.hostname}:3001`;
+      };
+
+      console.log(`[Socket] Connecting to backend at: ${getBackendUrl()}`);
+      
+      socket = socketIOClient(getBackendUrl(), {
         path: '/socket.io/',
         transports: ['websocket', 'polling'],
         autoConnect: false,
