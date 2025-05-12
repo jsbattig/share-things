@@ -811,8 +811,19 @@ display_completion() {
     
     # Get service status if services were set up
     if [[ "$SETUP_SERVICES" == "y" || "$SETUP_SERVICES" == "Y" ]]; then
-        SERVICE_STATUS=$(run_remote_command "sudo systemctl status sharethings.service | grep Active" "Get service status")
-        log_message "INFO" "Service status: $SERVICE_STATUS"
+        # Try to get service status
+        if [[ "$USE_KEY" == true ]]; then
+            SERVICE_STATUS=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo systemctl status sharethings.service | grep Active 2>/dev/null || echo 'Status unknown'" 2>/dev/null)
+        else
+            SERVICE_STATUS=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo systemctl status sharethings.service | grep Active 2>/dev/null || echo 'Status unknown'" 2>/dev/null)
+        fi
+        
+        if [[ -n "$SERVICE_STATUS" && "$SERVICE_STATUS" != "Status unknown" ]]; then
+            log_message "INFO" "Service status: $SERVICE_STATUS"
+        else
+            log_message "INFO" "Service status could not be determined"
+            log_message "INFO" "You can check the status manually with: sudo systemctl status sharethings.service"
+        fi
     else
         log_message "INFO" "To start the application manually:"
         log_message "INFO" "  1. SSH into the server: ssh $SSH_USER@$SERVER_IP"
