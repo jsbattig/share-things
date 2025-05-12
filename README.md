@@ -2,7 +2,7 @@
 
 [![Lint](https://github.com/jsbattig/share-things/actions/workflows/lint.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/lint.yml)
 [![Build and Test](https://github.com/jsbattig/share-things/actions/workflows/build.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/build.yml)
-[![Build Production](https://github.com/jsbattig/share-things/actions/workflows/build-production.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/build-production.yml)
+[![Build Production](https://github.com/jsbattig/share-things/actions/workflows/build-production.yml/badge.svg?branch=master)](https://github.com/jsbattig/share-things/actions/workflows/build-production.yml)
 [![Dockered Build and Tests](https://github.com/jsbattig/share-things/actions/workflows/integration.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/integration.yml)
 
 A real-time content sharing application with end-to-end encryption.
