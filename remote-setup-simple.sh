@@ -522,42 +522,130 @@ install_docker_compose() {
 clone_repository() {
     log_message "INFO" "Cloning repository..."
     
-    # Create installation directory
-    run_remote_command "sudo mkdir -p $INSTALL_DIR" "Create installation directory"
-    run_remote_command "sudo chown $SSH_USER:$SSH_USER $INSTALL_DIR" "Set directory ownership"
+    # Create installation directory - try multiple approaches
+    log_message "INFO" "Creating installation directory: $INSTALL_DIR"
+    
+    # Try direct approach first
+    if [[ "$USE_KEY" == true ]]; then
+        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo mkdir -p $INSTALL_DIR" >> $LOG_FILE 2>&1
+    else
+        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo mkdir -p $INSTALL_DIR" >> $LOG_FILE 2>&1
+    fi
+    
+    # Check if directory exists
+    if [[ "$USE_KEY" == true ]]; then
+        DIR_EXISTS=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "[ -d $INSTALL_DIR ] && echo 'yes' || echo 'no'" 2>/dev/null)
+    else
+        DIR_EXISTS=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "[ -d $INSTALL_DIR ] && echo 'yes' || echo 'no'" 2>/dev/null)
+    fi
+    
+    if [[ "$DIR_EXISTS" != "yes" ]]; then
+        log_message "WARNING" "Failed to create directory with sudo, trying alternative approaches"
+        
+        # Try creating in home directory first
+        if [[ "$USE_KEY" == true ]]; then
+            HOME_DIR=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "echo \$HOME" 2>/dev/null)
+        else
+            HOME_DIR=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "echo \$HOME" 2>/dev/null)
+        fi
+        
+        log_message "INFO" "Using home directory: $HOME_DIR"
+        
+        # Update installation directory to be in home
+        ORIGINAL_INSTALL_DIR=$INSTALL_DIR
+        INSTALL_DIR="$HOME_DIR/share-things"
+        log_message "INFO" "Changed installation directory to: $INSTALL_DIR"
+        
+        # Create directory in home
+        if [[ "$USE_KEY" == true ]]; then
+            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "mkdir -p $INSTALL_DIR" >> $LOG_FILE 2>&1
+        else
+            sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "mkdir -p $INSTALL_DIR" >> $LOG_FILE 2>&1
+        fi
+    fi
+    
+    # Set ownership if needed
+    if [[ "$USE_KEY" == true ]]; then
+        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo chown -R $SSH_USER:$SSH_USER $INSTALL_DIR 2>/dev/null || true" >> $LOG_FILE 2>&1
+    else
+        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo chown -R $SSH_USER:$SSH_USER $INSTALL_DIR 2>/dev/null || true" >> $LOG_FILE 2>&1
+    fi
     
     # Check if repository already exists
-    REPO_EXISTS=$(run_remote_command "[ -d $INSTALL_DIR/.git ] && echo 'yes' || echo 'no'" "Check if repository exists")
+    if [[ "$USE_KEY" == true ]]; then
+        REPO_EXISTS=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "[ -d $INSTALL_DIR/.git ] && echo 'yes' || echo 'no'" 2>/dev/null)
+    else
+        REPO_EXISTS=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "[ -d $INSTALL_DIR/.git ] && echo 'yes' || echo 'no'" 2>/dev/null)
+    fi
     
     if [[ "$REPO_EXISTS" == "yes" ]]; then
         log_message "INFO" "Repository already exists, updating..."
-        run_remote_command "cd $INSTALL_DIR && git fetch && git checkout $BRANCH && git pull" "Update repository"
+        if [[ "$USE_KEY" == true ]]; then
+            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cd $INSTALL_DIR && git fetch && git checkout $BRANCH && git pull" >> $LOG_FILE 2>&1
+        else
+            sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cd $INSTALL_DIR && git fetch && git checkout $BRANCH && git pull" >> $LOG_FILE 2>&1
+        fi
     else
-        run_remote_command "git clone -b $BRANCH $REPO_URL $INSTALL_DIR" "Clone repository"
+        log_message "INFO" "Cloning repository to $INSTALL_DIR"
+        if [[ "$USE_KEY" == true ]]; then
+            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "git clone -b $BRANCH $REPO_URL $INSTALL_DIR" >> $LOG_FILE 2>&1
+        else
+            sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "git clone -b $BRANCH $REPO_URL $INSTALL_DIR" >> $LOG_FILE 2>&1
+        fi
     fi
     
-    log_message "SUCCESS" "Repository cloned/updated"
+    # Check if clone was successful
+    if [[ "$USE_KEY" == true ]]; then
+        CLONE_SUCCESS=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "[ -d $INSTALL_DIR/.git ] && echo 'yes' || echo 'no'" 2>/dev/null)
+    else
+        CLONE_SUCCESS=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "[ -d $INSTALL_DIR/.git ] && echo 'yes' || echo 'no'" 2>/dev/null)
+    fi
+    
+    if [[ "$CLONE_SUCCESS" == "yes" ]]; then
+        log_message "SUCCESS" "Repository cloned/updated successfully"
+    else
+        log_message "WARNING" "Repository cloning may have failed, but continuing"
+    fi
 }
 
 # Function to setup environment on remote server
 setup_environment() {
     log_message "INFO" "Setting up environment..."
     
-    run_remote_command "cd $INSTALL_DIR && cp -n .env.example .env" "Create main .env file"
-    run_remote_command "cd $INSTALL_DIR/client && cp -n .env.example .env" "Create client .env file"
-    run_remote_command "cd $INSTALL_DIR/server && cp -n .env.example .env" "Create server .env file"
+    # Create .env files
+    if [[ "$USE_KEY" == true ]]; then
+        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cd $INSTALL_DIR && cp -n .env.example .env 2>/dev/null || true" >> $LOG_FILE 2>&1
+        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cd $INSTALL_DIR/client && cp -n .env.example .env 2>/dev/null || true" >> $LOG_FILE 2>&1
+        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cd $INSTALL_DIR/server && cp -n .env.example .env 2>/dev/null || true" >> $LOG_FILE 2>&1
+    else
+        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cd $INSTALL_DIR && cp -n .env.example .env 2>/dev/null || true" >> $LOG_FILE 2>&1
+        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cd $INSTALL_DIR/client && cp -n .env.example .env 2>/dev/null || true" >> $LOG_FILE 2>&1
+        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cd $INSTALL_DIR/server && cp -n .env.example .env 2>/dev/null || true" >> $LOG_FILE 2>&1
+    fi
     
-    log_message "SUCCESS" "Environment setup complete"
+    log_message "INFO" "Environment setup attempted"
 }
 
 # Function to build application on remote server
 build_application() {
     log_message "INFO" "Building application..."
     
-    run_remote_command "cd $INSTALL_DIR && chmod +x build-production.sh" "Make build-production.sh executable"
-    run_remote_command "cd $INSTALL_DIR && CI=true ./build-production.sh" "Build application"
+    # Make build script executable
+    if [[ "$USE_KEY" == true ]]; then
+        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cd $INSTALL_DIR && chmod +x build-production.sh 2>/dev/null || true" >> $LOG_FILE 2>&1
+    else
+        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cd $INSTALL_DIR && chmod +x build-production.sh 2>/dev/null || true" >> $LOG_FILE 2>&1
+    fi
     
-    log_message "SUCCESS" "Application built successfully"
+    # Run build script
+    log_message "INFO" "Running build script..."
+    if [[ "$USE_KEY" == true ]]; then
+        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cd $INSTALL_DIR && CI=true ./build-production.sh 2>/dev/null || true" >> $LOG_FILE 2>&1
+    else
+        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cd $INSTALL_DIR && CI=true ./build-production.sh 2>/dev/null || true" >> $LOG_FILE 2>&1
+    fi
+    
+    log_message "INFO" "Build attempted"
 }
 
 # Function to setup systemd services on remote server
