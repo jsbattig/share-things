@@ -2,6 +2,12 @@
 
 # ShareThings Production Build Script
 # This script builds and verifies the ShareThings application using Docker in production mode
+#
+# Podman Compatibility:
+# This script has been updated to work with both Docker Compose and Podman Compose.
+# The main differences are:
+# 1. Detection of podman-compose in addition to docker-compose
+# 2. Modified 'ps' command usage to be compatible with podman-compose syntax
 
 # Text colors
 GREEN='\033[0;32m'
@@ -30,15 +36,19 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-# Check if Docker Compose is installed (either standalone or as part of Docker CLI)
+# Check if Docker Compose or Podman Compose is installed
 DOCKER_COMPOSE_CMD=""
-if command -v docker-compose &> /dev/null; then
+if command -v podman-compose &> /dev/null; then
+    DOCKER_COMPOSE_CMD="podman-compose"
+    echo -e "${YELLOW}Using podman-compose instead of docker-compose${NC}"
+    echo -e "${YELLOW}Note: Some commands may behave differently with podman-compose${NC}"
+elif command -v docker-compose &> /dev/null; then
     DOCKER_COMPOSE_CMD="docker-compose"
 elif docker compose version &> /dev/null; then
     DOCKER_COMPOSE_CMD="docker compose"
 else
-    echo -e "${RED}Error: Docker Compose is not installed.${NC}"
-    echo "Please install Docker Compose before running this script."
+    echo -e "${RED}Error: Neither Docker Compose nor Podman Compose is installed.${NC}"
+    echo "Please install Docker Compose or Podman Compose before running this script."
     exit 1
 fi
 
@@ -186,9 +196,9 @@ if [ ! \( $BUILD_EXIT_CODE -ne 0 -a -n "$CI" \) ]; then
     echo -e "${YELLOW}Waiting for containers to be ready...${NC}"
     sleep 10
 
-    # Check if containers are running
-    BACKEND_RUNNING=$($DOCKER_COMPOSE_CMD -f docker-compose.prod.temp.yml ps backend | grep -c "Up")
-    FRONTEND_RUNNING=$($DOCKER_COMPOSE_CMD -f docker-compose.prod.temp.yml ps frontend | grep -c "Up")
+    # Check if containers are running (podman-compose compatible)
+    BACKEND_RUNNING=$($DOCKER_COMPOSE_CMD -f docker-compose.prod.temp.yml ps | grep backend | grep -c "Up")
+    FRONTEND_RUNNING=$($DOCKER_COMPOSE_CMD -f docker-compose.prod.temp.yml ps | grep frontend | grep -c "Up")
 
     if [ $BACKEND_RUNNING -eq 0 ] || [ $FRONTEND_RUNNING -eq 0 ]; then
         echo -e "${RED}Production containers failed to start properly.${NC}"

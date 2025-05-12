@@ -14,9 +14,13 @@ This document provides instructions for deploying the ShareThings application us
 
 ## Prerequisites
 
-- Docker Engine (version 20.10.0 or higher)
-- Docker Compose (version 2.0.0 or higher)
+- Docker Engine (version 20.10.0 or higher) or Podman (version 3.0.0 or higher)
+- Docker Compose (version 2.0.0 or higher) or Podman Compose (version 1.0.0 or higher)
 - Git (to clone the repository)
+
+### Podman Compatibility
+
+ShareThings can be deployed using either Docker or Podman. The build scripts have been updated to work with both Docker Compose and Podman Compose. If you're using Podman, the scripts will automatically detect and use podman-compose if it's available.
 
 ## Quick Start
 
@@ -176,3 +180,21 @@ If you encounter CORS errors:
 2. Check that HAProxy is properly forwarding headers
 
 For more detailed troubleshooting, refer to the [Docker Deployment Guide](./plans/docker-deployment-guide.md).
+
+### Podman Compose Issues
+
+If you're using Podman Compose instead of Docker Compose:
+
+1. **Command Syntax Differences**: Podman Compose may have slightly different command syntax than Docker Compose. The build scripts have been updated to handle these differences, but if you're running commands manually, be aware that some commands might need adjustment.
+
+2. **PS Command**: The `podman-compose ps` command doesn't support filtering by service name. Instead, use:
+   ```bash
+   podman-compose ps | grep service_name
+   ```
+
+3. **Version Compatibility**: Ensure you're using a recent version of podman-compose (1.0.0 or higher) for best compatibility.
+
+4. **Network Issues**: If containers can't communicate with each other, check the Podman network configuration:
+   ```bash
+   podman network ls
+   ```
