@@ -173,12 +173,12 @@ echo -e "${GREEN}E2E test Dockerfile created.${NC}"
 
 # Clean up any existing containers
 echo -e "${YELLOW}Cleaning up existing containers...${NC}"
-$DOCKER_COMPOSE_CMD down
+$DOCKER_COMPOSE_CMD -f docker-compose.test.yml down
 echo -e "${GREEN}Cleanup complete.${NC}"
 
 # Build the containers
 echo -e "${YELLOW}Building containers...${NC}"
-$DOCKER_COMPOSE_CMD build
+$DOCKER_COMPOSE_CMD -f docker-compose.test.yml build
 BUILD_EXIT_CODE=$?
 
 if [ $BUILD_EXIT_CODE -ne 0 ]; then
