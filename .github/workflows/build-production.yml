@@ -1,0 +1,55 @@
+name: Build Production
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build-production:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Cache Docker layers
+      uses: actions/cache@v3
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ runner.os }}-buildx-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-
+    
+    - name: Make build-production script executable
+      run: |
+        chmod +x build-production.sh
+    
+    - name: Debug environment
+      run: |
+        echo "GitHub Actions environment:"
+        echo "Working directory: $(pwd)"
+        ls -la
+        echo "Docker version:"
+        docker --version
+        echo "Docker Compose version:"
+        docker-compose --version || docker compose version
+        echo "Docker info:"
+        docker info
+    
+    - name: Build production containers
+      run: ./build-production.sh
+      env:
+        CI: true
+        DOCKER_BUILDKIT: 1
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: production-build-artifacts
+        path: |
+          server/dist
+          client/dist

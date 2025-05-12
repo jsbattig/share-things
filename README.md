@@ -1,8 +1,9 @@
 # ShareThings
 
 [![Lint](https://github.com/jsbattig/share-things/actions/workflows/lint.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/lint.yml)
-[![Build](https://github.com/jsbattig/share-things/actions/workflows/build.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/build.yml)
-[![Integration Tests](https://github.com/jsbattig/share-things/actions/workflows/integration.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/integration.yml)
+[![Build and Test](https://github.com/jsbattig/share-things/actions/workflows/build.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/build.yml)
+[![Build Production](https://github.com/jsbattig/share-things/actions/workflows/build-production.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/build-production.yml)
+[![Dockered Build and Tests](https://github.com/jsbattig/share-things/actions/workflows/integration.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/integration.yml)
 
 A real-time content sharing application with end-to-end encryption.
 
@@ -313,8 +314,9 @@ For detailed Docker deployment instructions, see [Docker Deployment Guide](./pla
 ShareThings uses GitHub Actions for continuous integration and deployment:
 
 - **Lint**: Runs linting checks on the codebase
-- **Build**: Builds the application and runs unit tests
-- **Integration Tests**: Runs functional and end-to-end tests
+- **Build and Test**: Builds the application and runs unit tests
+- **Build Production**: Builds and verifies the production Docker configuration
+- **Dockered Build and Tests**: Runs tests in Docker containers
 
 To run all tests locally:
 
