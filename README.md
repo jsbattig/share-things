@@ -311,7 +311,9 @@ For detailed Docker deployment instructions, see [Docker Deployment Guide](./pla
 
 ### Remote Server Deployment
 
-ShareThings includes a script for automated deployment to a remote server:
+ShareThings includes scripts for automated deployment to a remote server:
+
+#### Standard Setup Script
 
 ```bash
 # Download the script
@@ -324,12 +326,27 @@ chmod +x remote-setup.sh
 ./remote-setup.sh
 ```
 
-The script will:
+#### Simplified Setup Script (Recommended for Rocky Linux)
+
+```bash
+# Download the simplified script
+curl -O https://raw.githubusercontent.com/jsbattig/share-things/master/remote-setup-simple.sh
+
+# Make it executable
+chmod +x remote-setup-simple.sh
+
+# Run the script and follow the prompts
+./remote-setup-simple.sh
+```
+
+Both scripts will:
 1. Prompt for server details (IP, username, password/SSH key)
 2. Install all required dependencies on the remote server
 3. Clone the repository and set up the environment
 4. Build the application using the production configuration
 5. Optionally set up systemd services for automatic startup
+
+The simplified script is recommended for Rocky Linux and other RHEL-based distributions as it uses a more direct approach with better compatibility.
 
 For more details, see the [Remote Setup Script documentation](./plans/remote-setup-script.md).
 
