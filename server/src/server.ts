@@ -55,8 +55,12 @@ app.get('/health', (req, res) => {
 });
 
 // Start server
-server.listen(PORT, () => {
+server.listen({
+  port: Number(PORT),
+  host: '0.0.0.0'
+}, () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Server binding to all network interfaces (0.0.0.0) - accessible from external machines`);
 });
 
 // Handle graceful shutdown
