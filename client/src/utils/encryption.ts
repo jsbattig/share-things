@@ -331,20 +331,62 @@ async function generateDeterministicIV(passphrase: string, data: ArrayBuffer | U
  * @returns The fingerprint
  */
 export async function generateFingerprint(passphrase: string): Promise<any> {
-  // Derive key from passphrase
-  const key = await deriveKeyFromPassphrase(passphrase);
+  try {
+    // If we're using the fallback implementation, we need to ensure compatibility
+    if (usingFallbackCrypto) {
+      console.log('Using deterministic fingerprint for fallback mode');
+      
+      // In fallback mode, we'll use a deterministic approach that's compatible
+      // with what the server expects
+      
+      // Use a fixed IV for fingerprint generation
+      const fixedIv = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+      
+      // Use a fixed key derived from the passphrase
+      const encoder = new TextEncoder();
+      const passphraseData = encoder.encode(passphrase);
+      
+      // Create a deterministic hash of the passphrase
+      const hash = CryptoJS.SHA256(CryptoJS.lib.WordArray.create(
+        Array.from(passphraseData).map(byte => byte)
+      ));
+      
+      // Convert hash to bytes for data
+      const hashWords = hash.words;
+      const hashBytes = new Uint8Array(hash.sigBytes);
+      for (let i = 0; i < hashBytes.length; i += 4) {
+        const word = hashWords[i / 4];
+        hashBytes[i] = (word >>> 24) & 0xff;
+        if (i + 1 < hashBytes.length) hashBytes[i + 1] = (word >>> 16) & 0xff;
+        if (i + 2 < hashBytes.length) hashBytes[i + 2] = (word >>> 8) & 0xff;
+        if (i + 3 < hashBytes.length) hashBytes[i + 3] = word & 0xff;
+      }
+      
+      return {
+        iv: Array.from(fixedIv),
+        data: Array.from(hashBytes)
+      };
+    }
+    
+    // Standard Web Crypto API implementation
+    // Derive key from passphrase
+    const key = await deriveKeyFromPassphrase(passphrase);
 
-  // Convert passphrase to bytes
-  const encoder = new TextEncoder();
-  const data = encoder.encode(passphrase);
+    // Convert passphrase to bytes
+    const encoder = new TextEncoder();
+    const data = encoder.encode(passphrase);
 
-  // Encrypt the data
-  const { encryptedData, iv } = await encryptData(key, data, passphrase);
+    // Encrypt the data
+    const { encryptedData, iv } = await encryptData(key, data, passphrase);
 
-  return {
-    iv: Array.from(iv),
-    data: Array.from(new Uint8Array(encryptedData))
-  };
+    return {
+      iv: Array.from(iv),
+      data: Array.from(new Uint8Array(encryptedData))
+    };
+  } catch (error) {
+    console.error('Error generating fingerprint:', error);
+    throw new Error(`Failed to generate fingerprint: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 /**
