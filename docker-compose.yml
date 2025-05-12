@@ -1,0 +1,26 @@
+# Base configuration for ShareThings Docker Compose
+
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=development
+    ports:
+      - "${BACKEND_PORT:-3001}:3001"
+    volumes:
+      - ./server:/app
+      - /app/node_modules
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    depends_on:
+      - backend

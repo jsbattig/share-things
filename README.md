@@ -1,8 +1,8 @@
 # ShareThings
 
-[![Lint](https://github.com/yourusername/share-things/actions/workflows/lint.yml/badge.svg)](https://github.com/yourusername/share-things/actions/workflows/lint.yml)
-[![Build](https://github.com/yourusername/share-things/actions/workflows/build.yml/badge.svg)](https://github.com/yourusername/share-things/actions/workflows/build.yml)
-[![Integration Tests](https://github.com/yourusername/share-things/actions/workflows/integration.yml/badge.svg)](https://github.com/yourusername/share-things/actions/workflows/integration.yml)
+[![Lint](https://github.com/jsbattig/share-things/actions/workflows/lint.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/lint.yml)
+[![Build](https://github.com/jsbattig/share-things/actions/workflows/build.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/build.yml)
+[![Integration Tests](https://github.com/jsbattig/share-things/actions/workflows/integration.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/integration.yml)
 
 A real-time content sharing application with end-to-end encryption.
 
@@ -35,7 +35,7 @@ ShareThings consists of:
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/share-things.git
+git clone https://github.com/jsbattig/share-things.git
 cd share-things
 ```
 
@@ -298,7 +298,7 @@ ShareThings can be deployed using Docker for both development and production env
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/share-things.git
+git clone https://github.com/jsbattig/share-things.git
 cd share-things
 
 # Run the setup script
