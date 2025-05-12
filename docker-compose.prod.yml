@@ -5,11 +5,6 @@ services:
     restart: always
     environment:
       - NODE_ENV=production
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
     logging:
       driver: "json-file"
       options:
@@ -18,11 +13,6 @@ services:
 
   frontend:
     restart: always
-    deploy:
-      resources:
-        limits:
-          cpus: '0.3'
-          memory: 256M
     logging:
       driver: "json-file"
       options:

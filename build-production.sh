@@ -117,11 +117,6 @@ services:
     ports:
       - "\${BACKEND_PORT:-3001}:3001"
     restart: always
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
     logging:
       driver: "json-file"
       options:
@@ -140,11 +135,6 @@ services:
     restart: always
     depends_on:
       - backend
-    deploy:
-      resources:
-        limits:
-          cpus: '0.3'
-          memory: 256M
     logging:
       driver: "json-file"
       options:
