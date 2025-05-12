@@ -309,6 +309,30 @@ chmod +x setup.sh
 
 For detailed Docker deployment instructions, see [Docker Deployment Guide](./plans/docker-deployment-guide.md).
 
+### Remote Server Deployment
+
+ShareThings includes a script for automated deployment to a remote server:
+
+```bash
+# Download the script
+curl -O https://raw.githubusercontent.com/jsbattig/share-things/master/remote-setup.sh
+
+# Make it executable
+chmod +x remote-setup.sh
+
+# Run the script and follow the prompts
+./remote-setup.sh
+```
+
+The script will:
+1. Prompt for server details (IP, username, password/SSH key)
+2. Install all required dependencies on the remote server
+3. Clone the repository and set up the environment
+4. Build the application using the production configuration
+5. Optionally set up systemd services for automatic startup
+
+For more details, see the [Remote Setup Script documentation](./plans/remote-setup-script.md).
+
 ## Continuous Integration and Deployment
 
 ShareThings uses GitHub Actions for continuous integration and deployment:
