@@ -5,16 +5,31 @@
 // Import the webcrypto-shim polyfill
 import 'webcrypto-shim';
 
+// Import CryptoJS for fallback implementation
+import * as CryptoJS from 'crypto-js';
+
+// Flag to track if we're using the fallback implementation
+let usingFallbackCrypto = false;
+
 // Polyfill for browsers that don't support the Web Crypto API
 // This is a fallback mechanism that will be used if the native Web Crypto API is not available
 if (typeof window !== 'undefined' && (!window.crypto || !window.crypto.subtle)) {
-  console.warn('Web Crypto API not detected. Using polyfill...');
+  console.warn('Web Crypto API not detected. Using CryptoJS fallback implementation...');
   // The webcrypto-shim polyfill should have been loaded and applied
   if (!window.crypto || !window.crypto.subtle) {
-    console.error('Polyfill failed to initialize Web Crypto API. Crypto operations will fail.');
+    console.warn('Using CryptoJS fallback for all crypto operations.');
+    usingFallbackCrypto = true;
   } else {
     console.log('Polyfill successfully initialized Web Crypto API.');
   }
+}
+
+// Define interfaces for our fallback implementation
+interface FallbackCryptoKey {
+  _type: 'fallback';
+  key: CryptoJS.lib.WordArray;
+  algorithm: string;
+  usages: string[];
 }
 
 // Check if Web Crypto API is available
@@ -24,9 +39,9 @@ const isWebCryptoAvailable = () => {
          window.crypto.subtle !== undefined;
 };
 
-// Throw a helpful error if Web Crypto API is not available
+// Throw a helpful error if Web Crypto API is not available and fallback is disabled
 const checkWebCryptoSupport = () => {
-  if (!isWebCryptoAvailable()) {
+  if (!isWebCryptoAvailable() && !usingFallbackCrypto) {
     throw new Error(
       'Web Crypto API is not available in this browser or context. ' +
       'This could be because you are using an older browser, ' +
@@ -37,56 +52,200 @@ const checkWebCryptoSupport = () => {
   }
 };
 
+// Fallback implementation of deriveKeyFromPassphrase using CryptoJS
+async function deriveKeyFromPassphraseFallback(passphrase: string): Promise<FallbackCryptoKey> {
+  console.log('Using CryptoJS fallback for key derivation');
+  
+  // Use a fixed salt for deterministic key derivation
+  const salt = CryptoJS.enc.Utf8.parse('ShareThings-Salt-2025');
+  
+  // Derive the key using PBKDF2
+  const key = CryptoJS.PBKDF2(passphrase, salt, {
+    keySize: 256/32, // 256 bits
+    iterations: 100000,
+    hasher: CryptoJS.algo.SHA256
+  });
+  
+  // Return a fallback crypto key object
+  return {
+    _type: 'fallback',
+    key: key,
+    algorithm: 'AES-GCM',
+    usages: ['encrypt', 'decrypt']
+  };
+}
+
 /**
  * Derives an encryption key from a passphrase
  * @param passphrase The passphrase to derive the key from
- * @returns The derived key
+ * @returns The derived key (either native CryptoKey or FallbackCryptoKey)
  */
-export async function deriveKeyFromPassphrase(passphrase: string): Promise<CryptoKey> {
+export async function deriveKeyFromPassphrase(passphrase: string): Promise<CryptoKey | FallbackCryptoKey> {
   try {
-    // Check if Web Crypto API is available
-    checkWebCryptoSupport();
+    // If we're using the fallback implementation, use that directly
+    if (usingFallbackCrypto) {
+      return deriveKeyFromPassphraseFallback(passphrase);
+    }
     
-    // Convert passphrase to bytes
-    const encoder = new TextEncoder();
-    const passphraseData = encoder.encode(passphrase);
+    // Otherwise try to use the Web Crypto API
+    try {
+      // Check if Web Crypto API is available
+      checkWebCryptoSupport();
+      
+      // Convert passphrase to bytes
+      const encoder = new TextEncoder();
+      const passphraseData = encoder.encode(passphrase);
+      
+      console.log('Deriving key from passphrase - about to import key');
+      
+      // Create a key derivation key
+      const baseKey = await window.crypto.subtle.importKey(
+        'raw',
+        passphraseData,
+        { name: 'PBKDF2' },
+        false, // Changed from true to false - KDF keys must not be extractable
+        ['deriveKey']
+      );
     
-    console.log('Deriving key from passphrase - about to import key');
-    
-    // Create a key derivation key
-    const baseKey = await window.crypto.subtle.importKey(
-      'raw',
-      passphraseData,
-      { name: 'PBKDF2' },
-      false, // Changed from true to false - KDF keys must not be extractable
-      ['deriveKey']
-    );
-  
-    console.log('Successfully imported key with extractable=false');
-    
-    // Use a fixed salt for deterministic key derivation
-    // This is safe because the passphrase is the shared secret
-    const salt = encoder.encode('ShareThings-Salt-2025');
-    
-    // Derive the actual encryption key
-    const key = await window.crypto.subtle.deriveKey(
-      {
-        name: 'PBKDF2',
-        salt,
-        iterations: 100000,
-        hash: 'SHA-256'
-      },
-      baseKey,
-      { name: 'AES-GCM', length: 256 },
-      false,
-      ['encrypt', 'decrypt']
-    );
+      console.log('Successfully imported key with extractable=false');
+      
+      // Use a fixed salt for deterministic key derivation
+      // This is safe because the passphrase is the shared secret
+      const salt = encoder.encode('ShareThings-Salt-2025');
+      
+      // Derive the actual encryption key
+      const key = await window.crypto.subtle.deriveKey(
+        {
+          name: 'PBKDF2',
+          salt,
+          iterations: 100000,
+          hash: 'SHA-256'
+        },
+        baseKey,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+      );
 
-    return key;
+      return key;
+    } catch (error) {
+      console.warn('Web Crypto API failed, falling back to CryptoJS implementation:', error);
+      // If Web Crypto API fails, fall back to CryptoJS
+      usingFallbackCrypto = true;
+      return deriveKeyFromPassphraseFallback(passphrase);
+    }
   } catch (error) {
     console.error('Error deriving key from passphrase:', error);
     throw new Error(`Failed to derive key: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+}
+
+/**
+ * Fallback implementation of generateDeterministicIV using CryptoJS
+ */
+async function generateDeterministicIVFallback(passphrase: string, data: ArrayBuffer | Uint8Array): Promise<Uint8Array> {
+  console.log('Using CryptoJS fallback for IV generation');
+  
+  // Convert data to WordArray
+  const dataArray = new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer);
+  const dataWords = [];
+  for (let i = 0; i < dataArray.length; i += 4) {
+    dataWords.push(
+      ((dataArray[i] || 0) << 24) |
+      ((dataArray[i + 1] || 0) << 16) |
+      ((dataArray[i + 2] || 0) << 8) |
+      (dataArray[i + 3] || 0)
+    );
+  }
+  
+  // Create WordArray from data
+  const dataWordArray = CryptoJS.lib.WordArray.create(dataWords, dataArray.length);
+  
+  // Combine passphrase and data
+  const passphraseWordArray = CryptoJS.enc.Utf8.parse(passphrase);
+  const combinedWordArray = CryptoJS.lib.WordArray.create()
+    .concat(passphraseWordArray)
+    .concat(dataWordArray);
+  
+  // Hash the combined data
+  const hash = CryptoJS.SHA256(combinedWordArray);
+  
+  // Convert to Uint8Array and use first 12 bytes as IV
+  const hashWords = hash.words;
+  const hashBytes = new Uint8Array(16);
+  for (let i = 0; i < 4; i++) {
+    const word = hashWords[i];
+    hashBytes[i * 4] = (word >>> 24) & 0xff;
+    hashBytes[i * 4 + 1] = (word >>> 16) & 0xff;
+    hashBytes[i * 4 + 2] = (word >>> 8) & 0xff;
+    hashBytes[i * 4 + 3] = word & 0xff;
+  }
+  
+  return hashBytes.slice(0, 12);
+}
+
+/**
+ * Fallback implementation of encryptData using CryptoJS
+ */
+async function encryptDataFallback(
+  key: FallbackCryptoKey,
+  data: ArrayBuffer | Uint8Array,
+  passphrase: string
+): Promise<{ encryptedData: ArrayBuffer; iv: Uint8Array }> {
+  console.log('Using CryptoJS fallback for encryption');
+  
+  // Generate IV
+  const iv = await generateDeterministicIVFallback(passphrase, data);
+  
+  // Convert data to WordArray
+  const dataArray = new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer);
+  const dataWords = [];
+  for (let i = 0; i < dataArray.length; i += 4) {
+    dataWords.push(
+      ((dataArray[i] || 0) << 24) |
+      ((dataArray[i + 1] || 0) << 16) |
+      ((dataArray[i + 2] || 0) << 8) |
+      (dataArray[i + 3] || 0)
+    );
+  }
+  
+  // Create WordArray from data
+  const dataWordArray = CryptoJS.lib.WordArray.create(dataWords, dataArray.length);
+  
+  // Convert IV to WordArray
+  const ivWords = [];
+  for (let i = 0; i < iv.length; i += 4) {
+    ivWords.push(
+      ((iv[i] || 0) << 24) |
+      ((iv[i + 1] || 0) << 16) |
+      ((iv[i + 2] || 0) << 8) |
+      (iv[i + 3] || 0)
+    );
+  }
+  const ivWordArray = CryptoJS.lib.WordArray.create(ivWords, iv.length);
+  
+  // Encrypt data
+  // Note: CryptoJS doesn't support GCM mode directly, so we use a simpler approach
+  // This is a simplification for the fallback case
+  const encrypted = CryptoJS.AES.encrypt(dataWordArray, key.key, {
+    iv: ivWordArray,
+    padding: CryptoJS.pad.NoPadding
+  });
+  
+  // Convert to ArrayBuffer
+  const ciphertext = encrypted.ciphertext;
+  const encryptedWords = ciphertext.words;
+  const encryptedBytes = new Uint8Array(ciphertext.sigBytes);
+  
+  for (let i = 0; i < encryptedBytes.length; i += 4) {
+    const word = encryptedWords[i / 4];
+    encryptedBytes[i] = (word >>> 24) & 0xff;
+    if (i + 1 < encryptedBytes.length) encryptedBytes[i + 1] = (word >>> 16) & 0xff;
+    if (i + 2 < encryptedBytes.length) encryptedBytes[i + 2] = (word >>> 8) & 0xff;
+    if (i + 3 < encryptedBytes.length) encryptedBytes[i + 3] = word & 0xff;
+  }
+  
+  return { encryptedData: encryptedBytes.buffer, iv };
 }
 
 /**
@@ -96,28 +255,42 @@ export async function deriveKeyFromPassphrase(passphrase: string): Promise<Crypt
  * @returns The encrypted data and IV
  */
 export async function encryptData(
-  key: CryptoKey,
+  key: CryptoKey | FallbackCryptoKey,
   data: ArrayBuffer | Uint8Array,
   passphrase: string
 ): Promise<{ encryptedData: ArrayBuffer; iv: Uint8Array }> {
   try {
-    // Check if Web Crypto API is available
-    checkWebCryptoSupport();
+    // Check if we're using a fallback key
+    if (key && typeof key === 'object' && '_type' in key && key._type === 'fallback') {
+      return encryptDataFallback(key, data, passphrase);
+    }
     
-    // Generate a deterministic IV from the passphrase and data
-    const iv = await generateDeterministicIV(passphrase, data);
+    // Otherwise use the Web Crypto API
+    try {
+      // Check if Web Crypto API is available
+      checkWebCryptoSupport();
+      
+      // Generate a deterministic IV from the passphrase and data
+      const iv = await generateDeterministicIV(passphrase, data);
 
-    // Encrypt the data
-    const encryptedData = await window.crypto.subtle.encrypt(
-      {
-        name: 'AES-GCM',
-        iv
-      },
-      key,
-      data
-    );
-    
-    return { encryptedData, iv };
+      // Encrypt the data
+      const encryptedData = await window.crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv
+        },
+        key as CryptoKey,
+        data
+      );
+      
+      return { encryptedData, iv };
+    } catch (error) {
+      console.warn('Web Crypto API encryption failed, falling back to CryptoJS:', error);
+      // If Web Crypto API fails, fall back to CryptoJS
+      usingFallbackCrypto = true;
+      const fallbackKey = await deriveKeyFromPassphraseFallback(passphrase);
+      return encryptDataFallback(fallbackKey, data, passphrase);
+    }
   } catch (error) {
     console.error('Error encrypting data:', error);
     throw new Error(`Encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -175,6 +348,75 @@ export async function generateFingerprint(passphrase: string): Promise<any> {
 }
 
 /**
+ * Fallback implementation of decryptData using CryptoJS
+ */
+async function decryptDataFallback(
+  key: FallbackCryptoKey,
+  encryptedData: ArrayBuffer | Uint8Array,
+  iv: Uint8Array
+): Promise<ArrayBuffer> {
+  console.log('Using CryptoJS fallback for decryption');
+  
+  // Convert encryptedData to WordArray
+  const encryptedArray = new Uint8Array(encryptedData instanceof ArrayBuffer ? encryptedData : encryptedData.buffer);
+  const encryptedWords = [];
+  for (let i = 0; i < encryptedArray.length; i += 4) {
+    encryptedWords.push(
+      ((encryptedArray[i] || 0) << 24) |
+      ((encryptedArray[i + 1] || 0) << 16) |
+      ((encryptedArray[i + 2] || 0) << 8) |
+      (encryptedArray[i + 3] || 0)
+    );
+  }
+  
+  // Create WordArray from encryptedData
+  const encryptedWordArray = CryptoJS.lib.WordArray.create(encryptedWords, encryptedArray.length);
+  
+  // Convert IV to WordArray
+  const ivWords = [];
+  for (let i = 0; i < iv.length; i += 4) {
+    ivWords.push(
+      ((iv[i] || 0) << 24) |
+      ((iv[i + 1] || 0) << 16) |
+      ((iv[i + 2] || 0) << 8) |
+      (iv[i + 3] || 0)
+    );
+  }
+  const ivWordArray = CryptoJS.lib.WordArray.create(ivWords, iv.length);
+  
+  // Simplify the approach for the fallback
+  // Create a CipherParams object with just the ciphertext
+  const cipherParams = CryptoJS.lib.CipherParams.create({
+    ciphertext: encryptedWordArray
+  });
+  
+  // Decrypt data with simpler options
+  const decrypted = CryptoJS.AES.decrypt(cipherParams, key.key, {
+    iv: ivWordArray,
+    padding: CryptoJS.pad.NoPadding
+  });
+  
+  // Convert to ArrayBuffer
+  const decryptedWords = decrypted.words;
+  const decryptedBytes = new Uint8Array(decrypted.sigBytes);
+  
+  for (let i = 0; i < decryptedBytes.length; i += 4) {
+    const word = decryptedWords[i / 4];
+    decryptedBytes[i] = (word >>> 24) & 0xff;
+    if (i + 1 < decryptedBytes.length) decryptedBytes[i + 1] = (word >>> 16) & 0xff;
+    if (i + 2 < decryptedBytes.length) decryptedBytes[i + 2] = (word >>> 8) & 0xff;
+    if (i + 3 < decryptedBytes.length) decryptedBytes[i + 3] = word & 0xff;
+  }
+  
+  // If decryption succeeded but returned empty data, that's suspicious
+  if (decryptedBytes.length === 0) {
+    throw new Error('Decryption failed: Empty result');
+  }
+  
+  return decryptedBytes.buffer;
+}
+
+/**
  * Decrypts data with a key
  * @param key The decryption key
  * @param encryptedData The encrypted data
@@ -182,30 +424,46 @@ export async function generateFingerprint(passphrase: string): Promise<any> {
  * @returns The decrypted data
  */
 export async function decryptData(
-  key: CryptoKey,
+  key: CryptoKey | FallbackCryptoKey,
   encryptedData: ArrayBuffer | Uint8Array,
   iv: Uint8Array
 ): Promise<ArrayBuffer> {
   try {
-    // Check if Web Crypto API is available
-    checkWebCryptoSupport();
-    
-    // Decrypt the data
-    const decryptedData = await window.crypto.subtle.decrypt(
-      {
-        name: 'AES-GCM',
-        iv
-      },
-      key,
-      encryptedData
-    );
-    
-    // If decryption succeeded but returned empty data, that's suspicious
-    if (decryptedData.byteLength === 0) {
-      throw new Error('Decryption failed: Empty result');
+    // Check if we're using a fallback key
+    if (key && typeof key === 'object' && '_type' in key && key._type === 'fallback') {
+      return decryptDataFallback(key, encryptedData, iv);
     }
     
-    return decryptedData;
+    // Otherwise use the Web Crypto API
+    try {
+      // Check if Web Crypto API is available
+      checkWebCryptoSupport();
+      
+      // Decrypt the data
+      const decryptedData = await window.crypto.subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv
+        },
+        key as CryptoKey,
+        encryptedData
+      );
+      
+      // If decryption succeeded but returned empty data, that's suspicious
+      if (decryptedData.byteLength === 0) {
+        throw new Error('Decryption failed: Empty result');
+      }
+      
+      return decryptedData;
+    } catch (error) {
+      console.warn('Web Crypto API decryption failed:', error);
+      // If we're already using fallback crypto, rethrow the error
+      if (usingFallbackCrypto) {
+        throw error;
+      }
+      // Otherwise, we can't automatically fall back without the original passphrase
+      throw new Error('Web Crypto API decryption failed and cannot automatically fall back. Try refreshing the page.');
+    }
   } catch (error) {
     // Rethrow the error with a more descriptive message
     throw new Error(`Decryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
