@@ -1,4 +1,4 @@
-name: Integration Tests
+name: Dockered Build and Tests
 
 on:
   push:
@@ -27,13 +27,28 @@ jobs:
     - name: Make build-and-test script executable
       run: chmod +x build-and-test.sh
     
-    - name: Build and run tests
-      run: ./build-and-test.sh
+    - name: Debug environment
+      run: |
+        echo "GitHub Actions environment:"
+        echo "Working directory: $(pwd)"
+        ls -la
+        echo "Docker version:"
+        docker --version
+        echo "Docker Compose version:"
+        docker-compose --version || docker compose version
+        echo "Docker info:"
+        docker info
+        echo "Available disk space:"
+        df -h
+    
+    - name: Build and run tests with verbose output
+      run: bash -x ./build-and-test.sh
       env:
         CI: true
+        DOCKER_BUILDKIT: 1
     
     - name: Upload test results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: test-results
