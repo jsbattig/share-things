@@ -112,10 +112,12 @@ services:
     ports:
       - "\${BACKEND_PORT}:3001"
 
+  # Use a simple Node.js container for the frontend instead of a multi-stage build
   frontend:
-    build:
-      context: ./client
-      dockerfile: Dockerfile.test
+    image: node:18-alpine
+    working_dir: /app
+    volumes:
+      - ./client:/app
     environment:
       - VITE_API_URL=http://backend:3001
       - VITE_SOCKET_URL=http://backend:3001
@@ -125,6 +127,7 @@ services:
       - "\${FRONTEND_PORT}:3000"
     depends_on:
       - backend
+    command: sh -c "npm install && npm run preview -- --host 0.0.0.0 --port 3000"
 
   e2e-tests:
     build:
