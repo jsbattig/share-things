@@ -1,5 +1,5 @@
 # Test Dockerfile for ShareThings Client
-FROM node:18-alpine as builder
+FROM node:18-alpine
 
 WORKDIR /app
 
@@ -19,16 +19,6 @@ RUN echo '{"extends": "./tsconfig.json", "compilerOptions": {"noEmit": true, "sk
 
 # Build the application for testing
 RUN npm run build
-
-# Use the same image for the final stage (no need for Nginx in test)
-FROM node:18-alpine
-
-WORKDIR /app
-
-# Copy built files and node_modules from builder stage
-COPY --from=builder /app/dist /app/dist
-COPY --from=builder /app/node_modules /app/node_modules
-COPY --from=builder /app/package.json /app/package.json
 
 # Expose the port
 EXPOSE 3000

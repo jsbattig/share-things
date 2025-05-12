@@ -116,8 +116,15 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile.test
+    environment:
+      - VITE_API_URL=http://backend:3001
+      - VITE_SOCKET_URL=http://backend:3001
+      - VITE_ENABLE_ANALYTICS=false
+      - VITE_ENABLE_LOGGING=true
     ports:
       - "\${FRONTEND_PORT}:3000"
+    depends_on:
+      - backend
 
   e2e-tests:
     build:
@@ -127,7 +134,7 @@ services:
       - frontend
       - backend
     environment:
-      - FRONTEND_URL=http://frontend
+      - FRONTEND_URL=http://frontend:3000
       - BACKEND_URL=http://backend:3001
     volumes:
       - ./test:/app/test
