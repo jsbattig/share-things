@@ -4,6 +4,7 @@
   "description": "Client for ShareThings real-time content sharing application",
   "type": "module",
   "scripts": {
+    "predev": "node set-backend-url.js",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
@@ -11,7 +12,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint . --ext .ts,.tsx",
-    "format": "prettier --write 'src/**/*.{ts,tsx,css}'"
+    "format": "prettier --write 'src/**/*.{ts,tsx,css}'",
+    "set-backend-url": "node set-backend-url.js"
   },
   "dependencies": {
     "@chakra-ui/react": "^2.5.5",

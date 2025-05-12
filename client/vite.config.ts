@@ -1,38 +1,68 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import viteTsconfigPaths from 'vite-tsconfig-paths';
 import svgrPlugin from 'vite-plugin-svgr';
 import path from 'path';
+import fs from 'fs';
+
+// Function to load backend URL from .env.backend file
+function loadBackendUrl() {
+  try {
+    // Try to read the .env.backend file
+    const envPath = path.resolve(__dirname, '.env.backend');
+    if (fs.existsSync(envPath)) {
+      const content = fs.readFileSync(envPath, 'utf8');
+      const match = content.match(/BACKEND_URL=(.+)/);
+      if (match && match[1]) {
+        console.log(`Loaded backend URL from .env.backend: ${match[1]}`);
+        return match[1];
+      }
+    }
+  } catch (error) {
+    console.error('Error loading backend URL:', error);
+  }
+  
+  // Default fallback
+  return 'http://localhost:3001';
+}
+
+// Get the backend URL
+const backendUrl = loadBackendUrl();
 
 // https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [
-    react(),
-    viteTsconfigPaths(),
-    svgrPlugin(),
-  ],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
-    },
-  },
-  server: {
-    port: 3000,
-    host: '0.0.0.0', // Bind to all network interfaces
-    open: false,
-    proxy: {
-      '/socket.io': {
-        target: 'http://localhost:3001',
-        ws: true,
-      },
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
+export default defineConfig(({ mode }) => {
+  // Load env variables
+  const env = loadEnv(mode, process.cwd(), '');
+  
+  return {
+    plugins: [
+      react(),
+      viteTsconfigPaths(),
+      svgrPlugin(),
+    ],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
       },
     },
-  },
-  build: {
-    outDir: 'dist',
-    sourcemap: true,
-  },
+    server: {
+      port: 3000,
+      host: '0.0.0.0', // Bind to all network interfaces
+      open: false,
+      proxy: {
+        '/socket.io': {
+          target: backendUrl,
+          ws: true,
+        },
+        '/api': {
+          target: backendUrl,
+          changeOrigin: true,
+        },
+      },
+    },
+    build: {
+      outDir: 'dist',
+      sourcemap: true,
+    },
+  };
 });
