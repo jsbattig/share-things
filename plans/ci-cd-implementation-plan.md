@@ -231,7 +231,7 @@ We'll create three GitHub Actions workflows:
 
 1. **Lint**: Runs linting checks on the codebase
 2. **Build**: Builds the application and runs unit tests
-3. **Integration**: Runs functional and end-to-end tests
+3. **Dockered Build and Tests**: Runs tests in Docker containers
 
 ### Workflow Files
 
@@ -318,7 +318,7 @@ jobs:
 #### 3. Integration Workflow (.github/workflows/integration.yml)
 
 ```yaml
-name: Integration Tests
+name: Dockered Build and Tests
 
 on:
   push:

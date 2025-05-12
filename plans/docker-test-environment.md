@@ -173,7 +173,7 @@ The `build-and-test.sh` script automates running all tests:
 To use this Docker test environment in GitHub Actions:
 
 ```yaml
-name: Integration Tests
+name: Dockered Build and Tests
 
 on:
   push:

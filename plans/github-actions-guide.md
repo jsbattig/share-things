@@ -38,7 +38,7 @@ Create the three workflow files in the `.github/workflows` directory:
 
 - `lint.yml`: For linting checks
 - `build.yml`: For building and unit testing
-- `integration.yml`: For integration and end-to-end testing
+- `integration.yml`: For dockerized build and testing
 
 The content of these files is provided in the [CI/CD Implementation Plan](./ci-cd-implementation-plan.md).
 
@@ -93,9 +93,9 @@ The `build.yml` workflow builds the application and runs unit tests. It:
 
 This workflow helps catch build errors and unit test failures early.
 
-### Integration Workflow
+### Dockered Build and Tests Workflow
 
-The `integration.yml` workflow runs integration and end-to-end tests using Docker. It:
+The `integration.yml` workflow runs tests in Docker containers. It:
 
 1. Checks out the repository
 2. Sets up Docker Buildx
