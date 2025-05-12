@@ -232,17 +232,69 @@ check_sshpass() {
     fi
 }
 
+# Function to detect Linux distribution
+detect_linux_distribution() {
+    log_message "INFO" "Detecting Linux distribution..."
+    
+    # Check for common distribution identifiers
+    if $SSH_CMD "[ -f /etc/os-release ]" >> $LOG_FILE 2>&1; then
+        DISTRO=$($SSH_CMD "source /etc/os-release && echo \$ID" 2>> $LOG_FILE)
+        log_message "INFO" "Detected distribution: $DISTRO"
+    else
+        # Try to detect using other methods
+        if $SSH_CMD "command -v apt-get" >> $LOG_FILE 2>&1; then
+            DISTRO="debian"
+            log_message "INFO" "Detected Debian-based distribution"
+        elif $SSH_CMD "command -v dnf" >> $LOG_FILE 2>&1; then
+            DISTRO="fedora"
+            log_message "INFO" "Detected Fedora-based distribution"
+        elif $SSH_CMD "command -v yum" >> $LOG_FILE 2>&1; then
+            DISTRO="rhel"
+            log_message "INFO" "Detected RHEL-based distribution"
+        else
+            DISTRO="unknown"
+            log_message "WARNING" "Could not detect distribution, assuming Debian-based"
+        fi
+    fi
+}
+
 # Function to install system dependencies on remote server
 install_system_dependencies() {
     log_message "INFO" "Installing system dependencies..."
     
-    # Update package lists
-    $SSH_CMD "sudo apt-get update" >> $LOG_FILE 2>&1
-    check_command "Update package lists"
+    # Detect Linux distribution
+    detect_linux_distribution
     
-    # Install essential packages
-    $SSH_CMD "sudo apt-get install -y curl git build-essential apt-transport-https ca-certificates gnupg lsb-release" >> $LOG_FILE 2>&1
-    check_command "Install essential packages"
+    # Install packages based on distribution
+    case $DISTRO in
+        "debian"|"ubuntu")
+            # Update package lists
+            $SSH_CMD "sudo apt-get update" >> $LOG_FILE 2>&1
+            check_command "Update package lists"
+            
+            # Install essential packages
+            $SSH_CMD "sudo apt-get install -y curl git build-essential apt-transport-https ca-certificates gnupg lsb-release" >> $LOG_FILE 2>&1
+            check_command "Install essential packages"
+            ;;
+            
+        "fedora"|"rhel"|"centos"|"rocky"|"almalinux")
+            # Update package lists
+            $SSH_CMD "sudo dnf check-update || true" >> $LOG_FILE 2>&1
+            
+            # Install essential packages
+            $SSH_CMD "sudo dnf install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+            check_command "Install essential packages"
+            ;;
+            
+        *)
+            # Try yum as fallback for unknown distributions
+            $SSH_CMD "sudo yum check-update || true" >> $LOG_FILE 2>&1
+            
+            # Install essential packages
+            $SSH_CMD "sudo yum install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+            check_command "Install essential packages"
+            ;;
+    esac
     
     log_message "SUCCESS" "System dependencies installed"
 }
@@ -257,12 +309,33 @@ install_nodejs() {
     if [ $NODE_INSTALLED -eq 0 ]; then
         log_message "INFO" "Node.js $DEFAULT_NODE_VERSION is already installed"
     else
-        # Install Node.js
-        $SSH_CMD "curl -fsSL https://deb.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo -E bash -" >> $LOG_FILE 2>&1
-        check_command "Add Node.js repository"
-        
-        $SSH_CMD "sudo apt-get install -y nodejs" >> $LOG_FILE 2>&1
-        check_command "Install Node.js"
+        # Install Node.js based on distribution
+        case $DISTRO in
+            "debian"|"ubuntu")
+                $SSH_CMD "curl -fsSL https://deb.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo -E bash -" >> $LOG_FILE 2>&1
+                check_command "Add Node.js repository"
+                
+                $SSH_CMD "sudo apt-get install -y nodejs" >> $LOG_FILE 2>&1
+                check_command "Install Node.js"
+                ;;
+                
+            "fedora"|"rhel"|"centos"|"rocky"|"almalinux")
+                $SSH_CMD "curl -fsSL https://rpm.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo -E bash -" >> $LOG_FILE 2>&1
+                check_command "Add Node.js repository"
+                
+                $SSH_CMD "sudo dnf install -y nodejs" >> $LOG_FILE 2>&1
+                check_command "Install Node.js"
+                ;;
+                
+            *)
+                # Try yum as fallback for unknown distributions
+                $SSH_CMD "curl -fsSL https://rpm.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo -E bash -" >> $LOG_FILE 2>&1
+                check_command "Add Node.js repository"
+                
+                $SSH_CMD "sudo yum install -y nodejs" >> $LOG_FILE 2>&1
+                check_command "Install Node.js"
+                ;;
+        esac
         
         # Verify installation
         $SSH_CMD "node --version" >> $LOG_FILE 2>&1
@@ -485,10 +558,15 @@ main() {
     generate_ssh_command
     
     # Add debugging for SSH connection
-    echo "Attempting to connect with command: ${SSH_CMD//$SSH_PASS/REDACTED}"
+    echo "Attempting to connect with command: ${SSH_CMD//$SSH_PASS_ESCAPED/REDACTED}"
     
     # Test SSH connection
     test_ssh_connection
+    
+    # Get remote system info
+    log_message "INFO" "Getting remote system information..."
+    REMOTE_OS=$($SSH_CMD "cat /etc/os-release | grep PRETTY_NAME" 2>> $LOG_FILE)
+    log_message "INFO" "Remote system: $REMOTE_OS"
     
     # Install dependencies
     install_system_dependencies
