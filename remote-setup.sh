@@ -91,6 +91,10 @@ collect_server_details() {
             read -s -p "Enter SSH password: " SSH_PASS
             echo
         done
+        
+        # Escape special characters in password
+        SSH_PASS_ESCAPED=$(printf '%q' "$SSH_PASS")
+        log_message "INFO" "Password received and escaped for special characters"
         USE_KEY=false
     else
         # Get SSH key path
@@ -132,7 +136,8 @@ generate_ssh_command() {
         SSH_CMD="ssh -i $SSH_KEY -o StrictHostKeyChecking=no $SSH_USER@$SERVER_IP"
     else
         # Using sshpass for password authentication
-        SSH_CMD="sshpass -p '$SSH_PASS' ssh -o StrictHostKeyChecking=no $SSH_USER@$SERVER_IP"
+        # Use printf to properly handle special characters
+        SSH_CMD="sshpass -p \"$SSH_PASS_ESCAPED\" ssh -o StrictHostKeyChecking=no $SSH_USER@$SERVER_IP"
     fi
 }
 
@@ -143,11 +148,60 @@ test_ssh_connection() {
     if [[ "$USE_KEY" == true ]]; then
         ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 "$SSH_USER@$SERVER_IP" echo "SSH connection successful" >> $LOG_FILE 2>&1
     else
-        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=5 "$SSH_USER@$SERVER_IP" echo "SSH connection successful" >> $LOG_FILE 2>&1
+        # Try with sshpass
+        sshpass -p "$SSH_PASS_ESCAPED" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 "$SSH_USER@$SERVER_IP" echo "SSH connection successful" >> $LOG_FILE 2>&1
+        
+        # If that fails, try with expect as a fallback
+        if [ $? -ne 0 ]; then
+            log_message "WARNING" "sshpass method failed, trying alternative method..."
+            
+            # Check if expect is installed
+            if ! command -v expect &> /dev/null; then
+                log_message "WARNING" "expect is not installed. Installing..."
+                
+                if command -v apt-get &> /dev/null; then
+                    sudo apt-get update >> $LOG_FILE 2>&1
+                    sudo apt-get install -y expect >> $LOG_FILE 2>&1
+                elif command -v yum &> /dev/null; then
+                    sudo yum install -y expect >> $LOG_FILE 2>&1
+                elif command -v brew &> /dev/null; then
+                    brew install expect >> $LOG_FILE 2>&1
+                else
+                    log_message "ERROR" "Could not install expect. Please install it manually."
+                    exit 1
+                fi
+            fi
+            
+            # Create a temporary expect script
+            cat > /tmp/ssh_expect.sh << EOL
+#!/usr/bin/expect -f
+set timeout 10
+spawn ssh -o StrictHostKeyChecking=no $SSH_USER@$SERVER_IP echo "SSH connection successful"
+expect "password:"
+send "$SSH_PASS\r"
+expect eof
+EOL
+            chmod +x /tmp/ssh_expect.sh
+            /tmp/ssh_expect.sh >> $LOG_FILE 2>&1
+            EXPECT_EXIT_CODE=$?
+            rm -f /tmp/ssh_expect.sh
+            
+            if [ $EXPECT_EXIT_CODE -ne 0 ]; then
+                # Try one more method - using sshpass with different options
+                log_message "WARNING" "expect method failed, trying one more method..."
+                echo "$SSH_PASS_ESCAPED" | sshpass -p - ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" echo "SSH connection successful" >> $LOG_FILE 2>&1
+                
+                if [ $? -ne 0 ]; then
+                    log_message "ERROR" "Failed to connect to $SERVER_IP"
+                    log_message "ERROR" "Please check your credentials and try again"
+                    exit 1
+                fi
+            fi
+        fi
     fi
     
     if [ $? -ne 0 ]; then
-        log_message "ERROR" "Failed to connect to $SERVER_IP"
+        log_message "ERROR" "All SSH connection methods failed"
         log_message "ERROR" "Please check your credentials and try again"
         exit 1
     fi
@@ -416,17 +470,22 @@ main() {
     echo "This script will set up ShareThings on a remote server."
     echo
     
-    # Check for sshpass
-    check_sshpass
-    
     # Collect server details
     collect_server_details
+    
+    # Check for sshpass if needed
+    if [[ "$USE_KEY" == false ]]; then
+        check_sshpass
+    fi
     
     # Collect repository details
     collect_repository_details
     
     # Generate SSH command
     generate_ssh_command
+    
+    # Add debugging for SSH connection
+    echo "Attempting to connect with command: ${SSH_CMD//$SSH_PASS/REDACTED}"
     
     # Test SSH connection
     test_ssh_connection
