@@ -153,6 +153,9 @@ check_sshpass() {
 run_remote_command() {
     local command=$1
     local description=$2
+    local allow_fail=${3:-false}
+    
+    log_message "INFO" "Running command: $command"
     
     if [[ "$USE_KEY" == true ]]; then
         ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "$command" >> $LOG_FILE 2>&1
@@ -160,13 +163,47 @@ run_remote_command() {
         sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "$command" >> $LOG_FILE 2>&1
     fi
     
-    if [ $? -ne 0 ]; then
-        log_message "ERROR" "Failed to execute: $description"
-        log_message "ERROR" "Command: $command"
-        exit 1
+    local exit_code=$?
+    if [ $exit_code -ne 0 ]; then
+        if [[ "$allow_fail" == "true" ]]; then
+            log_message "WARNING" "Command failed but continuing: $description (exit code: $exit_code)"
+            return $exit_code
+        else
+            log_message "ERROR" "Failed to execute: $description (exit code: $exit_code)"
+            log_message "ERROR" "Command: $command"
+            exit 1
+        fi
     else
         log_message "SUCCESS" "Executed: $description"
+        return 0
     fi
+}
+
+# Function to run a command with debug output
+run_debug_command() {
+    local command=$1
+    local description=$2
+    
+    log_message "INFO" "Running debug command: $command"
+    
+    if [[ "$USE_KEY" == true ]]; then
+        output=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "$command" 2>&1)
+    else
+        output=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "$command" 2>&1)
+    fi
+    
+    local exit_code=$?
+    log_message "INFO" "Command output: $output"
+    log_message "INFO" "Exit code: $exit_code"
+    
+    if [ $exit_code -ne 0 ]; then
+        log_message "WARNING" "Debug command failed: $description"
+    else
+        log_message "INFO" "Debug command succeeded: $description"
+    fi
+    
+    echo "$output"
+    return $exit_code
 }
 
 # Function to test SSH connection
@@ -211,28 +248,120 @@ detect_rocky_linux() {
 install_system_dependencies() {
     log_message "INFO" "Installing system dependencies..."
     
+    # Get system information for debugging
+    if [[ "$USE_KEY" == true ]]; then
+        OS_INFO=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cat /etc/os-release" 2>> $LOG_FILE)
+    else
+        OS_INFO=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "cat /etc/os-release" 2>> $LOG_FILE)
+    fi
+    log_message "INFO" "OS Info: $OS_INFO"
+    
+    if [[ "$USE_KEY" == true ]]; then
+        UNAME_INFO=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "uname -a" 2>> $LOG_FILE)
+    else
+        UNAME_INFO=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "uname -a" 2>> $LOG_FILE)
+    fi
+    log_message "INFO" "Kernel Info: $UNAME_INFO"
+    
     if [[ "$IS_ROCKY" == true ]]; then
-        # Rocky Linux - use dnf
-        run_remote_command "sudo dnf check-update || true" "Check for updates"
-        run_remote_command "sudo dnf install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" "Install essential packages"
+        # Rocky Linux - try multiple approaches
+        log_message "INFO" "Using multiple approaches for Rocky Linux"
+        
+        # Try installing just git first as a test
+        if [[ "$USE_KEY" == true ]]; then
+            ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo dnf install -y git" >> $LOG_FILE 2>&1
+        else
+            sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo dnf install -y git" >> $LOG_FILE 2>&1
+        fi
+        
+        if [ $? -eq 0 ]; then
+            log_message "SUCCESS" "Git installed successfully, proceeding with other packages"
+            
+            # Install remaining packages one by one
+            for pkg in curl make gcc gcc-c++ openssl-devel ca-certificates gnupg; do
+                log_message "INFO" "Installing $pkg..."
+                if [[ "$USE_KEY" == true ]]; then
+                    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo dnf install -y $pkg" >> $LOG_FILE 2>&1
+                else
+                    sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo dnf install -y $pkg" >> $LOG_FILE 2>&1
+                fi
+                
+                if [ $? -eq 0 ]; then
+                    log_message "SUCCESS" "Installed $pkg"
+                else
+                    log_message "WARNING" "Failed to install $pkg, but continuing"
+                fi
+            done
+        else
+            log_message "WARNING" "Failed to install git with dnf, trying yum"
+            
+            # Try with yum instead
+            if [[ "$USE_KEY" == true ]]; then
+                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo yum install -y git curl make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+            else
+                sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo yum install -y git curl make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+            fi
+            
+            if [ $? -eq 0 ]; then
+                log_message "SUCCESS" "Packages installed with yum"
+            else
+                log_message "WARNING" "Failed to install packages with yum, but continuing"
+            fi
+        fi
     else
         # Try to detect package manager
-        if run_remote_command "command -v apt-get" "Check for apt-get" &> /dev/null; then
-            run_remote_command "sudo apt-get update" "Update package lists"
-            run_remote_command "sudo apt-get install -y curl git build-essential apt-transport-https ca-certificates gnupg lsb-release" "Install essential packages"
-        elif run_remote_command "command -v dnf" "Check for dnf" &> /dev/null; then
-            run_remote_command "sudo dnf check-update || true" "Check for updates"
-            run_remote_command "sudo dnf install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" "Install essential packages"
-        elif run_remote_command "command -v yum" "Check for yum" &> /dev/null; then
-            run_remote_command "sudo yum check-update || true" "Check for updates"
-            run_remote_command "sudo yum install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" "Install essential packages"
+        if [[ "$USE_KEY" == true ]]; then
+            HAS_APT=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "command -v apt-get" 2>/dev/null)
         else
-            log_message "ERROR" "Could not detect package manager"
-            exit 1
+            HAS_APT=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "command -v apt-get" 2>/dev/null)
+        fi
+        
+        if [[ -n "$HAS_APT" ]]; then
+            log_message "INFO" "Using apt-get"
+            if [[ "$USE_KEY" == true ]]; then
+                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo apt-get update && sudo apt-get install -y curl git build-essential apt-transport-https ca-certificates gnupg lsb-release" >> $LOG_FILE 2>&1
+            else
+                sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo apt-get update && sudo apt-get install -y curl git build-essential apt-transport-https ca-certificates gnupg lsb-release" >> $LOG_FILE 2>&1
+            fi
+        else
+            if [[ "$USE_KEY" == true ]]; then
+                HAS_DNF=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "command -v dnf" 2>/dev/null)
+            else
+                HAS_DNF=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "command -v dnf" 2>/dev/null)
+            fi
+            
+            if [[ -n "$HAS_DNF" ]]; then
+                log_message "INFO" "Using dnf"
+                if [[ "$USE_KEY" == true ]]; then
+                    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo dnf install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+                else
+                    sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo dnf install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+                fi
+            else
+                log_message "INFO" "Using yum"
+                if [[ "$USE_KEY" == true ]]; then
+                    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo yum install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+                else
+                    sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo yum install -y curl git make gcc gcc-c++ openssl-devel ca-certificates gnupg" >> $LOG_FILE 2>&1
+                fi
+            fi
         fi
     fi
     
-    log_message "SUCCESS" "System dependencies installed"
+    # Check if git was installed
+    if [[ "$USE_KEY" == true ]]; then
+        GIT_CHECK=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "command -v git" 2>/dev/null)
+    else
+        GIT_CHECK=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "command -v git" 2>/dev/null)
+    fi
+    
+    if [[ -n "$GIT_CHECK" ]]; then
+        log_message "SUCCESS" "Git is available, continuing with setup"
+    else
+        log_message "WARNING" "Git may not be installed, but continuing anyway"
+    fi
+    
+    log_message "INFO" "System dependencies installation attempted"
 }
 
 # Function to install Node.js on remote server
@@ -240,37 +369,113 @@ install_nodejs() {
     log_message "INFO" "Installing Node.js $DEFAULT_NODE_VERSION..."
     
     # Check if Node.js is already installed
-    NODE_VERSION=$(run_remote_command "command -v node && node --version || echo 'not_installed'" "Check Node.js version")
+    if [[ "$USE_KEY" == true ]]; then
+        NODE_VERSION=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "command -v node && node --version || echo 'not_installed'" 2>/dev/null)
+    else
+        NODE_VERSION=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "command -v node && node --version || echo 'not_installed'" 2>/dev/null)
+    fi
     
     if [[ "$NODE_VERSION" == *"v$DEFAULT_NODE_VERSION"* ]]; then
         log_message "INFO" "Node.js $DEFAULT_NODE_VERSION is already installed"
     else
+        log_message "INFO" "Installing Node.js $DEFAULT_NODE_VERSION..."
+        
         if [[ "$IS_ROCKY" == true ]]; then
-            # Rocky Linux - use dnf
-            run_remote_command "curl -fsSL https://rpm.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo bash -" "Add Node.js repository"
-            run_remote_command "sudo dnf install -y nodejs" "Install Node.js"
+            # Rocky Linux - try multiple approaches
+            log_message "INFO" "Setting up Node.js repository for Rocky Linux"
+            
+            # First try: Use curl to download the setup script and pipe to bash
+            if [[ "$USE_KEY" == true ]]; then
+                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "curl -fsSL https://rpm.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo bash -" >> $LOG_FILE 2>&1
+            else
+                sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "curl -fsSL https://rpm.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo bash -" >> $LOG_FILE 2>&1
+            fi
+            
+            # Try installing with dnf
+            log_message "INFO" "Installing Node.js with dnf"
+            if [[ "$USE_KEY" == true ]]; then
+                ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo dnf install -y nodejs" >> $LOG_FILE 2>&1
+            else
+                sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo dnf install -y nodejs" >> $LOG_FILE 2>&1
+            fi
+            
+            # Check if installation succeeded
+            if [[ "$USE_KEY" == true ]]; then
+                NODE_CHECK=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "command -v node" 2>/dev/null)
+            else
+                NODE_CHECK=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "command -v node" 2>/dev/null)
+            fi
+            
+            if [[ -z "$NODE_CHECK" ]]; then
+                # Try with yum if dnf failed
+                log_message "WARNING" "Node.js installation with dnf failed, trying with yum"
+                if [[ "$USE_KEY" == true ]]; then
+                    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo yum install -y nodejs" >> $LOG_FILE 2>&1
+                else
+                    sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo yum install -y nodejs" >> $LOG_FILE 2>&1
+                fi
+            fi
         else
             # Try to detect package manager
-            if run_remote_command "command -v apt-get" "Check for apt-get" &> /dev/null; then
-                run_remote_command "curl -fsSL https://deb.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo bash -" "Add Node.js repository"
-                run_remote_command "sudo apt-get install -y nodejs" "Install Node.js"
-            elif run_remote_command "command -v dnf" "Check for dnf" &> /dev/null; then
-                run_remote_command "curl -fsSL https://rpm.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo bash -" "Add Node.js repository"
-                run_remote_command "sudo dnf install -y nodejs" "Install Node.js"
-            elif run_remote_command "command -v yum" "Check for yum" &> /dev/null; then
-                run_remote_command "curl -fsSL https://rpm.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo bash -" "Add Node.js repository"
-                run_remote_command "sudo yum install -y nodejs" "Install Node.js"
+            if [[ "$USE_KEY" == true ]]; then
+                HAS_APT=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "command -v apt-get" 2>/dev/null)
             else
-                log_message "ERROR" "Could not detect package manager"
-                exit 1
+                HAS_APT=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "command -v apt-get" 2>/dev/null)
+            fi
+            
+            if [[ -n "$HAS_APT" ]]; then
+                log_message "INFO" "Using apt-get for Node.js installation"
+                if [[ "$USE_KEY" == true ]]; then
+                    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "curl -fsSL https://deb.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo bash -" >> $LOG_FILE 2>&1
+                    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo apt-get install -y nodejs" >> $LOG_FILE 2>&1
+                else
+                    sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "curl -fsSL https://deb.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo bash -" >> $LOG_FILE 2>&1
+                    sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo apt-get install -y nodejs" >> $LOG_FILE 2>&1
+                fi
+            else
+                if [[ "$USE_KEY" == true ]]; then
+                    HAS_DNF=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "command -v dnf" 2>/dev/null)
+                else
+                    HAS_DNF=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "command -v dnf" 2>/dev/null)
+                fi
+                
+                if [[ -n "$HAS_DNF" ]]; then
+                    log_message "INFO" "Using dnf for Node.js installation"
+                    if [[ "$USE_KEY" == true ]]; then
+                        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "curl -fsSL https://rpm.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo bash -" >> $LOG_FILE 2>&1
+                        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo dnf install -y nodejs" >> $LOG_FILE 2>&1
+                    else
+                        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "curl -fsSL https://rpm.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo bash -" >> $LOG_FILE 2>&1
+                        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo dnf install -y nodejs" >> $LOG_FILE 2>&1
+                    fi
+                else
+                    log_message "INFO" "Using yum for Node.js installation"
+                    if [[ "$USE_KEY" == true ]]; then
+                        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "curl -fsSL https://rpm.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo bash -" >> $LOG_FILE 2>&1
+                        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo yum install -y nodejs" >> $LOG_FILE 2>&1
+                    else
+                        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "curl -fsSL https://rpm.nodesource.com/setup_$DEFAULT_NODE_VERSION.x | sudo bash -" >> $LOG_FILE 2>&1
+                        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "sudo yum install -y nodejs" >> $LOG_FILE 2>&1
+                    fi
+                fi
             fi
         fi
         
         # Verify installation
-        run_remote_command "node --version" "Verify Node.js installation"
+        if [[ "$USE_KEY" == true ]]; then
+            NODE_VERSION=$(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "node --version" 2>/dev/null)
+        else
+            NODE_VERSION=$(sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no "$SSH_USER@$SERVER_IP" "node --version" 2>/dev/null)
+        fi
+        
+        if [[ -n "$NODE_VERSION" ]]; then
+            log_message "SUCCESS" "Node.js $NODE_VERSION installed successfully"
+        else
+            log_message "WARNING" "Node.js installation may have failed, but continuing"
+        fi
     fi
     
-    log_message "SUCCESS" "Node.js installed"
+    log_message "INFO" "Node.js installation attempted"
 }
 
 # Function to install Docker on remote server
