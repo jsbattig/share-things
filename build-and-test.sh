@@ -31,12 +31,19 @@ if ! command -v docker &> /dev/null; then
     exit 1
 fi
 
-# Check if Docker Compose is installed
-if ! command -v docker-compose &> /dev/null; then
+# Check if Docker Compose is installed (either standalone or as part of Docker CLI)
+DOCKER_COMPOSE_CMD=""
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE_CMD="docker-compose"
+elif docker compose version &> /dev/null; then
+    DOCKER_COMPOSE_CMD="docker compose"
+else
     echo -e "${RED}Error: Docker Compose is not installed.${NC}"
     echo "Please install Docker Compose before running this script."
     exit 1
 fi
+
+echo -e "${GREEN}Using Docker Compose command: ${DOCKER_COMPOSE_CMD}${NC}"
 
 # Check if Docker daemon is running
 if ! docker info &> /dev/null; then
@@ -156,12 +163,12 @@ echo -e "${GREEN}E2E test Dockerfile created.${NC}"
 
 # Clean up any existing containers
 echo -e "${YELLOW}Cleaning up existing containers...${NC}"
-docker-compose down
+$DOCKER_COMPOSE_CMD down
 echo -e "${GREEN}Cleanup complete.${NC}"
 
 # Build the containers
 echo -e "${YELLOW}Building containers...${NC}"
-docker-compose build
+$DOCKER_COMPOSE_CMD build
 BUILD_EXIT_CODE=$?
 
 if [ $BUILD_EXIT_CODE -ne 0 ]; then
@@ -176,8 +183,8 @@ mkdir -p test-results
 
 # Run server unit tests
 echo -e "${YELLOW}Running server unit tests...${NC}"
-docker-compose -f docker-compose.test.yml build backend
-docker-compose -f docker-compose.test.yml run --rm backend npm test
+$DOCKER_COMPOSE_CMD -f docker-compose.test.yml build backend
+$DOCKER_COMPOSE_CMD -f docker-compose.test.yml run --rm backend npm test
 SERVER_TEST_EXIT_CODE=$?
 
 if [ $SERVER_TEST_EXIT_CODE -eq 0 ]; then
@@ -201,7 +208,7 @@ FUNCTIONAL_TEST_EXIT_CODE=0
 # Run end-to-end tests if they exist
 if [ -d "test/e2e/browser/tests" ]; then
     echo -e "${YELLOW}Running end-to-end tests...${NC}"
-    docker-compose -f docker-compose.test.yml up --build e2e-tests
+    $DOCKER_COMPOSE_CMD -f docker-compose.test.yml up --build e2e-tests
     E2E_TEST_EXIT_CODE=$?
 
     if [ $E2E_TEST_EXIT_CODE -eq 0 ]; then
@@ -216,7 +223,7 @@ fi
 
 # Clean up
 echo -e "${YELLOW}Cleaning up containers...${NC}"
-docker-compose -f docker-compose.test.yml down
+$DOCKER_COMPOSE_CMD -f docker-compose.test.yml down
 echo -e "${GREEN}Cleanup complete.${NC}"
 
 # Report results
