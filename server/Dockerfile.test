@@ -6,6 +6,10 @@ WORKDIR /app
 # Set environment variables
 ENV NODE_ENV=test
 
+# Set default port
+ARG PORT=3001
+ENV PORT=${PORT}
+
 # Copy package files and install all dependencies (including dev dependencies)
 COPY package*.json ./
 RUN npm install
@@ -14,7 +18,7 @@ RUN npm install
 COPY . .
 
 # Expose the port
-EXPOSE 3001
+EXPOSE ${PORT}
 
 # Default command (can be overridden)
 CMD ["npm", "test"]

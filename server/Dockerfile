@@ -25,6 +25,10 @@ RUN npm install --only=production
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
 
+# Set default port
+ARG PORT=3001
+ENV PORT=${PORT}
+
 # Create health check endpoint
 RUN echo 'const http = require("http"); \
     const server = http.createServer((req, res) => { \
@@ -36,10 +40,12 @@ RUN echo 'const http = require("http"); \
         res.end(); \
       } \
     }); \
-    server.listen(3001);' > /app/health.js
+    const port = process.env.PORT || 3001; \
+    server.listen(port); \
+    console.log(`Health check server listening on port ${port}`);' > /app/health.js
 
 # Expose the port
-EXPOSE 3001
+EXPOSE ${PORT}
 
 # Start the server
 CMD ["node", "dist/index.js"]

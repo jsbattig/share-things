@@ -5,10 +5,13 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+      args:
+        - PORT=${API_PORT:-3001}
     container_name: share-things-backend  # Explicit container name
     hostname: backend  # Explicit hostname
     environment:
       - NODE_ENV=development
+      - PORT=${API_PORT:-3001}
     ports:
       - "${BACKEND_PORT:-3001}:${API_PORT:-3001}"
     volumes:

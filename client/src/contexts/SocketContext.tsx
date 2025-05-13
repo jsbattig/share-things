@@ -48,13 +48,9 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const currentUrl = new URL(window.location.href);
         
         // Determine the appropriate port based on environment variables or fallback to default
-        let port = '3001'; // Default API port
-        
-        // Always check for environment variable first, regardless of current URL port
-        if (import.meta.env.VITE_API_PORT) {
-          console.log(`[Socket] Using configured API port from env: ${import.meta.env.VITE_API_PORT}`);
-          port = import.meta.env.VITE_API_PORT;
-        }
+        // Use the VITE_API_PORT environment variable with a default value of '3001'
+        const port = import.meta.env.VITE_API_PORT || '3001';
+        console.log(`[Socket] Using API port: ${port}`);
         // IMPORTANT: Do NOT use the current URL's port as a fallback
         // The frontend and backend are on different ports (15000 vs 15001)
         

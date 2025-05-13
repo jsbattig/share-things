@@ -381,8 +381,12 @@ services:
     hostname: backend
     environment:
       - NODE_ENV=production
+      - PORT=${API_PORT:-3001}
     ports:
       - "\${BACKEND_PORT:-3001}:${API_PORT:-3001}"
+    build:
+      args:
+        - PORT=${API_PORT:-3001}
     restart: always
     networks:
       app_network:
