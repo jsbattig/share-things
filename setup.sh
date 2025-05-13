@@ -396,14 +396,14 @@ services:
       context: ./server
       dockerfile: Dockerfile
       args:
-        - PORT=${API_PORT:-3001}
+        - PORT=${API_PORT:-15001}
     container_name: share-things-backend
     hostname: backend
     environment:
       - NODE_ENV=production
-      - PORT=${API_PORT:-3001}
+      - PORT=${API_PORT:-15001}
     ports:
-      - "\${BACKEND_PORT:-3001}:${API_PORT:-3001}"
+      - "\${BACKEND_PORT:-15001}:${API_PORT:-15001}"
     restart: always
     networks:
       app_network:
@@ -422,10 +422,10 @@ services:
       args:
         - API_URL=auto
         - SOCKET_URL=auto
-        - API_PORT=${API_PORT:-3001}
+        - API_PORT=${API_PORT:-15001}
     container_name: share-things-frontend
     environment:
-      - API_PORT=${API_PORT:-3001}
+      - API_PORT=${API_PORT:-15001}
     ports:
       - "\${FRONTEND_PORT:-8080}:80"
     restart: always
@@ -449,14 +449,15 @@ EOL
         echo -e "${GREEN}Temporary production docker-compose file created.${NC}"
         
         echo -e "${YELLOW}Building containers in production mode...${NC}"
-        $COMPOSE_CMD -f docker-compose.prod.temp.yml build
+        $COMPOSE_CMD -f docker-compose.prod.temp.yml build --no-cache
         
         echo -e "${YELLOW}Starting containers in production mode with ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}${NC}"
         
         # Ensure environment variables are passed to the compose command
         if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
             # For podman-compose, we need to explicitly pass the environment variables
-            FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT $COMPOSE_CMD -f docker-compose.prod.temp.yml up -d
+            # Include API_PORT to ensure it's available during the container runtime
+            FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT $COMPOSE_CMD -f docker-compose.prod.temp.yml up -d
         else
             # For docker-compose, the .env file should be automatically loaded
             $COMPOSE_CMD -f docker-compose.prod.temp.yml up -d
@@ -466,14 +467,14 @@ EOL
         COMPOSE_FILE="docker-compose.prod.temp.yml"
     else
         echo -e "${YELLOW}Building containers in development mode...${NC}"
-        $COMPOSE_CMD build
+        $COMPOSE_CMD build --no-cache
         
         echo -e "${YELLOW}Starting containers in development mode with ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}${NC}"
         
         # Ensure environment variables are passed to the compose command
         if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
             # For podman-compose, we need to explicitly pass the environment variables
-            FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT $COMPOSE_CMD up -d
+            FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT $COMPOSE_CMD up -d
         else
             # For docker-compose, the .env file should be automatically loaded
             $COMPOSE_CMD up -d

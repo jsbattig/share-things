@@ -14,7 +14,7 @@ COPY . .
 # Set build arguments with defaults
 ARG API_URL=auto
 ARG SOCKET_URL=auto
-ARG API_PORT=3001
+ARG API_PORT=15001
 
 # Create production .env file
 RUN echo "VITE_API_URL=${API_URL}\n\

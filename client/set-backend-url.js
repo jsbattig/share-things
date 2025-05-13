@@ -54,7 +54,7 @@ const ipAddress = getLocalIpAddress();
 console.log(`Machine IP address: ${ipAddress}`);
 
 // Get the API port from environment variable or use default
-const apiPort = process.env.API_PORT || '3001';
+const apiPort = process.env.API_PORT || '15001';  // Updated default port
 console.log(`Using API port: ${apiPort}`);
 
 // Create .env file with the correct configuration
