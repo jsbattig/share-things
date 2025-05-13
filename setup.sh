@@ -195,8 +195,9 @@ if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
             
             if [ "$SELINUX_ENFORCING" = true ]; then
                 echo -e "${YELLOW}Detected SELinux system, updating volume mounts for Podman...${NC}"
-                # Add :z suffix to volume mounts if not already present
-                $SED_CMD 's/\(- .*:.*\):/\1:z:/g' $COMPOSE_FILE
+                # Add :z suffix to volume mounts but NOT to port mappings
+                # Look for lines with volume mount patterns (not containing $ for port variables and not in quotes)
+                $SED_CMD '/ports:/,/^[^ ]/ {b}; s/\(- [^"$]*:.*\):/\1:z:/g' $COMPOSE_FILE
                 echo -e "${GREEN}Updated volume mounts for SELinux compatibility.${NC}"
             fi
         fi
@@ -204,6 +205,14 @@ if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
         # Add note about Podman networking
         echo -e "${YELLOW}Note: Podman in rootless mode may have different networking behavior than Docker.${NC}"
         echo -e "${YELLOW}If you experience connectivity issues, you may need to configure Podman networking.${NC}"
+        
+        # Fix any port mappings that might have been incorrectly modified with :z: format
+        echo -e "${YELLOW}Checking for and fixing any incorrect port mappings...${NC}"
+        # This fixes patterns like "8080:z:80" to "8080:80" in the ports section
+        $SED_CMD '/ports:/,/^[^ ]/ s/"\([^:]*\):z:\([^"]*\)"/"\1:\2"/g' $COMPOSE_FILE
+        # This fixes patterns like "${PORT}:z:80" to "${PORT}:80" in the ports section
+        $SED_CMD '/ports:/,/^[^ ]/ s/"\(\\${[^}]*}\):z:\([^"]*\)"/"\1:\2"/g' $COMPOSE_FILE
+        echo -e "${GREEN}Port mapping format checked and fixed if needed.${NC}"
     fi
     
     echo -e "${GREEN}Updated ${COMPOSE_FILE} with port mappings.${NC}"
@@ -230,13 +239,21 @@ else
 fi
 
 # Add specific notes for Podman on Rocky Linux
-if [[ "$CONTAINER_ENGINE" == "podman" ]] && [ -f /etc/rocky-release ]; then
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     echo ""
-    echo -e "${BLUE}=== Rocky Linux with Podman Notes ===${NC}"
-    echo "1. Make sure podman-compose is installed: 'sudo dnf install podman-compose'"
-    echo "2. If using rootless Podman, you may need to configure user namespaces"
-    echo "3. For SELinux issues, you can use 'chcon' to set the correct context on volumes"
-    echo "4. Consider using 'podman generate systemd' to create service files for auto-start"
+    echo -e "${BLUE}=== Podman Notes ===${NC}"
+    echo "1. Make sure podman-compose is installed (on Rocky Linux: 'sudo dnf install podman-compose')"
+    echo "2. For port mapping issues, ensure you're using the format 'hostPort:containerPort' without any 'z' suffix"
+    echo "3. If using rootless Podman, you may need to configure user namespaces"
+    echo "4. For SELinux issues, you can use 'chcon' to set the correct context on volumes"
+    echo "5. Consider using 'podman generate systemd' to create service files for auto-start"
+    
+    # Add specific warning about port mapping format for Podman
+    echo ""
+    echo -e "${YELLOW}Important Note for Podman Port Mappings:${NC}"
+    echo "If you encounter errors like 'cannot parse \"3001\" as an IP address', check your compose file"
+    echo "and ensure port mappings are in the format 'hostPort:containerPort' without any 'z' suffix."
+    echo "You may need to manually edit the compose file if this script doesn't fix the issue."
 fi
 
 echo ""
