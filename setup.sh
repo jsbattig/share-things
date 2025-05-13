@@ -270,6 +270,29 @@ if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
     echo -e "${GREEN}Port configuration in .env file:${NC}"
     grep -E "^FRONTEND_PORT=|^BACKEND_PORT=" .env || echo "Port variables not found in .env file"
     
+    # Update nginx.conf to use the custom backend port
+    if [[ $USE_CUSTOM_PORTS =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Updating nginx.conf to use custom backend port...${NC}"
+        # Create a backup of the nginx.conf file
+        cp client/nginx.conf client/nginx.conf.bak
+        # Update the proxy_pass directives to use the custom port
+        $SED_CMD "s|http://backend:3001|http://backend:${API_PORT}|g" client/nginx.conf
+        echo -e "${GREEN}Updated nginx.conf with custom backend port.${NC}"
+        
+        # Update set-backend-url.js to use the custom port
+        echo -e "${YELLOW}Updating set-backend-url.js to use custom backend port...${NC}"
+        # Create a backup of the set-backend-url.js file
+        cp client/set-backend-url.js client/set-backend-url.js.bak
+        # Update the hardcoded port in the script
+        $SED_CMD "s|:3001|:${API_PORT}|g" client/set-backend-url.js
+        echo -e "${GREEN}Updated set-backend-url.js with custom backend port.${NC}"
+        
+        # Run the set-backend-url.js script to update the client/.env file
+        echo -e "${YELLOW}Running set-backend-url.js to update client/.env...${NC}"
+        cd client && node set-backend-url.js && cd ..
+        echo -e "${GREEN}Updated client/.env with custom backend port.${NC}"
+    fi
+    
     # Determine which compose file to use
     COMPOSE_FILE="docker-compose.yml"
     if [[ "$CONTAINER_ENGINE" == "podman" ]] && [ -f "podman-compose.yml" ]; then
@@ -392,37 +415,6 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     echo "If you encounter errors like 'cannot parse \"3001\" as an IP address', check your compose file"
     echo "and ensure port mappings are in the format 'hostPort:containerPort' without any 'z' suffix."
     
-    # Add direct fix option for the specific error shown in the screenshot
-    echo ""
-    echo -e "${BLUE}=== Direct Fix for Port Mapping Errors ===${NC}"
-    read -p "Are you seeing 'cannot parse \"3001\" as an IP address' errors? (y/n): " FIX_PORT_ERRORS
-    if [[ $FIX_PORT_ERRORS =~ ^[Yy]$ ]]; then
-        echo -e "${YELLOW}Applying direct fix to $COMPOSE_FILE...${NC}"
-        
-        # Create a backup of the compose file
-        cp $COMPOSE_FILE "${COMPOSE_FILE}.bak"
-        echo "Backup created at ${COMPOSE_FILE}.bak"
-        
-        # Direct fix for the specific error pattern seen in the screenshot
-        $SED_CMD 's/-p [0-9]*:z:[0-9]* /-p \1:\2 /g' $COMPOSE_FILE
-        $SED_CMD 's/\(".*\):z:\(.*"\)/\1:\2/g' $COMPOSE_FILE
-        
-        # More aggressive fix that replaces the entire port mapping lines
-        if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
-            # Replace backend port mapping
-            $SED_CMD "/backend.*-p/ s/-p [^ ]* /-p ${BACKEND_PORT}:3001 /g" $COMPOSE_FILE
-            # Replace frontend port mapping
-            $SED_CMD "/frontend.*-p/ s/-p [^ ]* /-p ${FRONTEND_PORT}:80 /g" $COMPOSE_FILE
-        fi
-        
-        echo -e "${GREEN}Direct fix applied. Please try running the containers again.${NC}"
-    else
-        echo -e "${YELLOW}For Rocky Linux with Podman, you might need to manually edit the compose file:${NC}"
-        echo "1. Open $COMPOSE_FILE in a text editor"
-        echo "2. Find the port mappings sections (under 'ports:')"
-        echo "3. Ensure they look like: - \"\${FRONTEND_PORT}:80\" and - \"\${BACKEND_PORT}:3001\""
-        echo "4. Remove any 'z' characters in the port mappings"
-    fi
 fi
 
 echo ""
@@ -465,8 +457,8 @@ services:
       context: ./client
       dockerfile: Dockerfile
       args:
-        - API_URL=http://localhost:3001
-        - SOCKET_URL=http://localhost:3001
+        - API_URL=http://localhost:${BACKEND_PORT}
+        - SOCKET_URL=http://localhost:${BACKEND_PORT}
     container_name: share-things-frontend
     ports:
       - "\${FRONTEND_PORT:-8080}:80"
