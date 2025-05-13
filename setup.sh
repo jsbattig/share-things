@@ -304,20 +304,14 @@ if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
                     echo -e "${RED}client/.env file not found. Cannot update.${NC}"
                 fi
                 
-                # Also manually update the client/.env.backend file
-                if [ -f client/.env.backend ]; then
-                    $SED_CMD "s|:3001|:${API_PORT}|g" client/.env.backend
-                    echo -e "${GREEN}Manually updated client/.env.backend with custom backend port.${NC}"
+                # Always recreate the client/.env.backend file with the correct IP
+                if command -v hostname &> /dev/null; then
+                    HOST_IP=$(hostname -I | awk '{print $1}')
                 else
-                    # Create the file if it doesn't exist
-                    if command -v hostname &> /dev/null; then
-                        HOST_IP=$(hostname -I | awk '{print $1}')
-                    else
-                        HOST_IP="localhost"
-                    fi
-                    echo "BACKEND_URL=http://${HOST_IP}:${API_PORT}" > client/.env.backend
-                    echo -e "${GREEN}Created client/.env.backend with custom backend port.${NC}"
+                    HOST_IP="localhost"
                 fi
+                echo "BACKEND_URL=http://${HOST_IP}:${API_PORT}" > client/.env.backend
+                echo -e "${GREEN}Created/Updated client/.env.backend with correct IP and port: ${HOST_IP}:${API_PORT}${NC}"
             fi
         else
             echo -e "${RED}client/set-backend-url.js file not found. Manually updating files.${NC}"
@@ -329,20 +323,14 @@ if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
                 echo -e "${RED}client/.env file not found. Cannot update.${NC}"
             fi
             
-            # Also manually update the client/.env.backend file
-            if [ -f client/.env.backend ]; then
-                $SED_CMD "s|:3001|:${API_PORT}|g" client/.env.backend
-                echo -e "${GREEN}Manually updated client/.env.backend with custom backend port.${NC}"
+            # Always recreate the client/.env.backend file with the correct IP
+            if command -v hostname &> /dev/null; then
+                HOST_IP=$(hostname -I | awk '{print $1}')
             else
-                # Create the file if it doesn't exist
-                if command -v hostname &> /dev/null; then
-                    HOST_IP=$(hostname -I | awk '{print $1}')
-                else
-                    HOST_IP="localhost"
-                fi
-                echo "BACKEND_URL=http://${HOST_IP}:${API_PORT}" > client/.env.backend
-                echo -e "${GREEN}Created client/.env.backend with custom backend port.${NC}"
+                HOST_IP="localhost"
             fi
+            echo "BACKEND_URL=http://${HOST_IP}:${API_PORT}" > client/.env.backend
+            echo -e "${GREEN}Created/Updated client/.env.backend with correct IP and port: ${HOST_IP}:${API_PORT}${NC}"
         fi
     fi
     
@@ -434,10 +422,10 @@ services:
       args:
         - API_URL=auto
         - SOCKET_URL=auto
-        - API_PORT=${API_PORT}
+        - API_PORT=${API_PORT:-3001}
     container_name: share-things-frontend
     environment:
-      - API_PORT=${API_PORT:-15001}
+      - API_PORT=${API_PORT:-3001}
     ports:
       - "\${FRONTEND_PORT:-8080}:80"
     restart: always
