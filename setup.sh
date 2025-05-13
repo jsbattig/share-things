@@ -233,24 +233,42 @@ fi
 # Ask if want to expose ports to host
 read -p "Do you want to expose container ports to the host? (y/n): " EXPOSE_PORTS
 if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
-    # If custom HAProxy ports were configured, use those as defaults
+    # If custom HAProxy ports were configured, use those directly
     if [[ $USE_CUSTOM_PORTS =~ ^[Yy]$ ]]; then
-        DEFAULT_FRONTEND_PORT=${CLIENT_PORT:-8080}
-        DEFAULT_BACKEND_PORT=${API_PORT:-3001}
+        FRONTEND_PORT=${CLIENT_PORT:-15000}
+        BACKEND_PORT=${API_PORT:-15001}
+        echo -e "${GREEN}Using custom ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}${NC}"
     else
+        # Only ask for port configuration if custom ports weren't already specified
         DEFAULT_FRONTEND_PORT=8080
         DEFAULT_BACKEND_PORT=3001
+        
+        read -p "Enter the frontend port to expose (default: ${DEFAULT_FRONTEND_PORT}): " FRONTEND_PORT
+        FRONTEND_PORT=${FRONTEND_PORT:-$DEFAULT_FRONTEND_PORT}
+        
+        read -p "Enter the backend port to expose (default: ${DEFAULT_BACKEND_PORT}): " BACKEND_PORT
+        BACKEND_PORT=${BACKEND_PORT:-$DEFAULT_BACKEND_PORT}
     fi
     
-    read -p "Enter the frontend port to expose (default: ${DEFAULT_FRONTEND_PORT}): " FRONTEND_PORT
-    FRONTEND_PORT=${FRONTEND_PORT:-$DEFAULT_FRONTEND_PORT}
-    
-    read -p "Enter the backend port to expose (default: ${DEFAULT_BACKEND_PORT}): " BACKEND_PORT
-    BACKEND_PORT=${BACKEND_PORT:-$DEFAULT_BACKEND_PORT}
-    
     # Uncomment and update port mappings in .env
-    $SED_CMD "s|# FRONTEND_PORT=8080|FRONTEND_PORT=${FRONTEND_PORT}|g" .env
-    $SED_CMD "s|# BACKEND_PORT=3001|BACKEND_PORT=${BACKEND_PORT}|g" .env
+    # First check if the variables already exist in the .env file
+    if grep -q "^FRONTEND_PORT=" .env; then
+        # Update existing variables
+        $SED_CMD "s|^FRONTEND_PORT=.*|FRONTEND_PORT=${FRONTEND_PORT}|g" .env
+        $SED_CMD "s|^BACKEND_PORT=.*|BACKEND_PORT=${BACKEND_PORT}|g" .env
+    elif grep -q "# FRONTEND_PORT=" .env; then
+        # Uncomment and update commented variables
+        $SED_CMD "s|# FRONTEND_PORT=.*|FRONTEND_PORT=${FRONTEND_PORT}|g" .env
+        $SED_CMD "s|# BACKEND_PORT=.*|BACKEND_PORT=${BACKEND_PORT}|g" .env
+    else
+        # Add the variables if they don't exist
+        echo "FRONTEND_PORT=${FRONTEND_PORT}" >> .env
+        echo "BACKEND_PORT=${BACKEND_PORT}" >> .env
+    fi
+    
+    # Print the current port configuration for verification
+    echo -e "${GREEN}Port configuration in .env file:${NC}"
+    grep -E "^FRONTEND_PORT=|^BACKEND_PORT=" .env || echo "Port variables not found in .env file"
     
     # Determine which compose file to use
     COMPOSE_FILE="docker-compose.yml"
@@ -411,11 +429,101 @@ echo ""
 echo -e "${BLUE}=== Build and Start Containers ===${NC}"
 read -p "Do you want to build and start the containers now? (y/n): " START_CONTAINERS
 if [[ $START_CONTAINERS =~ ^[Yy]$ ]]; then
-    echo -e "${YELLOW}Building containers...${NC}"
-    $COMPOSE_CMD build
+    # Ask if running in production mode
+    read -p "Do you want to run in production mode (no volume mounts)? (y/n): " PRODUCTION_MODE
     
-    echo -e "${YELLOW}Starting containers...${NC}"
-    $COMPOSE_CMD up -d
+    if [[ $PRODUCTION_MODE =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Creating temporary production docker-compose file without volume mounts...${NC}"
+        # Create a temporary docker-compose file for production without volume mounts
+        cat > docker-compose.prod.temp.yml << EOL
+# Temporary production configuration for ShareThings Docker Compose
+
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: share-things-backend
+    hostname: backend
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "\${BACKEND_PORT:-3001}:3001"
+    restart: always
+    networks:
+      app_network:
+        aliases:
+          - backend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        - API_URL=http://localhost:3001
+        - SOCKET_URL=http://localhost:3001
+    container_name: share-things-frontend
+    ports:
+      - "\${FRONTEND_PORT:-8080}:80"
+    restart: always
+    depends_on:
+      - backend
+    networks:
+      app_network:
+        aliases:
+          - frontend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Explicit network configuration
+networks:
+  app_network:
+    driver: bridge
+EOL
+        echo -e "${GREEN}Temporary production docker-compose file created.${NC}"
+        
+        echo -e "${YELLOW}Building containers in production mode...${NC}"
+        $COMPOSE_CMD -f docker-compose.prod.temp.yml build
+        
+        echo -e "${YELLOW}Starting containers in production mode with ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}${NC}"
+        
+        # Ensure environment variables are passed to the compose command
+        if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+            # For podman-compose, we need to explicitly pass the environment variables
+            FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT $COMPOSE_CMD -f docker-compose.prod.temp.yml up -d
+        else
+            # For docker-compose, the .env file should be automatically loaded
+            $COMPOSE_CMD -f docker-compose.prod.temp.yml up -d
+        fi
+        
+        # Store the compose file name for later use
+        COMPOSE_FILE="docker-compose.prod.temp.yml"
+    else
+        echo -e "${YELLOW}Building containers in development mode...${NC}"
+        $COMPOSE_CMD build
+        
+        echo -e "${YELLOW}Starting containers in development mode with ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}${NC}"
+        
+        # Ensure environment variables are passed to the compose command
+        if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+            # For podman-compose, we need to explicitly pass the environment variables
+            FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT $COMPOSE_CMD up -d
+        else
+            # For docker-compose, the .env file should be automatically loaded
+            $COMPOSE_CMD up -d
+        fi
+        
+        # Store the compose file name for later use
+        COMPOSE_FILE="docker-compose.yml"
+    fi
     
     # Check if containers are actually running
     echo -e "${YELLOW}Checking container status...${NC}"
@@ -427,9 +535,25 @@ if [[ $START_CONTAINERS =~ ^[Yy]$ ]]; then
         RUNNING_COUNT=$(podman ps --filter label=io.podman.compose.project=share-things | grep -c "share-things" || echo "0")
         if [ "$RUNNING_COUNT" -ge "2" ]; then
             echo -e "${GREEN}Containers are running successfully!${NC}"
+            
+            # Check container logs for errors
+            echo -e "${YELLOW}Checking container logs for errors...${NC}"
+            echo "Backend container logs:"
+            podman logs share-things-backend --tail 10
+            
+            echo "Frontend container logs:"
+            podman logs share-things-frontend --tail 10
         else
             echo -e "${RED}Warning: Not all containers appear to be running.${NC}"
             echo "You can check container logs with: podman logs <container_name>"
+            
+            # Show logs for troubleshooting
+            echo -e "${YELLOW}Checking container logs for errors...${NC}"
+            echo "Backend container logs:"
+            podman logs share-things-backend --tail 20 2>/dev/null || echo "No logs available for backend container"
+            
+            echo "Frontend container logs:"
+            podman logs share-things-frontend --tail 20 2>/dev/null || echo "No logs available for frontend container"
         fi
     else
         echo "Running: docker ps --filter label=com.docker.compose.project=share-things"
@@ -439,9 +563,25 @@ if [[ $START_CONTAINERS =~ ^[Yy]$ ]]; then
         RUNNING_COUNT=$(docker ps --filter label=com.docker.compose.project=share-things | grep -c "share-things" || echo "0")
         if [ "$RUNNING_COUNT" -ge "2" ]; then
             echo -e "${GREEN}Containers are running successfully!${NC}"
+            
+            # Check container logs for errors
+            echo -e "${YELLOW}Checking container logs for errors...${NC}"
+            echo "Backend container logs:"
+            docker logs share-things-backend --tail 10
+            
+            echo "Frontend container logs:"
+            docker logs share-things-frontend --tail 10
         else
             echo -e "${RED}Warning: Not all containers appear to be running.${NC}"
             echo "You can check container logs with: docker logs <container_name>"
+            
+            # Show logs for troubleshooting
+            echo -e "${YELLOW}Checking container logs for errors...${NC}"
+            echo "Backend container logs:"
+            docker logs share-things-backend --tail 20 2>/dev/null || echo "No logs available for backend container"
+            
+            echo "Frontend container logs:"
+            docker logs share-things-frontend --tail 20 2>/dev/null || echo "No logs available for frontend container"
         fi
     fi
     
@@ -450,8 +590,35 @@ if [[ $START_CONTAINERS =~ ^[Yy]$ ]]; then
     
     if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
         echo "You can access the application at:"
-        echo "- Frontend: ${PROTOCOL}://${HOSTNAME}:${FRONTEND_PORT}"
-        echo "- Backend: ${PROTOCOL}://${HOSTNAME}:${BACKEND_PORT}"
+        echo "- Frontend: ${PROTOCOL}://${HOSTNAME}:${FRONTEND_PORT} (container port 80)"
+        echo "- Backend: ${PROTOCOL}://${HOSTNAME}:${BACKEND_PORT} (container port 3001)"
+        
+        # For Podman, verify that the correct ports are being used
+        if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+            echo ""
+            echo -e "${YELLOW}Verifying port mappings:${NC}"
+            podman port share-things-frontend
+            podman port share-things-backend
+        fi
+        
+        # Display mode information
+        if [[ $PRODUCTION_MODE =~ ^[Yy]$ ]]; then
+            echo ""
+            echo -e "${GREEN}Running in production mode (no volume mounts).${NC}"
+            echo "This means the containers are using the built files from the Dockerfile."
+            echo "Any changes to the source code will require rebuilding the containers."
+        else
+            echo ""
+            echo -e "${YELLOW}Running in development mode (with volume mounts).${NC}"
+            echo "This means the containers are using the local source code."
+            echo "Changes to the source code will be reflected in the containers."
+            echo ""
+            echo -e "${YELLOW}Note for Podman users:${NC}"
+            echo "If you encounter errors like 'Cannot find module '/app/dist/index.js'', try:"
+            echo "1. Stop the containers: podman-compose down"
+            echo "2. Restart in production mode: ./setup.sh"
+            echo "   - Answer 'yes' to 'Do you want to run in production mode?'"
+        fi
     else
         echo "The containers are running, but ports are not exposed to the host."
         echo "Make sure your HAProxy is properly configured to route traffic to the containers."
