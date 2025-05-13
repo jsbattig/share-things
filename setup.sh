@@ -423,6 +423,7 @@ services:
         - API_URL=auto
         - SOCKET_URL=auto
         - API_PORT=${API_PORT:-15001}
+        - VITE_API_PORT=${API_PORT:-15001}  # Explicitly pass Vite env var
     container_name: share-things-frontend
     environment:
       - API_PORT=${API_PORT:-15001}
@@ -449,6 +450,11 @@ EOL
         echo -e "${GREEN}Temporary production docker-compose file created.${NC}"
         
         echo -e "${YELLOW}Building containers in production mode...${NC}"
+        
+        # Export API_PORT as VITE_API_PORT to ensure it's available during build
+        export VITE_API_PORT="${API_PORT:-15001}"
+        echo -e "${YELLOW}Setting explicit VITE_API_PORT=${VITE_API_PORT} for build${NC}"
+        
         $COMPOSE_CMD -f docker-compose.prod.temp.yml build --no-cache
         
         echo -e "${YELLOW}Starting containers in production mode with ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}${NC}"
@@ -467,6 +473,11 @@ EOL
         COMPOSE_FILE="docker-compose.prod.temp.yml"
     else
         echo -e "${YELLOW}Building containers in development mode...${NC}"
+        
+        # Export API_PORT as VITE_API_PORT to ensure it's available during build
+        export VITE_API_PORT="${API_PORT:-3001}"
+        echo -e "${YELLOW}Setting explicit VITE_API_PORT=${VITE_API_PORT} for build${NC}"
+        
         $COMPOSE_CMD build --no-cache
         
         echo -e "${YELLOW}Starting containers in development mode with ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}${NC}"
