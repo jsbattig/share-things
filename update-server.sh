@@ -433,18 +433,86 @@ echo -e "${GREEN}Containers rebuilt successfully.${NC}"
 # Start containers with preserved configuration
 echo -e "${YELLOW}Starting updated containers with preserved configuration...${NC}"
 
-# Pass environment variables explicitly
+# For podman, create a complete docker-compose file to ensure proper port mapping
 if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-    # For podman-compose, we need to explicitly pass the environment variables
-    echo -e "${YELLOW}Using environment variables: FRONTEND_PORT=$FRONTEND_PORT, BACKEND_PORT=$BACKEND_PORT, API_PORT=$API_PORT${NC}"
+    echo -e "${YELLOW}Creating a comprehensive docker-compose file for update...${NC}"
+    # Create a temporary but complete docker-compose file specifically for the update
+    cat > docker-compose.update.yml << EOL
+# Update configuration for ShareThings Docker Compose
+
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+      args:
+        - PORT=${API_PORT:-3001}
+    container_name: share-things-backend
+    hostname: backend
+    environment:
+      - NODE_ENV=production
+      - PORT=${API_PORT:-3001}
+      - LISTEN_PORT=${API_PORT:-3001}
+    ports:
+      - "${BACKEND_PORT:-3001}:${API_PORT:-3001}"
+    restart: always
+    networks:
+      app_network:
+        aliases:
+          - backend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+      args:
+        - API_URL=auto
+        - SOCKET_URL=auto
+        - API_PORT=${API_PORT:-3001}
+        - VITE_API_PORT=${API_PORT:-3001}
+    container_name: share-things-frontend
+    environment:
+      - API_PORT=${API_PORT:-3001}
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    restart: always
+    depends_on:
+      - backend
+    networks:
+      app_network:
+        aliases:
+          - frontend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Explicit network configuration
+networks:
+  app_network:
+    driver: bridge
+EOL
+    echo -e "${GREEN}Comprehensive docker-compose.update.yml created.${NC}"
     
-    # Create a temporary .env file to ensure environment variables are properly passed
-    echo "FRONTEND_PORT=$FRONTEND_PORT" > .env.temp
-    echo "BACKEND_PORT=$BACKEND_PORT" >> .env.temp
-    echo "API_PORT=$API_PORT" >> .env.temp
+    # Export API_PORT as VITE_API_PORT to ensure it's available during build
+    export VITE_API_PORT="${API_PORT:-3001}"
+    echo -e "${YELLOW}Using environment variables: FRONTEND_PORT=$FRONTEND_PORT, BACKEND_PORT=$BACKEND_PORT, API_PORT=$API_PORT, VITE_API_PORT=$VITE_API_PORT${NC}"
     
-    # Use the env-file option to ensure variables are properly passed
-    $COMPOSE_CMD -f $COMPOSE_FILE --env-file .env.temp up -d
+    # Build and run containers with explicitly passed environment variables
+    echo -e "${YELLOW}Building containers with comprehensive configuration...${NC}"
+    $COMPOSE_CMD -f docker-compose.update.yml build
+    
+    echo -e "${YELLOW}Starting containers with explicit environment variables...${NC}"
+    # Directly pass environment variables to the compose command
+    FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT $COMPOSE_CMD -f docker-compose.update.yml up -d
+    
+    COMPOSE_FILE="docker-compose.update.yml"
 else
     # For docker-compose, explicitly pass environment variables
     echo -e "${YELLOW}Using environment variables: FRONTEND_PORT=$FRONTEND_PORT, BACKEND_PORT=$BACKEND_PORT, API_PORT=$API_PORT${NC}"
@@ -454,17 +522,17 @@ else
     echo "BACKEND_PORT=$BACKEND_PORT" >> .env.temp
     echo "API_PORT=$API_PORT" >> .env.temp
     
-    # Use the env-file option to ensure variables are properly passed
+    # Use the env-file option for docker-compose
     $COMPOSE_CMD -f $COMPOSE_FILE --env-file .env.temp up -d
+    
+    # Clean up temporary .env file
+    if [ -f .env.temp ]; then
+        rm .env.temp
+        echo -e "${GREEN}Temporary environment file removed.${NC}"
+    fi
 fi
 
 START_EXIT_CODE=$?
-
-# Clean up temporary .env file
-if [ -f .env.temp ]; then
-    rm .env.temp
-    echo -e "${GREEN}Temporary environment file removed.${NC}"
-fi
 
 # Add additional debugging for port configuration
 echo -e "${YELLOW}Verifying port configuration...${NC}"
@@ -485,13 +553,34 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     echo -e "${YELLOW}Listing all running containers:${NC}"
     podman ps | grep "share-things" || echo "No matching containers found"
     
+    # Enhanced verification of container port mappings
+    echo -e "${YELLOW}Verifying container port mappings...${NC}"
+    
     # Check for frontend container - try both naming conventions
     FRONTEND_RUNNING=$(podman ps -q --filter name=share-things | grep -E 'frontend|_frontend_' | wc -l)
     if [ "$FRONTEND_RUNNING" -gt "0" ]; then
         echo -e "${GREEN}Frontend container is running.${NC}"
-        echo -e "${YELLOW}Frontend port mapping:${NC}"
-        # Try both naming conventions for port display
-        podman port share-things-frontend 2>/dev/null || podman port share-things_frontend_1 2>/dev/null || echo "Could not display port mapping"
+        # Get frontend container ID
+        FRONTEND_ID=$(podman ps -q --filter name=share-things-frontend 2>/dev/null || podman ps -q --filter name=share-things_frontend_1 2>/dev/null)
+        if [ -n "$FRONTEND_ID" ]; then
+            echo -e "${YELLOW}Frontend container ID: $FRONTEND_ID${NC}"
+            echo -e "${YELLOW}Frontend port mapping:${NC}"
+            podman port $FRONTEND_ID || echo "No port mapping found for frontend"
+            
+            # If no port mapping is found, try to manually add it
+            if ! podman port $FRONTEND_ID | grep -q '80/tcp'; then
+                echo -e "${YELLOW}No port mapping found. Attempting to add port mapping...${NC}"
+                # Stop the container
+                podman stop $FRONTEND_ID
+                # Remove the container but keep the image
+                podman rm $FRONTEND_ID
+                # Run the container again with explicit port mapping
+                podman run -d --name share-things-frontend -p ${FRONTEND_PORT:-8080}:80 --network=app_network --restart=always localhost/share-things_frontend:latest
+                echo -e "${GREEN}Recreated frontend container with explicit port mapping.${NC}"
+            fi
+        else
+            echo -e "${RED}Could not find frontend container ID.${NC}"
+        fi
     else
         echo -e "${RED}Frontend container is not running.${NC}"
     fi
@@ -500,9 +589,27 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     BACKEND_RUNNING=$(podman ps -q --filter name=share-things | grep -E 'backend|_backend_' | wc -l)
     if [ "$BACKEND_RUNNING" -gt "0" ]; then
         echo -e "${GREEN}Backend container is running.${NC}"
-        echo -e "${YELLOW}Backend port mapping:${NC}"
-        # Try both naming conventions for port display
-        podman port share-things-backend 2>/dev/null || podman port share-things_backend_1 2>/dev/null || echo "Could not display port mapping"
+        # Get backend container ID
+        BACKEND_ID=$(podman ps -q --filter name=share-things-backend 2>/dev/null || podman ps -q --filter name=share-things_backend_1 2>/dev/null)
+        if [ -n "$BACKEND_ID" ]; then
+            echo -e "${YELLOW}Backend container ID: $BACKEND_ID${NC}"
+            echo -e "${YELLOW}Backend port mapping:${NC}"
+            podman port $BACKEND_ID || echo "No port mapping found for backend"
+            
+            # If no port mapping is found, try to manually add it
+            if ! podman port $BACKEND_ID | grep -q "${API_PORT:-3001}/tcp"; then
+                echo -e "${YELLOW}No port mapping found. Attempting to add port mapping...${NC}"
+                # Stop the container
+                podman stop $BACKEND_ID
+                # Remove the container but keep the image
+                podman rm $BACKEND_ID
+                # Run the container again with explicit port mapping
+                podman run -d --name share-things-backend -p ${BACKEND_PORT:-3001}:${API_PORT:-3001} -e NODE_ENV=production -e PORT=${API_PORT:-3001} --network=app_network --restart=always localhost/share-things_backend:latest
+                echo -e "${GREEN}Recreated backend container with explicit port mapping.${NC}"
+            fi
+        else
+            echo -e "${RED}Could not find backend container ID.${NC}"
+        fi
     else
         echo -e "${RED}Backend container is not running.${NC}"
     fi
@@ -585,6 +692,14 @@ else
         # Try both naming conventions for logs
         docker logs share-things-frontend --tail 20 2>/dev/null || docker logs share-things_frontend_1 --tail 20 2>/dev/null || echo "No logs available for frontend container"
     fi
+fi
+
+# Clean up any temporary files created during the update
+if [ -f docker-compose.update.yml ]; then
+    echo -e "${YELLOW}Cleaning up temporary files...${NC}"
+    # Keep the file for reference in case of issues
+    mv docker-compose.update.yml docker-compose.update.yml.bak
+    echo -e "${GREEN}docker-compose.update.yml saved as docker-compose.update.yml.bak for reference.${NC}"
 fi
 
 # Clean up any backup files created by sed on macOS
