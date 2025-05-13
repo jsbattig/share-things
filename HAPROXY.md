@@ -526,6 +526,24 @@ VITE_API_URL=http://localhost:3001
 VITE_SOCKET_URL=http://localhost:3001
 ```
 
+## Benefits of the Dual-Port Approach
+
+1. **Clearer separation of concerns**:
+   - Web application traffic is isolated from API/WebSocket traffic
+   - Easier to apply different security policies and rate limits to each
+
+2. **More flexible scaling**:
+   - Frontend and backend services can be scaled independently
+   - Load balancing can be configured differently for each type of traffic
+
+3. **Improved troubleshooting**:
+   - Issues with API or WebSockets can be isolated from web application issues
+   - Port-specific monitoring is possible
+
+4. **Enhanced security**:
+   - Different security policies can be applied to each port
+   - API-specific rate limiting without affecting web application traffic
+
 ## Conclusion
 
 This HAProxy configuration provides a robust setup for the ShareThings application using a dual-port approach:

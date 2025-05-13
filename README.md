@@ -24,231 +24,158 @@ ShareThings consists of:
 2. Express backend with Socket.IO
 3. End-to-end encryption using Web Crypto API
 
-## Getting Started
+## Docker Deployment
+
+ShareThings is designed to be deployed using Docker (or Podman on Rocky Linux). The deployment architecture uses containers for both the client and server components, with HAProxy handling SSL termination and routing.
 
 ### Prerequisites
 
-- Node.js 16+
-- npm or yarn
+- Docker or Podman (for Rocky Linux)
+- Docker Compose or Podman Compose
+- Git (to clone the repository)
 
-### Installation
-
-1. Clone the repository:
+### Quick Start
 
 ```bash
+# Clone the repository
 git clone https://github.com/jsbattig/share-things.git
 cd share-things
+
+# Run the setup script
+chmod +x setup.sh
+./setup.sh
 ```
 
-2. Install dependencies for both server and client:
+The setup script will:
+1. Detect your OS and recommend the appropriate container engine (Docker or Podman)
+2. Create necessary configuration files
+3. Configure environment variables
+4. Build and start the containers
 
+### Rocky Linux Specific Instructions
+
+On Rocky Linux, the setup script will automatically detect the OS and recommend using Podman instead of Docker. Here's what you need to know:
+
+1. **Install Podman and Podman Compose**:
+   ```bash
+   sudo dnf install podman podman-compose
+   ```
+
+2. **Run the setup script**:
+   ```bash
+   chmod +x setup.sh
+   ./setup.sh
+   ```
+
+3. **Follow the prompts**:
+   - Confirm using Podman when prompted
+   - Enter your hostname or leave blank for auto-detection
+   - Specify if you're using custom ports for HAProxy
+   - Choose whether to expose ports to the host
+
+4. **HAProxy Configuration**:
+   - The setup will generate a template HAProxy configuration
+   - Update the template with your specific settings
+   - See [HAPROXY.md](HAPROXY.md) for detailed configuration instructions
+
+### Deployment Architecture
+
+```
+                     ┌─────────────┐
+                     │   Client    │
+                     │   Browser   │
+                     └──────┬──────┘
+                            │ HTTPS/WSS
+                            ▼
+                     ┌─────────────┐
+                     │   HAProxy   │
+                     │ (SSL Term)  │
+                     └──────┬──────┘
+                            │ HTTP/WS
+                  ┌─────────┴─────────┐
+                  │                   │
+         ┌────────▼───────┐   ┌───────▼────────┐
+         │    Frontend    │   │     Backend    │
+         │  (Nginx + SPA) │   │  (Node.js +    │
+         │                │   │   Socket.IO)   │
+         └────────────────┘   └────────────────┘
+```
+
+### Container Configuration
+
+The setup creates two containers:
+1. **Frontend Container**: Nginx serving the built React application
+2. **Backend Container**: Node.js running the Express and Socket.IO server
+
+Both containers are configured to communicate with each other through an internal Docker/Podman network.
+
+### HAProxy Configuration
+
+HAProxy is used to:
+1. Terminate SSL connections
+2. Route traffic to the appropriate container
+3. Handle WebSocket connections
+
+The setup script generates a template HAProxy configuration file that you can customize. For detailed HAProxy configuration instructions, see [HAPROXY.md](HAPROXY.md).
+
+### Managing Containers
+
+After deployment, you can manage your containers with these commands:
+
+**For Docker:**
 ```bash
-# Install server dependencies
-cd server
-npm install
+# Check container status
+docker ps --filter label=com.docker.compose.project=share-things
 
-# Install client dependencies
-cd ../client
-npm install
+# View logs
+docker logs share-things-frontend
+docker logs share-things-backend
+
+# Restart containers
+cd /path/to/share-things && docker-compose down && docker-compose up -d
 ```
 
-### Running the Application
-
-1. Start the server:
-
+**For Podman (Rocky Linux):**
 ```bash
-cd server
-npm run dev
+# Check container status
+podman ps --filter label=io.podman.compose.project=share-things
+
+# View logs
+podman logs share-things-frontend
+podman logs share-things-backend
+
+# Restart containers
+cd /path/to/share-things && podman-compose down && podman-compose up -d
 ```
 
-2. In a separate terminal, start the client:
+### Troubleshooting
 
-```bash
-cd client
-npm run dev
-```
+If you encounter issues:
 
-3. Open your browser and navigate to http://localhost:3000
+1. **Check container logs**:
+   ```bash
+   podman logs share-things-frontend
+   podman logs share-things-backend
+   ```
 
-### Running as Linux Services
+2. **Verify port mappings**:
+   ```bash
+   podman port share-things-frontend
+   podman port share-things-backend
+   ```
 
-To run the ShareThings server and client applications as services in a Linux environment (using systemd), follow these steps:
+3. **SELinux issues (Rocky Linux)**:
+   If you encounter permission errors, you may need to set the correct SELinux context:
+   ```bash
+   sudo chcon -Rt container_file_t /path/to/share-things
+   ```
 
-#### Prerequisites
+4. **HAProxy connection issues**:
+   - Check HAProxy logs: `sudo tail -f /var/log/haproxy.log`
+   - Verify your HAProxy configuration matches the ports exposed by your containers
+   - See [HAPROXY.md](HAPROXY.md) for detailed troubleshooting
 
-- Linux system with systemd (Ubuntu, Debian, CentOS, etc.)
-- Node.js 16+ installed
-- Application code deployed to the server
-
-#### Server Service Setup
-
-1. Create a systemd service file for the server:
-
-```bash
-sudo nano /etc/systemd/system/sharethings-server.service
-```
-
-2. Add the following configuration (adjust paths and user as needed):
-
-```
-[Unit]
-Description=ShareThings Server
-After=network.target
-
-[Service]
-Type=simple
-User=<your-user>
-WorkingDirectory=/path/to/share-things/server
-ExecStart=/usr/bin/node dist/index.js
-Restart=on-failure
-Environment=NODE_ENV=production
-# Add any other environment variables needed
-# Environment=PORT=3001
-
-[Install]
-WantedBy=multi-user.target
-```
-
-3. Build the server application:
-
-```bash
-cd /path/to/share-things/server
-npm install
-npm run build
-```
-
-4. Create a .env file with your production settings:
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-5. Enable and start the service:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable sharethings-server
-sudo systemctl start sharethings-server
-```
-
-#### Client Service Setup
-
-For the client application, you have two options:
-
-**Option 1: Build and serve as static files (Recommended)**
-
-1. Build the client application:
-
-```bash
-cd /path/to/share-things/client
-npm install
-npm run build
-```
-
-2. Serve the built files using Nginx or Apache. Example Nginx configuration:
-
-```
-server {
-    listen 80;
-    server_name your-domain.com;
-    
-    root /path/to/share-things/client/dist;
-    index index.html;
-    
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-    
-    location /api {
-        proxy_pass http://localhost:3001;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-    
-    location /socket.io {
-        proxy_pass http://localhost:3001;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
-```
-
-**Option 2: Run the development server as a service**
-
-1. Create a systemd service file for the client:
-
-```bash
-sudo nano /etc/systemd/system/sharethings-client.service
-```
-
-2. Add the following configuration:
-
-```
-[Unit]
-Description=ShareThings Client
-After=network.target
-
-[Service]
-Type=simple
-User=<your-user>
-WorkingDirectory=/path/to/share-things/client
-ExecStart=/usr/bin/npm run dev -- --host 0.0.0.0
-Restart=on-failure
-Environment=NODE_ENV=production
-# Add any other environment variables needed
-
-[Install]
-WantedBy=multi-user.target
-```
-
-3. Enable and start the service:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable sharethings-client
-sudo systemctl start sharethings-client
-```
-
-#### Managing the Services
-
-**Check service status:**
-
-```bash
-sudo systemctl status sharethings-server
-sudo systemctl status sharethings-client
-```
-
-**Restart services:**
-
-```bash
-sudo systemctl restart sharethings-server
-sudo systemctl restart sharethings-client
-```
-
-**Stop services:**
-
-```bash
-sudo systemctl stop sharethings-server
-sudo systemctl stop sharethings-client
-```
-
-**View logs:**
-
-```bash
-sudo journalctl -u sharethings-server -f
-sudo journalctl -u sharethings-client -f
-```
-
-## Development
-
-### Project Structure
+## Project Structure
 
 ```
 share-things/
@@ -274,102 +201,6 @@ share-things/
     ├── technical/         # Technical documentation
     └── ...
 ```
-
-### Running Tests
-
-#### Server Tests
-
-```bash
-cd server
-npm test
-```
-
-#### Client Tests
-
-```bash
-cd client
-npm test
-```
-
-## Docker Deployment
-
-ShareThings can be deployed using Docker for both development and production environments.
-
-### Quick Start with Docker
-
-```bash
-# Clone the repository
-git clone https://github.com/jsbattig/share-things.git
-cd share-things
-
-# Run the setup script
-chmod +x setup.sh
-./setup.sh
-```
-
-For detailed Docker deployment instructions, see [Docker Deployment Guide](./plans/docker-deployment-guide.md).
-
-### Remote Server Deployment
-
-ShareThings includes scripts for automated deployment to a remote server:
-
-#### Standard Setup Script
-
-```bash
-# Download the script
-curl -O https://raw.githubusercontent.com/jsbattig/share-things/master/remote-setup.sh
-
-# Make it executable
-chmod +x remote-setup.sh
-
-# Run the script and follow the prompts
-./remote-setup.sh
-```
-
-#### Simplified Setup Script (Recommended for Rocky Linux)
-
-```bash
-# Download the simplified script
-curl -O https://raw.githubusercontent.com/jsbattig/share-things/master/remote-setup-simple.sh
-
-# Make it executable
-chmod +x remote-setup-simple.sh
-
-# Run the script and follow the prompts
-./remote-setup-simple.sh
-```
-
-Both scripts will:
-1. Prompt for server details (IP, username, password/SSH key)
-2. Install all required dependencies on the remote server
-3. Clone the repository and set up the environment
-4. Build the application using the production configuration
-5. Optionally set up systemd services for automatic startup
-
-The simplified script is recommended for Rocky Linux and other RHEL-based distributions as it uses a more direct approach with better compatibility.
-
-For more details, see the [Remote Setup Script documentation](./plans/remote-setup-script.md).
-
-## Continuous Integration and Deployment
-
-ShareThings uses GitHub Actions for continuous integration and deployment:
-
-- **Lint**: Runs linting checks on the codebase
-- **Build and Test**: Builds the application and runs unit tests
-- **Build Production**: Builds and verifies the production Docker configuration
-- **Dockered Build and Tests**: Runs tests in Docker containers
-
-To run all tests locally:
-
-```bash
-# Make the script executable
-chmod +x build-and-test.sh
-
-# Run the tests
-./build-and-test.sh
-```
-
-For more information, see [CI/CD Implementation Plan](./plans/ci-cd-implementation-plan.md).
 
 ## Security
 
