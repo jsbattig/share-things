@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# ShareThings Docker Setup Script
-# This script helps configure the ShareThings application for Docker deployment
+# ShareThings Container Setup Script
+# This script helps configure the ShareThings application for container deployment
+# Compatible with Docker and Podman
 
 # Text colors
 GREEN='\033[0;32m'
@@ -10,31 +11,55 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-# Detect OS for sed compatibility
+# Detect OS for sed compatibility and container engine
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS uses BSD sed which requires an extension argument for -i
     # Use a temporary file approach instead of creating backup files with ''
     SED_CMD="sed -i.bak"
+    # macOS typically uses Docker
+    DEFAULT_ENGINE="docker"
 else
     # Linux and others use GNU sed
     SED_CMD="sed -i"
+    
+    # Check if this is Rocky Linux
+    if [ -f /etc/rocky-release ]; then
+        # Rocky Linux typically uses Podman
+        DEFAULT_ENGINE="podman"
+    else
+        # Default to Docker for other Linux distributions
+        DEFAULT_ENGINE="docker"
+    fi
 fi
 
-echo -e "${BLUE}=== ShareThings Docker Setup ===${NC}"
-echo "This script will help you configure the ShareThings application for Docker deployment."
+# Determine which container engine to use
+read -p "Which container engine do you want to use? (docker/podman) [${DEFAULT_ENGINE}]: " CONTAINER_ENGINE
+CONTAINER_ENGINE=${CONTAINER_ENGINE:-$DEFAULT_ENGINE}
+
+# Set compose command based on container engine
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    COMPOSE_CMD="podman-compose"
+    CONTAINER_CMD="podman"
+else
+    COMPOSE_CMD="docker-compose"
+    CONTAINER_CMD="docker"
+fi
+
+echo -e "${BLUE}=== ShareThings ${CONTAINER_ENGINE^} Setup ===${NC}"
+echo "This script will help you configure the ShareThings application for ${CONTAINER_ENGINE^} deployment."
 echo ""
 
-# Check if Docker is installed
-if ! command -v docker &> /dev/null; then
-    echo -e "${RED}Error: Docker is not installed.${NC}"
-    echo "Please install Docker before running this script."
+# Check if the selected container engine is installed
+if ! command -v $CONTAINER_CMD &> /dev/null; then
+    echo -e "${RED}Error: ${CONTAINER_ENGINE^} is not installed.${NC}"
+    echo "Please install ${CONTAINER_ENGINE^} before running this script."
     exit 1
 fi
 
-# Check if Docker Compose is installed
-if ! command -v docker-compose &> /dev/null; then
-    echo -e "${RED}Error: Docker Compose is not installed.${NC}"
-    echo "Please install Docker Compose before running this script."
+# Check if the appropriate compose tool is installed
+if ! command -v $COMPOSE_CMD &> /dev/null; then
+    echo -e "${RED}Error: ${COMPOSE_CMD} is not installed.${NC}"
+    echo "Please install ${COMPOSE_CMD} before running this script."
     exit 1
 fi
 
@@ -139,16 +164,49 @@ if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
     $SED_CMD "s|# FRONTEND_PORT=8080|FRONTEND_PORT=${FRONTEND_PORT}|g" .env
     $SED_CMD "s|# BACKEND_PORT=3001|BACKEND_PORT=${BACKEND_PORT}|g" .env
     
-    # Update docker-compose.yml to include port mappings
-    if ! grep -q "ports:" docker-compose.yml; then
-        # Add port mappings to backend service
-        $SED_CMD "/healthcheck:/i \ \ \ \ ports:\n      - \"\${BACKEND_PORT}:3001\"" docker-compose.yml
-        
-        # Add port mappings to frontend service
-        $SED_CMD "/frontend:/,/healthcheck:/ s/healthcheck:/ports:\n      - \"\${FRONTEND_PORT}:80\"\n    healthcheck:/" docker-compose.yml
+    # Determine which compose file to use
+    COMPOSE_FILE="docker-compose.yml"
+    if [[ "$CONTAINER_ENGINE" == "podman" ]] && [ -f "podman-compose.yml" ]; then
+        COMPOSE_FILE="podman-compose.yml"
     fi
     
-    echo -e "${GREEN}Updated docker-compose.yml with port mappings.${NC}"
+    # Update compose file to include port mappings
+    if ! grep -q "ports:" $COMPOSE_FILE; then
+        # Add port mappings to backend service
+        $SED_CMD "/healthcheck:/i \ \ \ \ ports:\n      - \"\${BACKEND_PORT}:3001\"" $COMPOSE_FILE
+        
+        # Add port mappings to frontend service
+        $SED_CMD "/frontend:/,/healthcheck:/ s/healthcheck:/ports:\n      - \"\${FRONTEND_PORT}:80\"\n    healthcheck:/" $COMPOSE_FILE
+    fi
+    
+    # For Podman in rootless mode on SELinux systems like Rocky Linux,
+    # we need to add the :z suffix to volume mounts
+    if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+        # Check for SELinux
+        if grep -q "SELinux" /etc/os-release || [ -f /etc/rocky-release ] || command -v getenforce &> /dev/null; then
+            # Check if SELinux is enforcing
+            SELINUX_ENFORCING=false
+            if command -v getenforce &> /dev/null && [ "$(getenforce)" == "Enforcing" ]; then
+                SELINUX_ENFORCING=true
+            elif [ -f /etc/rocky-release ]; then
+                # Rocky Linux typically has SELinux enabled by default
+                SELINUX_ENFORCING=true
+            fi
+            
+            if [ "$SELINUX_ENFORCING" = true ]; then
+                echo -e "${YELLOW}Detected SELinux system, updating volume mounts for Podman...${NC}"
+                # Add :z suffix to volume mounts if not already present
+                $SED_CMD 's/\(- .*:.*\):/\1:z:/g' $COMPOSE_FILE
+                echo -e "${GREEN}Updated volume mounts for SELinux compatibility.${NC}"
+            fi
+        fi
+        
+        # Add note about Podman networking
+        echo -e "${YELLOW}Note: Podman in rootless mode may have different networking behavior than Docker.${NC}"
+        echo -e "${YELLOW}If you experience connectivity issues, you may need to configure Podman networking.${NC}"
+    fi
+    
+    echo -e "${GREEN}Updated ${COMPOSE_FILE} with port mappings.${NC}"
 fi
 
 echo ""
@@ -157,18 +215,28 @@ echo "A template HAProxy configuration file (haproxy.cfg.template) has been prov
 echo "You'll need to update it with your specific settings:"
 
 if [[ $USE_CUSTOM_PORTS =~ ^[Yy]$ ]]; then
-    echo "1. Replace 'docker-host' with your Docker host IP or hostname"
+    echo "1. Replace 'docker-host' with your container host IP or hostname"
     echo "2. Ensure the ports match your configuration (client: ${CLIENT_PORT}, API: ${API_PORT})"
     if [[ $USE_HTTPS =~ ^[Yy]$ ]]; then
         echo "3. Uncomment the SSL configuration lines"
         echo "4. Update the SSL certificate path"
     fi
 else
-    echo "1. Replace 'docker-host' with your Docker host IP or hostname"
+    echo "1. Replace 'docker-host' with your container host IP or hostname"
     if [[ $USE_HTTPS =~ ^[Yy]$ ]]; then
         echo "2. Uncomment the SSL configuration lines"
         echo "3. Update the SSL certificate path"
     fi
+fi
+
+# Add specific notes for Podman on Rocky Linux
+if [[ "$CONTAINER_ENGINE" == "podman" ]] && [ -f /etc/rocky-release ]; then
+    echo ""
+    echo -e "${BLUE}=== Rocky Linux with Podman Notes ===${NC}"
+    echo "1. Make sure podman-compose is installed: 'sudo dnf install podman-compose'"
+    echo "2. If using rootless Podman, you may need to configure user namespaces"
+    echo "3. For SELinux issues, you can use 'chcon' to set the correct context on volumes"
+    echo "4. Consider using 'podman generate systemd' to create service files for auto-start"
 fi
 
 echo ""
@@ -176,10 +244,10 @@ echo -e "${BLUE}=== Build and Start Containers ===${NC}"
 read -p "Do you want to build and start the containers now? (y/n): " START_CONTAINERS
 if [[ $START_CONTAINERS =~ ^[Yy]$ ]]; then
     echo -e "${YELLOW}Building containers...${NC}"
-    docker-compose build
+    $COMPOSE_CMD build
     
     echo -e "${YELLOW}Starting containers...${NC}"
-    docker-compose up -d
+    $COMPOSE_CMD up -d
     
     echo -e "${GREEN}Containers are now running!${NC}"
     echo ""
@@ -196,8 +264,8 @@ if [[ $START_CONTAINERS =~ ^[Yy]$ ]]; then
 else
     echo -e "${BLUE}=== Next Steps ===${NC}"
     echo "When you're ready, build and start the containers with:"
-    echo "  docker-compose build"
-    echo "  docker-compose up -d"
+    echo "  ${COMPOSE_CMD} build"
+    echo "  ${COMPOSE_CMD} up -d"
 fi
 
 echo ""
