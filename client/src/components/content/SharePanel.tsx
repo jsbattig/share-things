@@ -144,6 +144,9 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
       console.log('[ShareText] Sending encrypted content to server');
       sendContent(sessionId, encryptedContent, encryptedText);
       
+      // Force state reset to ensure UI updates properly
+      setIsSharing(false);
+      
       // Clear text (only if we're using the state value)
       if (!textToShare) {
         setText('');
@@ -259,6 +262,9 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
               
               // Send encrypted content to server
               sendContent(sessionId, encryptedContent, base64);
+              
+              // Reset uploading state for non-chunked files
+              setIsSharing(false);
             } else {
               // For large files, use chunking
               const { chunks, contentId } = await chunkAndEncryptBlob(

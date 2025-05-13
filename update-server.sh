@@ -150,16 +150,28 @@ fi
 if [ -n "$FRONTEND_PORT_MAPPING" ]; then
     export FRONTEND_PORT=$FRONTEND_PORT_MAPPING
     echo -e "${GREEN}Setting FRONTEND_PORT=$FRONTEND_PORT${NC}"
+else
+    # Default to value in .env file or default if not found
+    FRONTEND_PORT=${FRONTEND_PORT:-8080}
+    echo -e "${YELLOW}No frontend port mapping found, using default: $FRONTEND_PORT${NC}"
 fi
 
 if [ -n "$BACKEND_PORT_MAPPING" ]; then
     export BACKEND_PORT=$BACKEND_PORT_MAPPING
     echo -e "${GREEN}Setting BACKEND_PORT=$BACKEND_PORT${NC}"
+else
+    # Default to value in .env file or default if not found
+    BACKEND_PORT=${BACKEND_PORT:-3001}
+    echo -e "${YELLOW}No backend port mapping found, using default: $BACKEND_PORT${NC}"
 fi
 
 if [ -n "$API_PORT" ]; then
     export API_PORT=$API_PORT
     echo -e "${GREEN}Setting API_PORT=$API_PORT${NC}"
+else
+    # Default to value in .env file or default if not found
+    API_PORT=${API_PORT:-3001}
+    echo -e "${YELLOW}No API port found, using default: $API_PORT${NC}"
 fi
 
 # Check if we're running in production mode
@@ -185,45 +197,122 @@ else
     docker ps --all | grep "share-things" || echo "No matching containers found"
 fi
 
-# Stop running containers
+# Stop running containers - with enhanced container stopping logic
 echo -e "${YELLOW}Stopping running containers...${NC}"
+
+# Save the currently running container IDs for later verification
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    RUNNING_CONTAINERS_BEFORE=$(podman ps -a -q --filter name=share-things)
+else
+    RUNNING_CONTAINERS_BEFORE=$(docker ps -a -q --filter name=share-things)
+fi
+
+# First attempt with docker-compose/podman-compose down
+echo -e "${YELLOW}Stopping containers with ${COMPOSE_CMD}...${NC}"
 $COMPOSE_CMD -f $COMPOSE_FILE down
 COMPOSE_EXIT_CODE=$?
 
-if [ $COMPOSE_EXIT_CODE -ne 0 ]; then
-    echo -e "${RED}Warning: Compose down command failed. Attempting to force stop containers...${NC}"
+# Second - try force stopping specific containers regardless of first attempt outcome
+echo -e "${YELLOW}Force stopping individual containers to ensure clean state...${NC}"
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    echo -e "${YELLOW}Force stopping Podman containers...${NC}"
+    # Stop with extended timeout
+    podman stop --time 10 $(podman ps -a -q --filter name=share-things) 2>/dev/null || echo "No running containers to stop"
     
-    # Force stop and remove containers
-    if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-        echo -e "${YELLOW}Force stopping Podman containers...${NC}"
-        podman stop $(podman ps -a -q --filter name=share-things) 2>/dev/null || echo "No containers to stop"
-        podman rm $(podman ps -a -q --filter name=share-things) 2>/dev/null || echo "No containers to remove"
-    else
-        echo -e "${YELLOW}Force stopping Docker containers...${NC}"
-        docker stop $(docker ps -a -q --filter name=share-things) 2>/dev/null || echo "No containers to stop"
-        docker rm $(docker ps -a -q --filter name=share-things) 2>/dev/null || echo "No containers to remove"
-    fi
+    # Remove containers with force flag
+    echo -e "${YELLOW}Removing Podman containers...${NC}"
+    podman rm -f $(podman ps -a -q --filter name=share-things) 2>/dev/null || echo "No containers to remove"
+    
+    # Clean up any associated networks
+    echo -e "${YELLOW}Cleaning up networks...${NC}"
+    podman network prune -f 2>/dev/null || echo "Network prune not supported or no networks to remove"
+else
+    echo -e "${YELLOW}Force stopping Docker containers...${NC}"
+    # Stop with extended timeout
+    docker stop --time 10 $(docker ps -a -q --filter name=share-things) 2>/dev/null || echo "No running containers to stop"
+    
+    # Remove containers with force flag
+    echo -e "${YELLOW}Removing Docker containers...${NC}"
+    docker rm -f $(docker ps -a -q --filter name=share-things) 2>/dev/null || echo "No containers to remove"
+    
+    # Clean up any associated networks
+    echo -e "${YELLOW}Cleaning up networks...${NC}"
+    docker network prune -f 2>/dev/null || echo "No networks to remove"
 fi
 
-# Verify all containers are stopped
-echo -e "${YELLOW}Verifying all containers are stopped...${NC}"
+# Final verification to make sure ALL containers are stopped
+echo -e "${YELLOW}Performing final verification...${NC}"
 if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-    RUNNING_COUNT=$(podman ps -q --filter name=share-things | wc -l)
-    if [ "$RUNNING_COUNT" -gt "0" ]; then
-        echo -e "${RED}Warning: Some containers are still running. Attempting to force stop...${NC}"
+    STILL_RUNNING=$(podman ps -q --filter name=share-things)
+    if [ -n "$STILL_RUNNING" ]; then
+        echo -e "${RED}ERROR: Some containers are still running despite multiple stop attempts!${NC}"
+        echo -e "${RED}This could cause problems with the update. Listing containers:${NC}"
         podman ps | grep "share-things"
-        podman stop $(podman ps -q --filter name=share-things) 2>/dev/null || echo "Failed to stop containers"
-    else
-        echo -e "${GREEN}All containers stopped successfully.${NC}"
+        
+        # Last resort - kill with SIGKILL
+        echo -e "${RED}Performing emergency container kill...${NC}"
+        podman kill $(podman ps -q --filter name=share-things) 2>/dev/null
+        podman rm -f $(podman ps -a -q --filter name=share-things) 2>/dev/null
+        
+        # Check one more time
+        FINAL_CHECK=$(podman ps -q --filter name=share-things)
+        if [ -n "$FINAL_CHECK" ]; then
+            echo -e "${RED}CRITICAL: Unable to stop containers. Manual intervention required.${NC}"
+            echo -e "${RED}Please stop all ShareThings containers manually before continuing.${NC}"
+            exit 1
+        fi
+    fi
+    echo -e "${GREEN}All containers stopped successfully.${NC}"
+else
+    STILL_RUNNING=$(docker ps -q --filter name=share-things)
+    if [ -n "$STILL_RUNNING" ]; then
+        echo -e "${RED}ERROR: Some containers are still running despite multiple stop attempts!${NC}"
+        echo -e "${RED}This could cause problems with the update. Listing containers:${NC}"
+        docker ps | grep "share-things"
+        
+        # Last resort - kill with SIGKILL
+        echo -e "${RED}Performing emergency container kill...${NC}"
+        docker kill $(docker ps -q --filter name=share-things) 2>/dev/null
+        docker rm -f $(docker ps -a -q --filter name=share-things) 2>/dev/null
+        
+        # Check one more time
+        FINAL_CHECK=$(docker ps -q --filter name=share-things)
+        if [ -n "$FINAL_CHECK" ]; then
+            echo -e "${RED}CRITICAL: Unable to stop containers. Manual intervention required.${NC}"
+            echo -e "${RED}Please stop all ShareThings containers manually before continuing.${NC}"
+            exit 1
+        fi
+    fi
+    echo -e "${GREEN}All containers stopped successfully.${NC}"
+fi
+
+# Clean container image cache before rebuilding
+echo -e "${YELLOW}Cleaning container image cache before rebuilding...${NC}"
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    echo -e "${YELLOW}Cleaning Podman image cache...${NC}"
+    # Remove dangling images (not used by any container)
+    podman image prune -f
+    echo -e "${GREEN}Podman dangling images removed.${NC}"
+    
+    # Ask if user wants to do a more aggressive cleanup
+    read -p "Do you want to perform a more aggressive cache cleanup? This will remove all unused images. (y/n): " FULL_CLEANUP
+    if [[ $FULL_CLEANUP =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Performing full Podman system prune...${NC}"
+        podman system prune -f
+        echo -e "${GREEN}Podman system cache cleaned.${NC}"
     fi
 else
-    RUNNING_COUNT=$(docker ps -q --filter name=share-things | wc -l)
-    if [ "$RUNNING_COUNT" -gt "0" ]; then
-        echo -e "${RED}Warning: Some containers are still running. Attempting to force stop...${NC}"
-        docker ps | grep "share-things"
-        docker stop $(docker ps -q --filter name=share-things) 2>/dev/null || echo "Failed to stop containers"
-    else
-        echo -e "${GREEN}All containers stopped successfully.${NC}"
+    echo -e "${YELLOW}Cleaning Docker image cache...${NC}"
+    # Remove dangling images (not used by any container)
+    docker image prune -f
+    echo -e "${GREEN}Docker dangling images removed.${NC}"
+    
+    # Ask if user wants to do a more aggressive cleanup
+    read -p "Do you want to perform a more aggressive cache cleanup? This will remove all unused images. (y/n): " FULL_CLEANUP
+    if [[ $FULL_CLEANUP =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Performing full Docker system prune...${NC}"
+        docker system prune -f
+        echo -e "${GREEN}Docker system cache cleaned.${NC}"
     fi
 fi
 
@@ -247,9 +336,9 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     echo -e "${YELLOW}Using environment variables: FRONTEND_PORT=$FRONTEND_PORT, BACKEND_PORT=$BACKEND_PORT, API_PORT=$API_PORT${NC}"
     FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT $COMPOSE_CMD -f $COMPOSE_FILE up -d
 else
-    # For docker-compose, we can use the -e flag to pass environment variables
+    # For docker-compose, explicitly pass environment variables
     echo -e "${YELLOW}Using environment variables: FRONTEND_PORT=$FRONTEND_PORT, BACKEND_PORT=$BACKEND_PORT, API_PORT=$API_PORT${NC}"
-    $COMPOSE_CMD -f $COMPOSE_FILE up -d
+    FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT $COMPOSE_CMD -f $COMPOSE_FILE up -d
 fi
 
 START_EXIT_CODE=$?
