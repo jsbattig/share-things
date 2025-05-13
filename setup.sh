@@ -295,7 +295,7 @@ if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
                 (cd client && API_PORT=${API_PORT} node set-backend-url.js)
                 echo -e "${GREEN}Updated client/.env with custom backend port.${NC}"
             else
-                echo -e "${YELLOW}Node.js not found. Manually updating client/.env...${NC}"
+                echo -e "${YELLOW}Node.js not found. Manually updating client/.env and client/.env.backend...${NC}"
                 # Manually update the client/.env file
                 if [ -f client/.env ]; then
                     $SED_CMD "s|:3001|:${API_PORT}|g" client/.env
@@ -303,15 +303,45 @@ if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
                 else
                     echo -e "${RED}client/.env file not found. Cannot update.${NC}"
                 fi
+                
+                # Also manually update the client/.env.backend file
+                if [ -f client/.env.backend ]; then
+                    $SED_CMD "s|:3001|:${API_PORT}|g" client/.env.backend
+                    echo -e "${GREEN}Manually updated client/.env.backend with custom backend port.${NC}"
+                else
+                    # Create the file if it doesn't exist
+                    if command -v hostname &> /dev/null; then
+                        HOST_IP=$(hostname -I | awk '{print $1}')
+                    else
+                        HOST_IP="localhost"
+                    fi
+                    echo "BACKEND_URL=http://${HOST_IP}:${API_PORT}" > client/.env.backend
+                    echo -e "${GREEN}Created client/.env.backend with custom backend port.${NC}"
+                fi
             fi
         else
-            echo -e "${RED}client/set-backend-url.js file not found. Cannot update.${NC}"
+            echo -e "${RED}client/set-backend-url.js file not found. Manually updating files.${NC}"
             # Manually update the client/.env file
             if [ -f client/.env ]; then
                 $SED_CMD "s|:3001|:${API_PORT}|g" client/.env
                 echo -e "${GREEN}Manually updated client/.env with custom backend port.${NC}"
             else
                 echo -e "${RED}client/.env file not found. Cannot update.${NC}"
+            fi
+            
+            # Also manually update the client/.env.backend file
+            if [ -f client/.env.backend ]; then
+                $SED_CMD "s|:3001|:${API_PORT}|g" client/.env.backend
+                echo -e "${GREEN}Manually updated client/.env.backend with custom backend port.${NC}"
+            else
+                # Create the file if it doesn't exist
+                if command -v hostname &> /dev/null; then
+                    HOST_IP=$(hostname -I | awk '{print $1}')
+                else
+                    HOST_IP="localhost"
+                fi
+                echo "BACKEND_URL=http://${HOST_IP}:${API_PORT}" > client/.env.backend
+                echo -e "${GREEN}Created client/.env.backend with custom backend port.${NC}"
             fi
         fi
     fi
@@ -406,6 +436,8 @@ services:
         - SOCKET_URL=auto
         - API_PORT=${API_PORT}
     container_name: share-things-frontend
+    environment:
+      - API_PORT=${API_PORT:-15001}
     ports:
       - "\${FRONTEND_PORT:-8080}:80"
     restart: always
