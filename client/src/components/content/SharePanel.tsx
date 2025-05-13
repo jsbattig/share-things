@@ -66,9 +66,13 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
   
   /**
    * Shares text content
+   * @param textToShare Optional parameter to directly share text without using state
    */
-  const shareText = async () => {
-    if (!text.trim()) {
+  const shareText = async (textToShare?: string) => {
+    // Use provided text or fall back to state
+    const contentToShare = textToShare || text;
+    
+    if (!contentToShare.trim()) {
       toast({
         title: 'Empty text',
         description: 'Please enter some text to share',
@@ -94,14 +98,14 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
         timestamp: Date.now(),
         metadata: {
           mimeType: 'text/plain',
-          size: text.length,
+          size: contentToShare.length,
           textInfo: {
             encoding: 'utf-8',
-            lineCount: text.split('\n').length
+            lineCount: contentToShare.split('\n').length
           }
         },
         isChunked: false,
-        totalSize: text.length
+        totalSize: contentToShare.length
       };
       
       console.log('[ShareText] Content metadata created:', contentId);
@@ -109,11 +113,11 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
       // Implement encryption
       // First, add to local content store for immediate display
       console.log('[ShareText] Adding content to local store');
-      addContent(content, text);
+      addContent(content, contentToShare);
       
       // Encrypt the text
       const textEncoder = new TextEncoder();
-      const textData = textEncoder.encode(text);
+      const textData = textEncoder.encode(contentToShare);
       
       const { encryptedData, iv } = await encryptData(
         await deriveKeyFromPassphrase(passphrase),
@@ -140,8 +144,10 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
       console.log('[ShareText] Sending encrypted content to server');
       sendContent(sessionId, encryptedContent, encryptedText);
       
-      // Clear text
-      setText('');
+      // Clear text (only if we're using the state value)
+      if (!textToShare) {
+        setText('');
+      }
       
       console.log('[ShareText] Text sharing completed successfully');
       toast({
@@ -406,13 +412,13 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
         // Check for text
         if (clipboardItem.types.includes('text/plain')) {
           const blob = await clipboardItem.getType('text/plain');
-          const text = await blob.text();
+          const clipboardText = await blob.text();
           
-          // Set text in textarea
-          setText(text);
+          // Set text in textarea for display
+          setText(clipboardText);
           
-          // Immediately share the text (consistent with image paste behavior)
-          await shareText();
+          // Directly share the text with the clipboard content
+          await shareText(clipboardText);
           return;
         }
       }
