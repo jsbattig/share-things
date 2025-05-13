@@ -47,16 +47,17 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         // Otherwise, derive from the current URL
         const currentUrl = new URL(window.location.href);
         
-        // Determine the appropriate port based on the current URL and context
+        // Determine the appropriate port based on environment variables or fallback to default
         let port = '3001'; // Default API port
         
-        // If we're on a non-standard port, we might be behind a proxy that's routing based on path
-        if (currentUrl.port && currentUrl.port !== '80' && currentUrl.port !== '443' && currentUrl.port !== '') {
-          // We're on a custom port, so we might be using the same port for API
-          // Check if we have an environment variable that specifies a different port
-          if (import.meta.env.VITE_API_PORT) {
-            port = import.meta.env.VITE_API_PORT;
-          }
+        // Always check for environment variable first, regardless of current URL port
+        if (import.meta.env.VITE_API_PORT) {
+          console.log(`[Socket] Using configured API port from env: ${import.meta.env.VITE_API_PORT}`);
+          port = import.meta.env.VITE_API_PORT;
+        } else if (currentUrl.port && currentUrl.port !== '80' && currentUrl.port !== '443' && currentUrl.port !== '') {
+          // If no env variable but we're on a non-standard port, we might be using that port
+          console.log(`[Socket] Using current URL port: ${currentUrl.port}`);
+          port = currentUrl.port;
         }
         
         // Construct the backend URL

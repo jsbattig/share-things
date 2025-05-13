@@ -38,6 +38,7 @@
     "@types/node": "^18.15.11",
     "@types/socket.io-client": "^3.0.0",
     "@types/uuid": "^9.0.1",
+    "blob-polyfill": "^9.0.20240710",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "express": "^5.1.0",
