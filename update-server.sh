@@ -437,14 +437,41 @@ echo -e "${YELLOW}Starting updated containers with preserved configuration...${N
 if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     # For podman-compose, we need to explicitly pass the environment variables
     echo -e "${YELLOW}Using environment variables: FRONTEND_PORT=$FRONTEND_PORT, BACKEND_PORT=$BACKEND_PORT, API_PORT=$API_PORT${NC}"
-    FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT $COMPOSE_CMD -f $COMPOSE_FILE up -d
+    
+    # Create a temporary .env file to ensure environment variables are properly passed
+    echo "FRONTEND_PORT=$FRONTEND_PORT" > .env.temp
+    echo "BACKEND_PORT=$BACKEND_PORT" >> .env.temp
+    echo "API_PORT=$API_PORT" >> .env.temp
+    
+    # Use the env-file option to ensure variables are properly passed
+    $COMPOSE_CMD -f $COMPOSE_FILE --env-file .env.temp up -d
 else
     # For docker-compose, explicitly pass environment variables
     echo -e "${YELLOW}Using environment variables: FRONTEND_PORT=$FRONTEND_PORT, BACKEND_PORT=$BACKEND_PORT, API_PORT=$API_PORT${NC}"
-    FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT $COMPOSE_CMD -f $COMPOSE_FILE up -d
+    
+    # Create a temporary .env file to ensure environment variables are properly passed
+    echo "FRONTEND_PORT=$FRONTEND_PORT" > .env.temp
+    echo "BACKEND_PORT=$BACKEND_PORT" >> .env.temp
+    echo "API_PORT=$API_PORT" >> .env.temp
+    
+    # Use the env-file option to ensure variables are properly passed
+    $COMPOSE_CMD -f $COMPOSE_FILE --env-file .env.temp up -d
 fi
 
 START_EXIT_CODE=$?
+
+# Clean up temporary .env file
+if [ -f .env.temp ]; then
+    rm .env.temp
+    echo -e "${GREEN}Temporary environment file removed.${NC}"
+fi
+
+# Add additional debugging for port configuration
+echo -e "${YELLOW}Verifying port configuration...${NC}"
+echo -e "Expected configuration:"
+echo -e "  Frontend Port: ${FRONTEND_PORT}"
+echo -e "  Backend Port: ${BACKEND_PORT}"
+echo -e "  API Port: ${API_PORT}"
 
 if [ $START_EXIT_CODE -ne 0 ]; then
     echo -e "${RED}Failed to start containers. Please check the error messages above.${NC}"
@@ -526,6 +553,24 @@ else
     # Overall verification - make sure we have at least one frontend and one backend container
     if [ "$FRONTEND_RUNNING" -gt "0" ] && [ "$BACKEND_RUNNING" -gt "0" ]; then
         echo -e "${GREEN}Deployment verified. All containers are running.${NC}"
+        
+        # Add detailed port verification
+        echo -e "${YELLOW}Verifying actual port configuration:${NC}"
+        if [ -n "$BACKEND_ID" ]; then
+            echo -e "${YELLOW}Backend container port configuration:${NC}"
+            docker inspect $BACKEND_ID --format '{{range $p, $conf := .NetworkSettings.Ports}}{{$p}} -> {{(index $conf 0).HostPort}}{{end}}'
+            echo -e "${YELLOW}Backend container environment variables:${NC}"
+            docker inspect $BACKEND_ID --format '{{range .Config.Env}}{{.}}{{println}}{{end}}' | grep -E 'PORT|LISTEN'
+        fi
+        
+        # Add detailed port verification
+        echo -e "${YELLOW}Verifying actual port configuration:${NC}"
+        if [ -n "$BACKEND_ID" ]; then
+            echo -e "${YELLOW}Backend container port configuration:${NC}"
+            podman inspect $BACKEND_ID --format '{{range $p, $conf := .NetworkSettings.Ports}}{{$p}} -> {{(index $conf 0).HostPort}}{{end}}'
+            echo -e "${YELLOW}Backend container environment variables:${NC}"
+            podman inspect $BACKEND_ID --format '{{range .Config.Env}}{{.}}{{println}}{{end}}' | grep -E 'PORT|LISTEN'
+        fi
     else
         echo -e "${RED}Verification failed. Not all containers are running.${NC}"
         echo "You can check container logs with: docker logs <container_name>"

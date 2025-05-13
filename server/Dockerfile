@@ -26,8 +26,11 @@ RUN npm install --only=production
 COPY --from=builder /app/dist ./dist
 
 # Set default port
-ARG PORT=15001
+ARG PORT=3001
 ENV PORT=${PORT}
+
+# Make sure the port is explicitly set and used
+ENV LISTEN_PORT=${PORT}
 
 # Create health check endpoint
 RUN echo 'const http = require("http"); \
@@ -40,7 +43,7 @@ RUN echo 'const http = require("http"); \
         res.end(); \
       } \
     }); \
-    const port = process.env.PORT || 15001; \
+    const port = process.env.PORT || 3001; \
     server.listen(port); \
     console.log(`Health check server listening on port ${port}`);' > /app/health.js
 
