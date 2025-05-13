@@ -147,6 +147,8 @@ services:
         - API_URL=http://localhost:3001
         - SOCKET_URL=http://localhost:3001
     container_name: share-things-frontend
+    environment:
+      - API_PORT=${API_PORT:-3001}
     ports:
       - "\${FRONTEND_PORT:-8080}:80"
     restart: always
