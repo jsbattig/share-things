@@ -54,11 +54,9 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (import.meta.env.VITE_API_PORT) {
           console.log(`[Socket] Using configured API port from env: ${import.meta.env.VITE_API_PORT}`);
           port = import.meta.env.VITE_API_PORT;
-        } else if (currentUrl.port && currentUrl.port !== '80' && currentUrl.port !== '443' && currentUrl.port !== '') {
-          // If no env variable but we're on a non-standard port, we might be using that port
-          console.log(`[Socket] Using current URL port: ${currentUrl.port}`);
-          port = currentUrl.port;
         }
+        // IMPORTANT: Do NOT use the current URL's port as a fallback
+        // The frontend and backend are on different ports (15000 vs 15001)
         
         // Construct the backend URL
         const backendUrl = `${currentUrl.protocol}//${currentUrl.hostname}${port ? ':' + port : ''}`;
