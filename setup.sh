@@ -154,11 +154,20 @@ fi
 # Ask if want to expose ports to host
 read -p "Do you want to expose container ports to the host? (y/n): " EXPOSE_PORTS
 if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
-    read -p "Enter the frontend port to expose (default: 8080): " FRONTEND_PORT
-    FRONTEND_PORT=${FRONTEND_PORT:-8080}
+    # If custom HAProxy ports were configured, use those as defaults
+    if [[ $USE_CUSTOM_PORTS =~ ^[Yy]$ ]]; then
+        DEFAULT_FRONTEND_PORT=${CLIENT_PORT:-8080}
+        DEFAULT_BACKEND_PORT=${API_PORT:-3001}
+    else
+        DEFAULT_FRONTEND_PORT=8080
+        DEFAULT_BACKEND_PORT=3001
+    fi
     
-    read -p "Enter the backend port to expose (default: 3001): " BACKEND_PORT
-    BACKEND_PORT=${BACKEND_PORT:-3001}
+    read -p "Enter the frontend port to expose (default: ${DEFAULT_FRONTEND_PORT}): " FRONTEND_PORT
+    FRONTEND_PORT=${FRONTEND_PORT:-$DEFAULT_FRONTEND_PORT}
+    
+    read -p "Enter the backend port to expose (default: ${DEFAULT_BACKEND_PORT}): " BACKEND_PORT
+    BACKEND_PORT=${BACKEND_PORT:-$DEFAULT_BACKEND_PORT}
     
     # Uncomment and update port mappings in .env
     $SED_CMD "s|# FRONTEND_PORT=8080|FRONTEND_PORT=${FRONTEND_PORT}|g" .env
@@ -177,6 +186,10 @@ if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
         
         # Add port mappings to frontend service
         $SED_CMD "/frontend:/,/healthcheck:/ s/healthcheck:/ports:\n      - \"\${FRONTEND_PORT}:80\"\n    healthcheck:/" $COMPOSE_FILE
+    else
+        # Update existing port mappings if they exist
+        $SED_CMD "s/- \"[^\"]*:3001\"/- \"\${BACKEND_PORT}:3001\"/g" $COMPOSE_FILE
+        $SED_CMD "s/- \"[^\"]*:80\"/- \"\${FRONTEND_PORT}:80\"/g" $COMPOSE_FILE
     fi
     
     # For Podman in rootless mode on SELinux systems like Rocky Linux,
@@ -212,10 +225,38 @@ if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
         $SED_CMD '/ports:/,/^[^ ]/ s/"\([^:]*\):z:\([^"]*\)"/"\1:\2"/g' $COMPOSE_FILE
         # This fixes patterns like "${PORT}:z:80" to "${PORT}:80" in the ports section
         $SED_CMD '/ports:/,/^[^ ]/ s/"\(\\${[^}]*}\):z:\([^"]*\)"/"\1:\2"/g' $COMPOSE_FILE
+        
+        # For Podman, we need to ensure the port format is correct (no z suffix)
+        # This is a more aggressive fix that ensures the port format is exactly hostPort:containerPort
+        $SED_CMD '/ports:/,/^[^ ]/ s/".*\(:[^:"]*\)"/"${BACKEND_PORT}\1"/g' $COMPOSE_FILE
+        $SED_CMD '/ports:/,/^[^ ]/ s/".*\(:80\)"/"${FRONTEND_PORT}\1"/g' $COMPOSE_FILE
+        
         echo -e "${GREEN}Port mapping format checked and fixed if needed.${NC}"
     fi
     
     echo -e "${GREEN}Updated ${COMPOSE_FILE} with port mappings.${NC}"
+    
+    # Display the current port mappings in the compose file
+    echo ""
+    echo -e "${BLUE}=== Current Port Mappings in ${COMPOSE_FILE} ===${NC}"
+    echo "Checking current port mappings in the compose file..."
+    
+    # Extract and display port mappings
+    BACKEND_PORTS=$(grep -A 3 "ports:" $COMPOSE_FILE | grep -o '"[^"]*"' | grep ":" || echo "No backend port mappings found")
+    FRONTEND_PORTS=$(grep -A 10 "frontend:" $COMPOSE_FILE | grep -A 5 "ports:" | grep -o '"[^"]*"' | grep ":" || echo "No frontend port mappings found")
+    
+    echo -e "${YELLOW}Backend port mappings:${NC}"
+    echo "$BACKEND_PORTS"
+    echo -e "${YELLOW}Frontend port mappings:${NC}"
+    echo "$FRONTEND_PORTS"
+    
+    # Warn if port mappings contain 'z'
+    if echo "$BACKEND_PORTS$FRONTEND_PORTS" | grep -q "z"; then
+        echo -e "${RED}Warning: Port mappings contain 'z' which may cause issues with Podman.${NC}"
+        echo "You may need to manually edit the compose file to fix this."
+    else
+        echo -e "${GREEN}Port mappings format looks correct.${NC}"
+    fi
 fi
 
 echo ""
@@ -253,7 +294,38 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     echo -e "${YELLOW}Important Note for Podman Port Mappings:${NC}"
     echo "If you encounter errors like 'cannot parse \"3001\" as an IP address', check your compose file"
     echo "and ensure port mappings are in the format 'hostPort:containerPort' without any 'z' suffix."
-    echo "You may need to manually edit the compose file if this script doesn't fix the issue."
+    
+    # Add direct fix option for the specific error shown in the screenshot
+    echo ""
+    echo -e "${BLUE}=== Direct Fix for Port Mapping Errors ===${NC}"
+    read -p "Are you seeing 'cannot parse \"3001\" as an IP address' errors? (y/n): " FIX_PORT_ERRORS
+    if [[ $FIX_PORT_ERRORS =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Applying direct fix to $COMPOSE_FILE...${NC}"
+        
+        # Create a backup of the compose file
+        cp $COMPOSE_FILE "${COMPOSE_FILE}.bak"
+        echo "Backup created at ${COMPOSE_FILE}.bak"
+        
+        # Direct fix for the specific error pattern seen in the screenshot
+        $SED_CMD 's/-p [0-9]*:z:[0-9]* /-p \1:\2 /g' $COMPOSE_FILE
+        $SED_CMD 's/\(".*\):z:\(.*"\)/\1:\2/g' $COMPOSE_FILE
+        
+        # More aggressive fix that replaces the entire port mapping lines
+        if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
+            # Replace backend port mapping
+            $SED_CMD "/backend.*-p/ s/-p [^ ]* /-p ${BACKEND_PORT}:3001 /g" $COMPOSE_FILE
+            # Replace frontend port mapping
+            $SED_CMD "/frontend.*-p/ s/-p [^ ]* /-p ${FRONTEND_PORT}:80 /g" $COMPOSE_FILE
+        fi
+        
+        echo -e "${GREEN}Direct fix applied. Please try running the containers again.${NC}"
+    else
+        echo -e "${YELLOW}For Rocky Linux with Podman, you might need to manually edit the compose file:${NC}"
+        echo "1. Open $COMPOSE_FILE in a text editor"
+        echo "2. Find the port mappings sections (under 'ports:')"
+        echo "3. Ensure they look like: - \"\${FRONTEND_PORT}:80\" and - \"\${BACKEND_PORT}:3001\""
+        echo "4. Remove any 'z' characters in the port mappings"
+    fi
 fi
 
 echo ""
