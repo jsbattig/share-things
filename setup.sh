@@ -93,9 +93,27 @@ fi
 echo ""
 echo -e "${BLUE}=== Configuration ===${NC}"
 
-# Ask for hostname
-read -p "Enter your hostname (e.g., example.com or localhost): " HOSTNAME
-HOSTNAME=${HOSTNAME:-localhost}
+# Hostname Configuration with explanation
+echo -e "${BLUE}=== Hostname Configuration ===${NC}"
+echo "The hostname can be provided manually or automatically determined at runtime."
+echo ""
+echo "1. If you provide a hostname, it will be used for all configurations"
+echo "2. If you leave it blank, the application will auto-detect the hostname"
+echo ""
+echo "Use cases for different hostname values:"
+echo "- 'localhost': For local development only"
+echo "- IP address: For accessing from other machines on your network"
+echo "- Domain name: For production deployments with a real domain"
+echo "- Leave blank: For automatic detection (recommended)"
+echo ""
+read -p "Enter your hostname (or leave blank for auto-detection): " HOSTNAME
+
+if [ -z "$HOSTNAME" ]; then
+    echo -e "${GREEN}Using automatic hostname detection${NC}"
+    HOSTNAME="auto"
+else
+    echo -e "${GREEN}Using hostname: ${HOSTNAME}${NC}"
+fi
 
 # Ask if using custom ports
 read -p "Are you using custom ports for HAProxy? (y/n): " USE_CUSTOM_PORTS
@@ -115,16 +133,46 @@ if [[ $USE_CUSTOM_PORTS =~ ^[Yy]$ ]]; then
     fi
     
     # Update .env file
-    $SED_CMD "s|API_URL=http://localhost|API_URL=${PROTOCOL}://${HOSTNAME}:${API_PORT}|g" .env
-    $SED_CMD "s|SOCKET_URL=http://localhost|SOCKET_URL=${PROTOCOL}://${HOSTNAME}:${API_PORT}|g" .env
-    $SED_CMD "s|CORS_ORIGIN=http://localhost|CORS_ORIGIN=${PROTOCOL}://${HOSTNAME}:${CLIENT_PORT}|g" .env
+    # Update .env file
+    if [ "$HOSTNAME" = "auto" ]; then
+        $SED_CMD "s|API_URL=http://localhost|API_URL=auto|g" .env
+        $SED_CMD "s|SOCKET_URL=http://localhost|SOCKET_URL=auto|g" .env
+        $SED_CMD "s|CORS_ORIGIN=http://localhost|CORS_ORIGIN=*|g" .env
+        
+        # Add API_PORT to .env
+        if ! grep -q "API_PORT" .env; then
+            echo "API_PORT=${API_PORT}" >> .env
+        else
+            $SED_CMD "s|API_PORT=.*|API_PORT=${API_PORT}|g" .env
+        fi
+    else
+        $SED_CMD "s|API_URL=http://localhost|API_URL=${PROTOCOL}://${HOSTNAME}:${API_PORT}|g" .env
+        $SED_CMD "s|SOCKET_URL=http://localhost|SOCKET_URL=${PROTOCOL}://${HOSTNAME}:${API_PORT}|g" .env
+        $SED_CMD "s|CORS_ORIGIN=http://localhost|CORS_ORIGIN=${PROTOCOL}://${HOSTNAME}:${CLIENT_PORT}|g" .env
+    fi
     
     # Update client/.env file
-    $SED_CMD "s|VITE_API_URL=http://localhost|VITE_API_URL=${PROTOCOL}://${HOSTNAME}:${API_PORT}|g" client/.env
-    $SED_CMD "s|VITE_SOCKET_URL=http://localhost|VITE_SOCKET_URL=${PROTOCOL}://${HOSTNAME}:${API_PORT}|g" client/.env
+    if [ "$HOSTNAME" = "auto" ]; then
+        $SED_CMD "s|VITE_API_URL=http://localhost|VITE_API_URL=auto|g" client/.env
+        $SED_CMD "s|VITE_SOCKET_URL=http://localhost|VITE_SOCKET_URL=auto|g" client/.env
+        
+        # Add VITE_API_PORT to client/.env
+        if ! grep -q "VITE_API_PORT" client/.env; then
+            echo "VITE_API_PORT=${API_PORT}" >> client/.env
+        else
+            $SED_CMD "s|VITE_API_PORT=.*|VITE_API_PORT=${API_PORT}|g" client/.env
+        fi
+    else
+        $SED_CMD "s|VITE_API_URL=http://localhost|VITE_API_URL=${PROTOCOL}://${HOSTNAME}:${API_PORT}|g" client/.env
+        $SED_CMD "s|VITE_SOCKET_URL=http://localhost|VITE_SOCKET_URL=${PROTOCOL}://${HOSTNAME}:${API_PORT}|g" client/.env
+    fi
     
     # Update server/.env file
-    $SED_CMD "s|CORS_ORIGIN=http://localhost|CORS_ORIGIN=${PROTOCOL}://${HOSTNAME}:${CLIENT_PORT}|g" server/.env
+    if [ "$HOSTNAME" = "auto" ]; then
+        $SED_CMD "s|CORS_ORIGIN=http://localhost|CORS_ORIGIN=*|g" server/.env
+    else
+        $SED_CMD "s|CORS_ORIGIN=http://localhost|CORS_ORIGIN=${PROTOCOL}://${HOSTNAME}:${CLIENT_PORT}|g" server/.env
+    fi
     
     echo -e "${GREEN}Updated configuration files with custom ports.${NC}"
 else
@@ -137,16 +185,31 @@ else
     fi
     
     # Update .env file
-    $SED_CMD "s|API_URL=http://localhost|API_URL=${PROTOCOL}://${HOSTNAME}|g" .env
-    $SED_CMD "s|SOCKET_URL=http://localhost|SOCKET_URL=${PROTOCOL}://${HOSTNAME}|g" .env
-    $SED_CMD "s|CORS_ORIGIN=http://localhost|CORS_ORIGIN=${PROTOCOL}://${HOSTNAME}|g" .env
+    if [ "$HOSTNAME" = "auto" ]; then
+        $SED_CMD "s|API_URL=http://localhost|API_URL=auto|g" .env
+        $SED_CMD "s|SOCKET_URL=http://localhost|SOCKET_URL=auto|g" .env
+        $SED_CMD "s|CORS_ORIGIN=http://localhost|CORS_ORIGIN=*|g" .env
+    else
+        $SED_CMD "s|API_URL=http://localhost|API_URL=${PROTOCOL}://${HOSTNAME}|g" .env
+        $SED_CMD "s|SOCKET_URL=http://localhost|SOCKET_URL=${PROTOCOL}://${HOSTNAME}|g" .env
+        $SED_CMD "s|CORS_ORIGIN=http://localhost|CORS_ORIGIN=${PROTOCOL}://${HOSTNAME}|g" .env
+    fi
     
     # Update client/.env file
-    $SED_CMD "s|VITE_API_URL=http://localhost|VITE_API_URL=${PROTOCOL}://${HOSTNAME}|g" client/.env
-    $SED_CMD "s|VITE_SOCKET_URL=http://localhost|VITE_SOCKET_URL=${PROTOCOL}://${HOSTNAME}|g" client/.env
+    if [ "$HOSTNAME" = "auto" ]; then
+        $SED_CMD "s|VITE_API_URL=http://localhost|VITE_API_URL=auto|g" client/.env
+        $SED_CMD "s|VITE_SOCKET_URL=http://localhost|VITE_SOCKET_URL=auto|g" client/.env
+    else
+        $SED_CMD "s|VITE_API_URL=http://localhost|VITE_API_URL=${PROTOCOL}://${HOSTNAME}|g" client/.env
+        $SED_CMD "s|VITE_SOCKET_URL=http://localhost|VITE_SOCKET_URL=${PROTOCOL}://${HOSTNAME}|g" client/.env
+    fi
     
     # Update server/.env file
-    $SED_CMD "s|CORS_ORIGIN=http://localhost|CORS_ORIGIN=${PROTOCOL}://${HOSTNAME}|g" server/.env
+    if [ "$HOSTNAME" = "auto" ]; then
+        $SED_CMD "s|CORS_ORIGIN=http://localhost|CORS_ORIGIN=*|g" server/.env
+    else
+        $SED_CMD "s|CORS_ORIGIN=http://localhost|CORS_ORIGIN=${PROTOCOL}://${HOSTNAME}|g" server/.env
+    fi
     
     echo -e "${GREEN}Updated configuration files with standard ports.${NC}"
 fi
@@ -425,6 +488,183 @@ else
     echo ""
     echo "To restart the containers:"
     echo "  cd $(pwd) && docker-compose down && docker-compose up -d"
+fi
+
+# Add specific troubleshooting for common issues
+echo ""
+echo -e "${BLUE}=== Troubleshooting Common Issues ===${NC}"
+echo "Based on your logs, here are solutions for common issues:"
+
+echo -e "${YELLOW}Issue 1: Frontend error 'host not found in upstream \"backend\"'${NC}"
+echo "This is a container networking issue. The frontend container can't resolve the backend service name."
+echo "Solution:"
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    echo "1. Get the backend container's IP address:"
+    echo "   BACKEND_IP=\$(podman inspect -f '{{.NetworkSettings.IPAddress}}' share-things_backend_1)"
+    echo "2. Add an entry to the frontend container's /etc/hosts file:"
+    echo "   podman exec share-things_frontend_1 sh -c \"echo \$BACKEND_IP backend >> /etc/hosts\""
+    echo "3. Restart nginx in the frontend container:"
+    echo "   podman exec share-things_frontend_1 nginx -s reload"
+    echo ""
+    echo "One-line fix command:"
+    echo "   podman exec share-things_frontend_1 sh -c \"echo \$(podman inspect -f '{{.NetworkSettings.IPAddress}}' share-things_backend_1) backend >> /etc/hosts && nginx -s reload\""
+else
+    echo "1. Get the backend container's IP address:"
+    echo "   BACKEND_IP=\$(docker inspect -f '{{.NetworkSettings.IPAddress}}' share-things_backend_1)"
+    echo "2. Add an entry to the frontend container's /etc/hosts file:"
+    echo "   docker exec share-things_frontend_1 sh -c \"echo \$BACKEND_IP backend >> /etc/hosts\""
+    echo "3. Restart nginx in the frontend container:"
+    echo "   docker exec share-things_frontend_1 nginx -s reload"
+    echo ""
+    echo "One-line fix command:"
+    echo "   docker exec share-things_frontend_1 sh -c \"echo \$(docker inspect -f '{{.NetworkSettings.IPAddress}}' share-things_backend_1) backend >> /etc/hosts && nginx -s reload\""
+fi
+
+echo -e "${YELLOW}Issue 2: Backend error 'Cannot find module '/app/dist/index.js''${NC}"
+echo "This means the build process didn't complete correctly in the backend container."
+echo "Solution:"
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    echo "1. Check if the dist directory exists:"
+    echo "   podman exec share-things_backend_1 ls -la /app"
+    echo "2. Manually run the build process inside the container:"
+    echo "   podman exec -it share-things_backend_1 sh -c 'cd /app && npm run build'"
+    echo "3. Restart the backend container:"
+    echo "   podman restart share-things_backend_1"
+    echo ""
+    echo "Alternative: Rebuild the backend container:"
+    echo "   podman-compose build backend && podman-compose up -d backend"
+else
+    echo "1. Check if the dist directory exists:"
+    echo "   docker exec share-things_backend_1 ls -la /app"
+    echo "2. Manually run the build process inside the container:"
+    echo "   docker exec -it share-things_backend_1 sh -c 'cd /app && npm run build'"
+    echo "3. Restart the backend container:"
+    echo "   docker restart share-things_backend_1"
+    echo ""
+    echo "Alternative: Rebuild the backend container:"
+    echo "   docker-compose build backend && docker-compose up -d backend"
+fi
+
+# Add option to run troubleshooting now
+echo ""
+echo -e "${BLUE}=== Run Troubleshooting Now? ===${NC}"
+read -p "Would you like to run troubleshooting for these issues now? (y/n): " RUN_TROUBLESHOOTING
+if [[ $RUN_TROUBLESHOOTING =~ ^[Yy]$ ]]; then
+    echo -e "${YELLOW}Running troubleshooting steps...${NC}"
+    
+    if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+        # Check if containers are running
+        echo "Checking container status..."
+        podman ps --filter label=io.podman.compose.project=share-things
+        
+        # Get container IPs
+        echo "Getting container IPs..."
+        BACKEND_IP=$(podman inspect -f '{{.NetworkSettings.IPAddress}}' share-things_backend_1 2>/dev/null || echo "Container not found")
+        FRONTEND_IP=$(podman inspect -f '{{.NetworkSettings.IPAddress}}' share-things_frontend_1 2>/dev/null || echo "Container not found")
+        
+        echo "Backend IP: $BACKEND_IP"
+        echo "Frontend IP: $FRONTEND_IP"
+        
+        # Fix Issue 1: Frontend nginx configuration
+        if [ "$BACKEND_IP" != "Container not found" ]; then
+            echo ""
+            echo -e "${YELLOW}Fixing Issue 1: Frontend nginx configuration${NC}"
+            echo "Adding backend entry to frontend container's /etc/hosts..."
+            podman exec share-things_frontend_1 sh -c "echo $BACKEND_IP backend >> /etc/hosts" 2>/dev/null || echo "Failed to update /etc/hosts - container may not be running"
+            
+            echo "Restarting nginx in frontend container..."
+            podman exec share-things_frontend_1 nginx -s reload 2>/dev/null || echo "Failed to reload nginx - container may not be running"
+        else
+            echo "Cannot fix nginx configuration - backend container not found or not running"
+        fi
+        
+        # Fix Issue 2: Backend build
+        echo ""
+        echo -e "${YELLOW}Fixing Issue 2: Backend build${NC}"
+        echo "Checking if backend container is running..."
+        if podman ps | grep -q share-things_backend_1; then
+            echo "Manually running build process in backend container..."
+            podman exec -it share-things_backend_1 sh -c 'cd /app && npm run build' || echo "Failed to run build - there may be issues with the build process"
+            
+            echo "Restarting backend container..."
+            podman restart share-things_backend_1
+        else
+            echo "Backend container is not running. Rebuilding and starting it..."
+            podman-compose build backend && podman-compose up -d backend
+        fi
+        
+        # Check status after fixes
+        echo ""
+        echo -e "${YELLOW}Checking container status after fixes...${NC}"
+        sleep 5 # Give containers time to start/restart
+        podman ps --filter label=io.podman.compose.project=share-things
+        
+        echo ""
+        echo -e "${YELLOW}Frontend logs after fixes:${NC}"
+        podman logs share-things_frontend_1 | tail -n 20
+        
+        echo ""
+        echo -e "${YELLOW}Backend logs after fixes:${NC}"
+        podman logs share-things_backend_1 | tail -n 20
+    else
+        # Docker version of the same troubleshooting
+        # Check if containers are running
+        echo "Checking container status..."
+        docker ps --filter label=com.docker.compose.project=share-things
+        
+        # Get container IPs
+        echo "Getting container IPs..."
+        BACKEND_IP=$(docker inspect -f '{{.NetworkSettings.IPAddress}}' share-things_backend_1 2>/dev/null || echo "Container not found")
+        FRONTEND_IP=$(docker inspect -f '{{.NetworkSettings.IPAddress}}' share-things_frontend_1 2>/dev/null || echo "Container not found")
+        
+        echo "Backend IP: $BACKEND_IP"
+        echo "Frontend IP: $FRONTEND_IP"
+        
+        # Fix Issue 1: Frontend nginx configuration
+        if [ "$BACKEND_IP" != "Container not found" ]; then
+            echo ""
+            echo -e "${YELLOW}Fixing Issue 1: Frontend nginx configuration${NC}"
+            echo "Adding backend entry to frontend container's /etc/hosts..."
+            docker exec share-things_frontend_1 sh -c "echo $BACKEND_IP backend >> /etc/hosts" 2>/dev/null || echo "Failed to update /etc/hosts - container may not be running"
+            
+            echo "Restarting nginx in frontend container..."
+            docker exec share-things_frontend_1 nginx -s reload 2>/dev/null || echo "Failed to reload nginx - container may not be running"
+        else
+            echo "Cannot fix nginx configuration - backend container not found or not running"
+        fi
+        
+        # Fix Issue 2: Backend build
+        echo ""
+        echo -e "${YELLOW}Fixing Issue 2: Backend build${NC}"
+        echo "Checking if backend container is running..."
+        if docker ps | grep -q share-things_backend_1; then
+            echo "Manually running build process in backend container..."
+            docker exec -it share-things_backend_1 sh -c 'cd /app && npm run build' || echo "Failed to run build - there may be issues with the build process"
+            
+            echo "Restarting backend container..."
+            docker restart share-things_backend_1
+        else
+            echo "Backend container is not running. Rebuilding and starting it..."
+            docker-compose build backend && docker-compose up -d backend
+        fi
+        
+        # Check status after fixes
+        echo ""
+        echo -e "${YELLOW}Checking container status after fixes...${NC}"
+        sleep 5 # Give containers time to start/restart
+        docker ps --filter label=com.docker.compose.project=share-things
+        
+        echo ""
+        echo -e "${YELLOW}Frontend logs after fixes:${NC}"
+        docker logs share-things_frontend_1 | tail -n 20
+        
+        echo ""
+        echo -e "${YELLOW}Backend logs after fixes:${NC}"
+        docker logs share-things_backend_1 | tail -n 20
+    fi
+    
+    echo -e "${GREEN}Troubleshooting complete!${NC}"
+    echo "If issues persist, you may need to check the application code or container configurations."
 fi
 
 # Clean up any backup files created by sed

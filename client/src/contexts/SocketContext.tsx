@@ -38,15 +38,32 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (!socket) {
       // Dynamically determine the backend URL based on the current window location
       const getBackendUrl = () => {
-        // If an environment variable is set, use it
-        if (import.meta.env.VITE_SOCKET_URL) {
+        // If an environment variable is set to a specific value (not 'auto'), use it
+        if (import.meta.env.VITE_SOCKET_URL && import.meta.env.VITE_SOCKET_URL !== 'auto') {
+          console.log(`[Socket] Using configured backend URL: ${import.meta.env.VITE_SOCKET_URL}`);
           return import.meta.env.VITE_SOCKET_URL;
         }
         
         // Otherwise, derive from the current URL
         const currentUrl = new URL(window.location.href);
-        // Use the same hostname but with port 3001
-        return `${currentUrl.protocol}//${currentUrl.hostname}:3001`;
+        
+        // Determine the appropriate port based on the current URL and context
+        let port = '3001'; // Default API port
+        
+        // If we're on a non-standard port, we might be behind a proxy that's routing based on path
+        if (currentUrl.port && currentUrl.port !== '80' && currentUrl.port !== '443' && currentUrl.port !== '') {
+          // We're on a custom port, so we might be using the same port for API
+          // Check if we have an environment variable that specifies a different port
+          if (import.meta.env.VITE_API_PORT) {
+            port = import.meta.env.VITE_API_PORT;
+          }
+        }
+        
+        // Construct the backend URL
+        const backendUrl = `${currentUrl.protocol}//${currentUrl.hostname}${port ? ':' + port : ''}`;
+        console.log(`[Socket] Automatically determined backend URL: ${backendUrl}`);
+        
+        return backendUrl;
       };
 
       console.log(`[Socket] Connecting to backend at: ${getBackendUrl()}`);
