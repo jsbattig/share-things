@@ -499,7 +499,7 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
                 <Button
                   colorScheme="blue"
                   leftIcon={<Icon as={FaClipboard} />}
-                  onClick={shareText}
+                  onClick={() => shareText()}
                   isLoading={isSharing}
                   loadingText="Sharing..."
                   size="sm"
