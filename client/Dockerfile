@@ -12,12 +12,14 @@ RUN npm install crypto-js @types/crypto-js
 COPY . .
 
 # Set build arguments with defaults
-ARG API_URL=http://localhost
-ARG SOCKET_URL=http://localhost
+ARG API_URL=auto
+ARG SOCKET_URL=auto
+ARG API_PORT=3001
 
 # Create production .env file
 RUN echo "VITE_API_URL=${API_URL}\n\
 VITE_SOCKET_URL=${SOCKET_URL}\n\
+VITE_API_PORT=${API_PORT}\n\
 VITE_ENABLE_ANALYTICS=false\n\
 VITE_ENABLE_LOGGING=false\n\
 VITE_MAX_FILE_SIZE=104857600\n\

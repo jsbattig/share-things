@@ -46,5 +46,15 @@ if ! ping -c1 backend &>/dev/null; then
   fi
 fi
 
+# Update nginx.conf with the correct backend port
+if [ -n "$API_PORT" ]; then
+  echo "Updating nginx.conf to use backend port: $API_PORT"
+  # Use sed to replace the hardcoded port 3001 with the API_PORT value
+  sed -i "s|http://backend:3001|http://backend:$API_PORT|g" /etc/nginx/conf.d/default.conf
+  echo "Updated nginx.conf with backend port: $API_PORT"
+else
+  echo "Using default backend port: 3001"
+fi
+
 # Execute the original docker-entrypoint.sh from the Nginx image
 exec /docker-entrypoint.sh "$@"

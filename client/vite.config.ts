@@ -18,12 +18,25 @@ function loadBackendUrl() {
         return match[1];
       }
     }
+
+    // Try to read the .env file for VITE_API_PORT
+    const mainEnvPath = path.resolve(__dirname, '.env');
+    if (fs.existsSync(mainEnvPath)) {
+      const content = fs.readFileSync(mainEnvPath, 'utf8');
+      const match = content.match(/VITE_API_PORT=(.+)/);
+      if (match && match[1]) {
+        const apiPort = match[1].trim();
+        console.log(`Using API port from .env: ${apiPort}`);
+        return `http://localhost:${apiPort}`;
+      }
+    }
   } catch (error) {
     console.error('Error loading backend URL:', error);
   }
   
   // Default fallback
-  return 'http://localhost:3001';
+  console.log('Using default backend URL: http://localhost:15001');
+  return 'http://localhost:15001';
 }
 
 // Get the backend URL

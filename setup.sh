@@ -292,7 +292,7 @@ if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
             if command -v node &> /dev/null; then
                 # Run the set-backend-url.js script to update the client/.env file
                 echo -e "${YELLOW}Running set-backend-url.js to update client/.env...${NC}"
-                (cd client && node set-backend-url.js)
+                (cd client && API_PORT=${API_PORT} node set-backend-url.js)
                 echo -e "${GREEN}Updated client/.env with custom backend port.${NC}"
             else
                 echo -e "${YELLOW}Node.js not found. Manually updating client/.env...${NC}"
@@ -399,8 +399,9 @@ services:
       context: ./client
       dockerfile: Dockerfile
       args:
-        - API_URL=http://localhost:${BACKEND_PORT}
-        - SOCKET_URL=http://localhost:${BACKEND_PORT}
+        - API_URL=auto
+        - SOCKET_URL=auto
+        - API_PORT=${API_PORT}
     container_name: share-things-frontend
     ports:
       - "\${FRONTEND_PORT:-8080}:80"
