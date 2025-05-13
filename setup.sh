@@ -377,6 +377,8 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+      args:
+        - PORT=${API_PORT:-3001}
     container_name: share-things-backend
     hostname: backend
     environment:
@@ -384,9 +386,6 @@ services:
       - PORT=${API_PORT:-3001}
     ports:
       - "\${BACKEND_PORT:-3001}:${API_PORT:-3001}"
-    build:
-      args:
-        - PORT=${API_PORT:-3001}
     restart: always
     networks:
       app_network:
