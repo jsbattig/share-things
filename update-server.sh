@@ -632,8 +632,12 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     # Enhanced verification of container port mappings
     echo -e "${YELLOW}Verifying container port mappings...${NC}"
     
-    # Check for frontend container - try both naming conventions
-    FRONTEND_RUNNING=$(podman ps -q --filter name=share-things | grep -E 'frontend|_frontend_' | wc -l)
+    # Check for frontend container - directly check for containers with frontend in their name
+    FRONTEND_RUNNING=$(podman ps -q --filter name=share-things-frontend | wc -l)
+    if [ "$FRONTEND_RUNNING" -eq "0" ]; then
+        # Try alternate naming convention with underscore
+        FRONTEND_RUNNING=$(podman ps -q --filter name=share-things_frontend | wc -l)
+    fi
     if [ "$FRONTEND_RUNNING" -gt "0" ]; then
         echo -e "${GREEN}Frontend container is running.${NC}"
         # Get frontend container ID
@@ -663,8 +667,12 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
         echo -e "${RED}Frontend container is not running.${NC}"
     fi
     
-    # Check for backend container - try both naming conventions
-    BACKEND_RUNNING=$(podman ps -q --filter name=share-things | grep -E 'backend|_backend_' | wc -l)
+    # Check for backend container - directly check for containers with backend in their name
+    BACKEND_RUNNING=$(podman ps -q --filter name=share-things-backend | wc -l)
+    if [ "$BACKEND_RUNNING" -eq "0" ]; then
+        # Try alternate naming convention with underscore
+        BACKEND_RUNNING=$(podman ps -q --filter name=share-things_backend | wc -l)
+    fi
     if [ "$BACKEND_RUNNING" -gt "0" ]; then
         echo -e "${GREEN}Backend container is running.${NC}"
         # Get backend container ID
@@ -715,8 +723,12 @@ else
     echo -e "${YELLOW}Listing all running containers:${NC}"
     docker ps | grep "share-things" || echo "No matching containers found"
     
-    # Check for frontend container - try both naming conventions
-    FRONTEND_RUNNING=$(docker ps -q --filter name=share-things | grep -E 'frontend|_frontend_' | wc -l)
+    # Check for frontend container - directly check for containers with frontend in their name
+    FRONTEND_RUNNING=$(docker ps -q --filter name=share-things-frontend | wc -l)
+    if [ "$FRONTEND_RUNNING" -eq "0" ]; then
+        # Try alternate naming convention with underscore
+        FRONTEND_RUNNING=$(docker ps -q --filter name=share-things_frontend | wc -l)
+    fi
     if [ "$FRONTEND_RUNNING" -gt "0" ]; then
         echo -e "${GREEN}Frontend container is running.${NC}"
         echo -e "${YELLOW}Frontend port mapping:${NC}"
@@ -726,8 +738,12 @@ else
         echo -e "${RED}Frontend container is not running.${NC}"
     fi
     
-    # Check for backend container - try both naming conventions
-    BACKEND_RUNNING=$(docker ps -q --filter name=share-things | grep -E 'backend|_backend_' | wc -l)
+    # Check for backend container - directly check for containers with backend in their name
+    BACKEND_RUNNING=$(docker ps -q --filter name=share-things-backend | wc -l)
+    if [ "$BACKEND_RUNNING" -eq "0" ]; then
+        # Try alternate naming convention with underscore
+        BACKEND_RUNNING=$(docker ps -q --filter name=share-things_backend | wc -l)
+    fi
     if [ "$BACKEND_RUNNING" -gt "0" ]; then
         echo -e "${GREEN}Backend container is running.${NC}"
         echo -e "${YELLOW}Backend port mapping:${NC}"
