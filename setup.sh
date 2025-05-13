@@ -338,7 +338,34 @@ if [[ $START_CONTAINERS =~ ^[Yy]$ ]]; then
     echo -e "${YELLOW}Starting containers...${NC}"
     $COMPOSE_CMD up -d
     
-    echo -e "${GREEN}Containers are now running!${NC}"
+    # Check if containers are actually running
+    echo -e "${YELLOW}Checking container status...${NC}"
+    if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+        echo "Running: podman ps --filter label=io.podman.compose.project=share-things"
+        podman ps --filter label=io.podman.compose.project=share-things
+        
+        # Count running containers
+        RUNNING_COUNT=$(podman ps --filter label=io.podman.compose.project=share-things | grep -c "share-things" || echo "0")
+        if [ "$RUNNING_COUNT" -ge "2" ]; then
+            echo -e "${GREEN}Containers are running successfully!${NC}"
+        else
+            echo -e "${RED}Warning: Not all containers appear to be running.${NC}"
+            echo "You can check container logs with: podman logs <container_name>"
+        fi
+    else
+        echo "Running: docker ps --filter label=com.docker.compose.project=share-things"
+        docker ps --filter label=com.docker.compose.project=share-things
+        
+        # Count running containers
+        RUNNING_COUNT=$(docker ps --filter label=com.docker.compose.project=share-things | grep -c "share-things" || echo "0")
+        if [ "$RUNNING_COUNT" -ge "2" ]; then
+            echo -e "${GREEN}Containers are running successfully!${NC}"
+        else
+            echo -e "${RED}Warning: Not all containers appear to be running.${NC}"
+            echo "You can check container logs with: docker logs <container_name>"
+        fi
+    fi
+    
     echo ""
     echo -e "${BLUE}=== Next Steps ===${NC}"
     
@@ -355,10 +382,50 @@ else
     echo "When you're ready, build and start the containers with:"
     echo "  ${COMPOSE_CMD} build"
     echo "  ${COMPOSE_CMD} up -d"
+    echo ""
+    echo "To check if containers are running:"
+    if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+        echo "  podman ps --filter label=io.podman.compose.project=share-things"
+    else
+        echo "  docker ps --filter label=com.docker.compose.project=share-things"
+    fi
+    echo ""
+    echo "To view container logs:"
+    if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+        echo "  podman logs share-things_frontend_1"
+        echo "  podman logs share-things_backend_1"
+    else
+        echo "  docker logs share-things_frontend_1"
+        echo "  docker logs share-things_backend_1"
+    fi
 fi
 
 echo ""
 echo -e "${GREEN}Setup complete!${NC}"
+
+# Add a function to check container status at any time
+echo ""
+echo -e "${BLUE}=== Container Status Check ===${NC}"
+echo "You can check container status at any time by running:"
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    echo "  podman ps --filter label=io.podman.compose.project=share-things"
+    echo ""
+    echo "If containers aren't running, you can view error logs with:"
+    echo "  podman logs share-things_frontend_1"
+    echo "  podman logs share-things_backend_1"
+    echo ""
+    echo "To restart the containers:"
+    echo "  cd $(pwd) && podman-compose down && podman-compose up -d"
+else
+    echo "  docker ps --filter label=com.docker.compose.project=share-things"
+    echo ""
+    echo "If containers aren't running, you can view error logs with:"
+    echo "  docker logs share-things_frontend_1"
+    echo "  docker logs share-things_backend_1"
+    echo ""
+    echo "To restart the containers:"
+    echo "  cd $(pwd) && docker-compose down && docker-compose up -d"
+fi
 
 # Clean up any backup files created by sed
 if [[ "$OSTYPE" == "darwin"* ]]; then
