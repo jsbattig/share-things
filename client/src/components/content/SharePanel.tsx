@@ -410,6 +410,9 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
           
           // Set text in textarea
           setText(text);
+          
+          // Immediately share the text (consistent with image paste behavior)
+          await shareText();
           return;
         }
       }
