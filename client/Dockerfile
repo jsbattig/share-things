@@ -29,14 +29,22 @@ RUN npx vite build || (mkdir -p dist && echo "<html><body>Build failed</body></h
 # Production stage with Nginx
 FROM nginx:alpine
 
+# Install necessary tools for the entrypoint script
+RUN apk add --no-cache iputils bind-tools
+
 # Copy built files from builder stage
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Copy custom Nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
+# Copy custom entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/custom-entrypoint.sh
+RUN chmod +x /usr/local/bin/custom-entrypoint.sh
+
 # Expose port
 EXPOSE 80
 
-# Start Nginx
+# Use custom entrypoint
+ENTRYPOINT ["/usr/local/bin/custom-entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;"]

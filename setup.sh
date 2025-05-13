@@ -49,6 +49,22 @@ echo -e "${BLUE}=== ShareThings ${CONTAINER_ENGINE^} Setup ===${NC}"
 echo "This script will help you configure the ShareThings application for ${CONTAINER_ENGINE^} deployment."
 echo ""
 
+# Apply Podman-specific configuration if needed
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    echo -e "${YELLOW}Detected Podman. Applying Podman-specific configuration...${NC}"
+    
+    # Make the docker-entrypoint.sh script executable
+    if [ -f "client/docker-entrypoint.sh" ]; then
+        chmod +x client/docker-entrypoint.sh
+        echo -e "${GREEN}Made client/docker-entrypoint.sh executable.${NC}"
+    else
+        echo -e "${YELLOW}Warning: client/docker-entrypoint.sh not found. Container networking might have issues.${NC}"
+    fi
+    
+    echo -e "${GREEN}Podman-specific configuration applied.${NC}"
+    echo ""
+fi
+
 # Check if the selected container engine is installed
 if ! command -v $CONTAINER_CMD &> /dev/null; then
     echo -e "${RED}Error: ${CONTAINER_ENGINE^} is not installed.${NC}"
@@ -497,26 +513,16 @@ echo "Based on your logs, here are solutions for common issues:"
 
 echo -e "${YELLOW}Issue 1: Frontend error 'host not found in upstream \"backend\"'${NC}"
 echo "This is a container networking issue. The frontend container can't resolve the backend service name."
-echo "Solution:"
+echo "Solution: This should be automatically fixed by our custom entrypoint script in the frontend container."
+echo "The script will:"
+echo "1. Try to resolve the 'backend' hostname"
+echo "2. If resolution fails, it will add an entry to /etc/hosts"
+echo "3. This ensures Nginx can connect to the backend service"
+echo ""
+echo "If you still encounter this issue, you can manually fix it with:"
 if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-    echo "1. Get the backend container's IP address:"
-    echo "   BACKEND_IP=\$(podman inspect -f '{{.NetworkSettings.IPAddress}}' share-things_backend_1)"
-    echo "2. Add an entry to the frontend container's /etc/hosts file:"
-    echo "   podman exec share-things_frontend_1 sh -c \"echo \$BACKEND_IP backend >> /etc/hosts\""
-    echo "3. Restart nginx in the frontend container:"
-    echo "   podman exec share-things_frontend_1 nginx -s reload"
-    echo ""
-    echo "One-line fix command:"
     echo "   podman exec share-things_frontend_1 sh -c \"echo \$(podman inspect -f '{{.NetworkSettings.IPAddress}}' share-things_backend_1) backend >> /etc/hosts && nginx -s reload\""
 else
-    echo "1. Get the backend container's IP address:"
-    echo "   BACKEND_IP=\$(docker inspect -f '{{.NetworkSettings.IPAddress}}' share-things_backend_1)"
-    echo "2. Add an entry to the frontend container's /etc/hosts file:"
-    echo "   docker exec share-things_frontend_1 sh -c \"echo \$BACKEND_IP backend >> /etc/hosts\""
-    echo "3. Restart nginx in the frontend container:"
-    echo "   docker exec share-things_frontend_1 nginx -s reload"
-    echo ""
-    echo "One-line fix command:"
     echo "   docker exec share-things_frontend_1 sh -c \"echo \$(docker inspect -f '{{.NetworkSettings.IPAddress}}' share-things_backend_1) backend >> /etc/hosts && nginx -s reload\""
 fi
 

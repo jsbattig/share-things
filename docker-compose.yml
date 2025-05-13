@@ -5,6 +5,8 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+    container_name: share-things-backend  # Explicit container name
+    hostname: backend  # Explicit hostname
     environment:
       - NODE_ENV=development
     ports:
@@ -12,11 +14,16 @@ services:
     volumes:
       - ./server:/app
       - /app/node_modules
+    networks:
+      app_network:
+        aliases:
+          - backend  # Explicit network alias
 
   frontend:
     build:
       context: ./client
       dockerfile: Dockerfile
+    container_name: share-things-frontend  # Explicit container name
     ports:
       - "${FRONTEND_PORT:-8080}:80"
     volumes:
@@ -24,3 +31,12 @@ services:
       - /app/node_modules
     depends_on:
       - backend
+    networks:
+      app_network:
+        aliases:
+          - frontend  # Explicit network alias
+
+# Explicit network configuration
+networks:
+  app_network:
+    driver: bridge

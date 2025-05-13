@@ -107,14 +107,22 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile.test
+    container_name: share-things-backend-test
+    hostname: backend
     environment:
       - NODE_ENV=test
     ports:
       - "\${BACKEND_PORT}:3001"
+    networks:
+      app_network:
+        aliases:
+          - backend
 
   # Use a simple Node.js container for the frontend instead of a multi-stage build
   frontend:
     image: node:18-alpine
+    container_name: share-things-frontend-test
+    hostname: frontend
     working_dir: /app
     volumes:
       - ./client:/app
@@ -127,12 +135,17 @@ services:
       - "\${FRONTEND_PORT}:3000"
     depends_on:
       - backend
+    networks:
+      app_network:
+        aliases:
+          - frontend
     command: sh -c "npm install && npm run preview -- --host 0.0.0.0 --port 3000"
 
   e2e-tests:
     build:
       context: ./test/e2e/browser
       dockerfile: Dockerfile.test
+    container_name: share-things-e2e-tests
     depends_on:
       - frontend
       - backend
@@ -142,6 +155,13 @@ services:
     volumes:
       - ./test:/app/test
       - ./test-results:/app/test-results
+    networks:
+      - app_network
+
+# Explicit network configuration
+networks:
+  app_network:
+    driver: bridge
 EOL
 
 echo -e "${GREEN}Docker Compose test configuration created.${NC}"

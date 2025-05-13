@@ -122,11 +122,17 @@ services:
     build:
       context: ./server
       dockerfile: Dockerfile
+    container_name: share-things-backend
+    hostname: backend
     environment:
       - NODE_ENV=production
     ports:
       - "\${BACKEND_PORT:-3001}:3001"
     restart: always
+    networks:
+      app_network:
+        aliases:
+          - backend
     logging:
       driver: "json-file"
       options:
@@ -140,16 +146,26 @@ services:
       args:
         - API_URL=http://localhost:3001
         - SOCKET_URL=http://localhost:3001
+    container_name: share-things-frontend
     ports:
       - "\${FRONTEND_PORT:-8080}:80"
     restart: always
     depends_on:
       - backend
+    networks:
+      app_network:
+        aliases:
+          - frontend
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+
+# Explicit network configuration
+networks:
+  app_network:
+    driver: bridge
 EOL
 
 echo -e "${GREEN}Temporary production docker-compose file created.${NC}"
