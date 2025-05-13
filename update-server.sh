@@ -98,8 +98,16 @@ echo -e "${YELLOW}Capturing current container configuration...${NC}"
 # Capture port configurations and other parameters
 if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     # Get container IDs for frontend and backend
+    # Try both naming conventions (with hyphens and with underscores)
     FRONTEND_ID=$(podman ps -q --filter name=share-things-frontend)
+    if [ -z "$FRONTEND_ID" ]; then
+        FRONTEND_ID=$(podman ps -q --filter name=share-things_frontend)
+    fi
+    
     BACKEND_ID=$(podman ps -q --filter name=share-things-backend)
+    if [ -z "$BACKEND_ID" ]; then
+        BACKEND_ID=$(podman ps -q --filter name=share-things_backend)
+    fi
     
     if [ -n "$FRONTEND_ID" ]; then
         echo -e "${GREEN}Found frontend container: $FRONTEND_ID${NC}"
@@ -124,8 +132,16 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     fi
 else
     # Docker version
+    # Try both naming conventions (with hyphens and with underscores)
     FRONTEND_ID=$(docker ps -q --filter name=share-things-frontend)
+    if [ -z "$FRONTEND_ID" ]; then
+        FRONTEND_ID=$(docker ps -q --filter name=share-things_frontend)
+    fi
+    
     BACKEND_ID=$(docker ps -q --filter name=share-things-backend)
+    if [ -z "$BACKEND_ID" ]; then
+        BACKEND_ID=$(docker ps -q --filter name=share-things_backend)
+    fi
     
     if [ -n "$FRONTEND_ID" ]; then
         echo -e "${GREEN}Found frontend container: $FRONTEND_ID${NC}"
@@ -212,28 +228,89 @@ echo -e "${YELLOW}Stopping containers with ${COMPOSE_CMD}...${NC}"
 $COMPOSE_CMD -f $COMPOSE_FILE down
 COMPOSE_EXIT_CODE=$?
 
+# Check if any containers are still running with either naming convention
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    STILL_RUNNING_AFTER_COMPOSE=$(podman ps -q --filter name=share-things)
+    if [ -n "$STILL_RUNNING_AFTER_COMPOSE" ]; then
+        echo -e "${YELLOW}Some containers are still running after ${COMPOSE_CMD} down. Will try direct stop.${NC}"
+    fi
+else
+    STILL_RUNNING_AFTER_COMPOSE=$(docker ps -q --filter name=share-things)
+    if [ -n "$STILL_RUNNING_AFTER_COMPOSE" ]; then
+        echo -e "${YELLOW}Some containers are still running after ${COMPOSE_CMD} down. Will try direct stop.${NC}"
+    fi
+fi
+
 # Second - try force stopping specific containers regardless of first attempt outcome
 echo -e "${YELLOW}Force stopping individual containers to ensure clean state...${NC}"
 if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     echo -e "${YELLOW}Force stopping Podman containers...${NC}"
-    # Stop with extended timeout
-    podman stop --time 10 $(podman ps -a -q --filter name=share-things) 2>/dev/null || echo "No running containers to stop"
+    # Get all container IDs with either naming convention
+    CONTAINER_IDS=$(podman ps -a -q --filter name=share-things)
+    
+    if [ -n "$CONTAINER_IDS" ]; then
+        # Display container IDs being stopped
+        echo "$CONTAINER_IDS"
+        
+        # Stop with extended timeout
+        for CONTAINER_ID in $CONTAINER_IDS; do
+            podman stop --time 10 $CONTAINER_ID 2>/dev/null || echo "Failed to stop container $CONTAINER_ID"
+        done
+    else
+        echo "No running containers to stop"
+    fi
     
     # Remove containers with force flag
     echo -e "${YELLOW}Removing Podman containers...${NC}"
-    podman rm -f $(podman ps -a -q --filter name=share-things) 2>/dev/null || echo "No containers to remove"
+    CONTAINER_IDS=$(podman ps -a -q --filter name=share-things)
+    
+    if [ -n "$CONTAINER_IDS" ]; then
+        # Display container IDs being removed
+        echo "$CONTAINER_IDS"
+        
+        # Remove containers
+        for CONTAINER_ID in $CONTAINER_IDS; do
+            podman rm -f $CONTAINER_ID 2>/dev/null || echo "Failed to remove container $CONTAINER_ID"
+        done
+    else
+        echo "No containers to remove"
+    fi
     
     # Clean up any associated networks
     echo -e "${YELLOW}Cleaning up networks...${NC}"
     podman network prune -f 2>/dev/null || echo "Network prune not supported or no networks to remove"
 else
     echo -e "${YELLOW}Force stopping Docker containers...${NC}"
-    # Stop with extended timeout
-    docker stop --time 10 $(docker ps -a -q --filter name=share-things) 2>/dev/null || echo "No running containers to stop"
+    # Get all container IDs with either naming convention
+    CONTAINER_IDS=$(docker ps -a -q --filter name=share-things)
+    
+    if [ -n "$CONTAINER_IDS" ]; then
+        # Display container IDs being stopped
+        echo "$CONTAINER_IDS"
+        
+        # Stop with extended timeout
+        for CONTAINER_ID in $CONTAINER_IDS; do
+            docker stop --time 10 $CONTAINER_ID 2>/dev/null || echo "Failed to stop container $CONTAINER_ID"
+        done
+    else
+        echo "No running containers to stop"
+    fi
     
     # Remove containers with force flag
     echo -e "${YELLOW}Removing Docker containers...${NC}"
-    docker rm -f $(docker ps -a -q --filter name=share-things) 2>/dev/null || echo "No containers to remove"
+    CONTAINER_IDS=$(docker ps -a -q --filter name=share-things)
+    
+    if [ -n "$CONTAINER_IDS" ]; then
+        # Display container IDs being removed
+        echo "$CONTAINER_IDS"
+        
+        # Remove containers
+        for CONTAINER_ID in $CONTAINER_IDS; do
+            docker rm -f $CONTAINER_ID 2>/dev/null || echo "Failed to remove container $CONTAINER_ID"
+        done
+    else
+        echo "No containers to remove"
+    fi
     
     # Clean up any associated networks
     echo -e "${YELLOW}Cleaning up networks...${NC}"
@@ -251,8 +328,21 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
         
         # Last resort - kill with SIGKILL
         echo -e "${RED}Performing emergency container kill...${NC}"
-        podman kill $(podman ps -q --filter name=share-things) 2>/dev/null
-        podman rm -f $(podman ps -a -q --filter name=share-things) 2>/dev/null
+        CONTAINER_IDS=$(podman ps -q --filter name=share-things)
+        if [ -n "$CONTAINER_IDS" ]; then
+            for CONTAINER_ID in $CONTAINER_IDS; do
+                echo "Killing container $CONTAINER_ID"
+                podman kill $CONTAINER_ID 2>/dev/null || echo "Failed to kill container $CONTAINER_ID"
+            done
+        fi
+        
+        CONTAINER_IDS=$(podman ps -a -q --filter name=share-things)
+        if [ -n "$CONTAINER_IDS" ]; then
+            for CONTAINER_ID in $CONTAINER_IDS; do
+                echo "Removing container $CONTAINER_ID"
+                podman rm -f $CONTAINER_ID 2>/dev/null || echo "Failed to remove container $CONTAINER_ID"
+            done
+        fi
         
         # Check one more time
         FINAL_CHECK=$(podman ps -q --filter name=share-things)
@@ -272,8 +362,21 @@ else
         
         # Last resort - kill with SIGKILL
         echo -e "${RED}Performing emergency container kill...${NC}"
-        docker kill $(docker ps -q --filter name=share-things) 2>/dev/null
-        docker rm -f $(docker ps -a -q --filter name=share-things) 2>/dev/null
+        CONTAINER_IDS=$(docker ps -q --filter name=share-things)
+        if [ -n "$CONTAINER_IDS" ]; then
+            for CONTAINER_ID in $CONTAINER_IDS; do
+                echo "Killing container $CONTAINER_ID"
+                docker kill $CONTAINER_ID 2>/dev/null || echo "Failed to kill container $CONTAINER_ID"
+            done
+        fi
+        
+        CONTAINER_IDS=$(docker ps -a -q --filter name=share-things)
+        if [ -n "$CONTAINER_IDS" ]; then
+            for CONTAINER_ID in $CONTAINER_IDS; do
+                echo "Removing container $CONTAINER_ID"
+                docker rm -f $CONTAINER_ID 2>/dev/null || echo "Failed to remove container $CONTAINER_ID"
+            done
+        fi
         
         # Check one more time
         FINAL_CHECK=$(docker ps -q --filter name=share-things)
@@ -355,29 +458,30 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     echo -e "${YELLOW}Listing all running containers:${NC}"
     podman ps | grep "share-things" || echo "No matching containers found"
     
-    # Check for frontend container
-    FRONTEND_RUNNING=$(podman ps -q --filter name=share-things-frontend | wc -l)
+    # Check for frontend container - try both naming conventions
+    FRONTEND_RUNNING=$(podman ps -q --filter name=share-things | grep -E 'frontend|_frontend_' | wc -l)
     if [ "$FRONTEND_RUNNING" -gt "0" ]; then
         echo -e "${GREEN}Frontend container is running.${NC}"
         echo -e "${YELLOW}Frontend port mapping:${NC}"
-        podman port share-things-frontend
+        # Try both naming conventions for port display
+        podman port share-things-frontend 2>/dev/null || podman port share-things_frontend_1 2>/dev/null || echo "Could not display port mapping"
     else
         echo -e "${RED}Frontend container is not running.${NC}"
     fi
     
-    # Check for backend container
-    BACKEND_RUNNING=$(podman ps -q --filter name=share-things-backend | wc -l)
+    # Check for backend container - try both naming conventions
+    BACKEND_RUNNING=$(podman ps -q --filter name=share-things | grep -E 'backend|_backend_' | wc -l)
     if [ "$BACKEND_RUNNING" -gt "0" ]; then
         echo -e "${GREEN}Backend container is running.${NC}"
         echo -e "${YELLOW}Backend port mapping:${NC}"
-        podman port share-things-backend
+        # Try both naming conventions for port display
+        podman port share-things-backend 2>/dev/null || podman port share-things_backend_1 2>/dev/null || echo "Could not display port mapping"
     else
         echo -e "${RED}Backend container is not running.${NC}"
     fi
     
-    # Overall verification
-    RUNNING_COUNT=$(podman ps -q --filter name=share-things | wc -l)
-    if [ "$RUNNING_COUNT" -ge "2" ]; then
+    # Overall verification - make sure we have at least one frontend and one backend container
+    if [ "$FRONTEND_RUNNING" -gt "0" ] && [ "$BACKEND_RUNNING" -gt "0" ]; then
         echo -e "${GREEN}Deployment verified. All containers are running.${NC}"
     else
         echo -e "${RED}Verification failed. Not all containers are running.${NC}"
@@ -386,38 +490,41 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
         # Show logs for troubleshooting
         echo -e "${YELLOW}Checking container logs for errors...${NC}"
         echo "Backend container logs:"
-        podman logs share-things-backend --tail 20 2>/dev/null || echo "No logs available for backend container"
+        # Try both naming conventions for logs
+        podman logs share-things-backend --tail 20 2>/dev/null || podman logs share-things_backend_1 --tail 20 2>/dev/null || echo "No logs available for backend container"
         
         echo "Frontend container logs:"
-        podman logs share-things-frontend --tail 20 2>/dev/null || echo "No logs available for frontend container"
+        # Try both naming conventions for logs
+        podman logs share-things-frontend --tail 20 2>/dev/null || podman logs share-things_frontend_1 --tail 20 2>/dev/null || echo "No logs available for frontend container"
     fi
 else
     echo -e "${YELLOW}Listing all running containers:${NC}"
     docker ps | grep "share-things" || echo "No matching containers found"
     
-    # Check for frontend container
-    FRONTEND_RUNNING=$(docker ps -q --filter name=share-things-frontend | wc -l)
+    # Check for frontend container - try both naming conventions
+    FRONTEND_RUNNING=$(docker ps -q --filter name=share-things | grep -E 'frontend|_frontend_' | wc -l)
     if [ "$FRONTEND_RUNNING" -gt "0" ]; then
         echo -e "${GREEN}Frontend container is running.${NC}"
         echo -e "${YELLOW}Frontend port mapping:${NC}"
-        docker port share-things-frontend
+        # Try both naming conventions for port display
+        docker port share-things-frontend 2>/dev/null || docker port share-things_frontend_1 2>/dev/null || echo "Could not display port mapping"
     else
         echo -e "${RED}Frontend container is not running.${NC}"
     fi
     
-    # Check for backend container
-    BACKEND_RUNNING=$(docker ps -q --filter name=share-things-backend | wc -l)
+    # Check for backend container - try both naming conventions
+    BACKEND_RUNNING=$(docker ps -q --filter name=share-things | grep -E 'backend|_backend_' | wc -l)
     if [ "$BACKEND_RUNNING" -gt "0" ]; then
         echo -e "${GREEN}Backend container is running.${NC}"
         echo -e "${YELLOW}Backend port mapping:${NC}"
-        docker port share-things-backend
+        # Try both naming conventions for port display
+        docker port share-things-backend 2>/dev/null || docker port share-things_backend_1 2>/dev/null || echo "Could not display port mapping"
     else
         echo -e "${RED}Backend container is not running.${NC}"
     fi
     
-    # Overall verification
-    RUNNING_COUNT=$(docker ps -q --filter name=share-things | wc -l)
-    if [ "$RUNNING_COUNT" -ge "2" ]; then
+    # Overall verification - make sure we have at least one frontend and one backend container
+    if [ "$FRONTEND_RUNNING" -gt "0" ] && [ "$BACKEND_RUNNING" -gt "0" ]; then
         echo -e "${GREEN}Deployment verified. All containers are running.${NC}"
     else
         echo -e "${RED}Verification failed. Not all containers are running.${NC}"
@@ -426,10 +533,12 @@ else
         # Show logs for troubleshooting
         echo -e "${YELLOW}Checking container logs for errors...${NC}"
         echo "Backend container logs:"
-        docker logs share-things-backend --tail 20 2>/dev/null || echo "No logs available for backend container"
+        # Try both naming conventions for logs
+        docker logs share-things-backend --tail 20 2>/dev/null || docker logs share-things_backend_1 --tail 20 2>/dev/null || echo "No logs available for backend container"
         
         echo "Frontend container logs:"
-        docker logs share-things-frontend --tail 20 2>/dev/null || echo "No logs available for frontend container"
+        # Try both naming conventions for logs
+        docker logs share-things-frontend --tail 20 2>/dev/null || docker logs share-things_frontend_1 --tail 20 2>/dev/null || echo "No logs available for frontend container"
     fi
 fi
 
