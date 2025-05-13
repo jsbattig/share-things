@@ -11,6 +11,8 @@ interface CryptoKey {
   key: CryptoJS.lib.WordArray;
   algorithm: string;
   usages: string[];
+  type: string;
+  extractable: boolean;
 }
 
 /**
@@ -36,7 +38,9 @@ export async function deriveKeyFromPassphrase(passphrase: string): Promise<Crypt
     return {
       key: key,
       algorithm: 'AES',
-      usages: ['encrypt', 'decrypt']
+      usages: ['encrypt', 'decrypt'],
+      type: 'secret',
+      extractable: true
     };
   } catch (error) {
     console.error('Error deriving key from passphrase:', error);

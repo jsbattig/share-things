@@ -154,6 +154,13 @@ EOL
 
 echo -e "${GREEN}Temporary production docker-compose file created.${NC}"
 
+# Ensure client package.json has crypto-js
+echo -e "${YELLOW}Ensuring client package.json has crypto-js...${NC}"
+if ! grep -q "crypto-js" client/package.json; then
+    echo -e "${YELLOW}Adding crypto-js to client package.json...${NC}"
+    $SED_CMD 's/"dependencies": {/"dependencies": {\n    "crypto-js": "^4.2.0",\n    "@types\/crypto-js": "^4.2.2",/' client/package.json
+fi
+
 # Build the containers using the temporary file
 echo -e "${YELLOW}Building production containers...${NC}"
 $DOCKER_COMPOSE_CMD -f docker-compose.prod.temp.yml build

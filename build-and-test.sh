@@ -197,6 +197,10 @@ $DOCKER_COMPOSE_CMD -f docker-compose.test.yml build backend
 $DOCKER_COMPOSE_CMD -f docker-compose.test.yml run --rm backend npm test
 SERVER_TEST_EXIT_CODE=$?
 
+# Ensure client has crypto-js installed
+echo -e "${YELLOW}Ensuring client has crypto-js installed...${NC}"
+$DOCKER_COMPOSE_CMD -f docker-compose.test.yml run --rm frontend npm install crypto-js @types/crypto-js
+
 if [ $SERVER_TEST_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}Server unit tests passed.${NC}"
 else

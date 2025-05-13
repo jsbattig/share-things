@@ -23,7 +23,7 @@ jobs:
       run: npm ci
     
     - name: Install client dependencies
-      run: cd client && npm ci
+      run: cd client && npm ci && npm install crypto-js @types/crypto-js
     
     - name: Install server dependencies
       run: cd server && npm ci

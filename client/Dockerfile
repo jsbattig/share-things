@@ -6,6 +6,7 @@ WORKDIR /app
 # Copy package files and install dependencies
 COPY package*.json ./
 RUN npm install
+RUN npm install crypto-js @types/crypto-js
 
 # Copy source code
 COPY . .
