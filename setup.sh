@@ -281,102 +281,44 @@ if [[ $EXPOSE_PORTS =~ ^[Yy]$ ]]; then
         
         # Update set-backend-url.js to use the custom port
         echo -e "${YELLOW}Updating set-backend-url.js to use custom backend port...${NC}"
-        # Create a backup of the set-backend-url.js file
-        cp client/set-backend-url.js client/set-backend-url.js.bak
-        # Update the hardcoded port in the script
-        $SED_CMD "s|:3001|:${API_PORT}|g" client/set-backend-url.js
-        echo -e "${GREEN}Updated set-backend-url.js with custom backend port.${NC}"
-        
-        # Run the set-backend-url.js script to update the client/.env file
-        echo -e "${YELLOW}Running set-backend-url.js to update client/.env...${NC}"
-        cd client && node set-backend-url.js && cd ..
-        echo -e "${GREEN}Updated client/.env with custom backend port.${NC}"
-    fi
-    
-    # Determine which compose file to use
-    COMPOSE_FILE="docker-compose.yml"
-    if [[ "$CONTAINER_ENGINE" == "podman" ]] && [ -f "podman-compose.yml" ]; then
-        COMPOSE_FILE="podman-compose.yml"
-    fi
-    
-    # Update compose file to include port mappings
-    if ! grep -q "ports:" $COMPOSE_FILE; then
-        # Add port mappings to backend service
-        $SED_CMD "/healthcheck:/i \ \ \ \ ports:\n      - \"\${BACKEND_PORT}:3001\"" $COMPOSE_FILE
-        
-        # Add port mappings to frontend service
-        $SED_CMD "/frontend:/,/healthcheck:/ s/healthcheck:/ports:\n      - \"\${FRONTEND_PORT}:80\"\n    healthcheck:/" $COMPOSE_FILE
-    else
-        # Update existing port mappings if they exist
-        $SED_CMD "s/- \"[^\"]*:3001\"/- \"\${BACKEND_PORT}:3001\"/g" $COMPOSE_FILE
-        $SED_CMD "s/- \"[^\"]*:80\"/- \"\${FRONTEND_PORT}:80\"/g" $COMPOSE_FILE
-    fi
-    
-    # For Podman in rootless mode on SELinux systems like Rocky Linux,
-    # we need to add the :z suffix to volume mounts
-    if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-        # Check for SELinux
-        if grep -q "SELinux" /etc/os-release || [ -f /etc/rocky-release ] || command -v getenforce &> /dev/null; then
-            # Check if SELinux is enforcing
-            SELINUX_ENFORCING=false
-            if command -v getenforce &> /dev/null && [ "$(getenforce)" == "Enforcing" ]; then
-                SELINUX_ENFORCING=true
-            elif [ -f /etc/rocky-release ]; then
-                # Rocky Linux typically has SELinux enabled by default
-                SELINUX_ENFORCING=true
-            fi
+        if [ -f client/set-backend-url.js ]; then
+            # Create a backup of the set-backend-url.js file
+            cp client/set-backend-url.js client/set-backend-url.js.bak
+            # Update the hardcoded port in the script
+            $SED_CMD "s|:3001|:${API_PORT}|g" client/set-backend-url.js
+            echo -e "${GREEN}Updated set-backend-url.js with custom backend port.${NC}"
             
-            if [ "$SELINUX_ENFORCING" = true ]; then
-                echo -e "${YELLOW}Detected SELinux system, updating volume mounts for Podman...${NC}"
-                # Add :z suffix to volume mounts but NOT to port mappings
-                # Look for lines with volume mount patterns (not containing $ for port variables and not in quotes)
-                $SED_CMD '/ports:/,/^[^ ]/ {b}; s/\(- [^"$]*:.*\):/\1:z:/g' $COMPOSE_FILE
-                echo -e "${GREEN}Updated volume mounts for SELinux compatibility.${NC}"
+            # Check if Node.js is installed before running the script
+            if command -v node &> /dev/null; then
+                # Run the set-backend-url.js script to update the client/.env file
+                echo -e "${YELLOW}Running set-backend-url.js to update client/.env...${NC}"
+                (cd client && node set-backend-url.js)
+                echo -e "${GREEN}Updated client/.env with custom backend port.${NC}"
+            else
+                echo -e "${YELLOW}Node.js not found. Manually updating client/.env...${NC}"
+                # Manually update the client/.env file
+                if [ -f client/.env ]; then
+                    $SED_CMD "s|:3001|:${API_PORT}|g" client/.env
+                    echo -e "${GREEN}Manually updated client/.env with custom backend port.${NC}"
+                else
+                    echo -e "${RED}client/.env file not found. Cannot update.${NC}"
+                fi
+            fi
+        else
+            echo -e "${RED}client/set-backend-url.js file not found. Cannot update.${NC}"
+            # Manually update the client/.env file
+            if [ -f client/.env ]; then
+                $SED_CMD "s|:3001|:${API_PORT}|g" client/.env
+                echo -e "${GREEN}Manually updated client/.env with custom backend port.${NC}"
+            else
+                echo -e "${RED}client/.env file not found. Cannot update.${NC}"
             fi
         fi
-        
-        # Add note about Podman networking
-        echo -e "${YELLOW}Note: Podman in rootless mode may have different networking behavior than Docker.${NC}"
-        echo -e "${YELLOW}If you experience connectivity issues, you may need to configure Podman networking.${NC}"
-        
-        # Fix any port mappings that might have been incorrectly modified with :z: format
-        echo -e "${YELLOW}Checking for and fixing any incorrect port mappings...${NC}"
-        # This fixes patterns like "8080:z:80" to "8080:80" in the ports section
-        $SED_CMD '/ports:/,/^[^ ]/ s/"\([^:]*\):z:\([^"]*\)"/"\1:\2"/g' $COMPOSE_FILE
-        # This fixes patterns like "${PORT}:z:80" to "${PORT}:80" in the ports section
-        $SED_CMD '/ports:/,/^[^ ]/ s/"\(\\${[^}]*}\):z:\([^"]*\)"/"\1:\2"/g' $COMPOSE_FILE
-        
-        # For Podman, we need to ensure the port format is correct (no z suffix)
-        # This is a more aggressive fix that ensures the port format is exactly hostPort:containerPort
-        $SED_CMD '/ports:/,/^[^ ]/ s/".*\(:[^:"]*\)"/"${BACKEND_PORT}\1"/g' $COMPOSE_FILE
-        $SED_CMD '/ports:/,/^[^ ]/ s/".*\(:80\)"/"${FRONTEND_PORT}\1"/g' $COMPOSE_FILE
-        
-        echo -e "${GREEN}Port mapping format checked and fixed if needed.${NC}"
     fi
     
-    echo -e "${GREEN}Updated ${COMPOSE_FILE} with port mappings.${NC}"
-    
-    # Display the current port mappings in the compose file
-    echo ""
-    echo -e "${BLUE}=== Current Port Mappings in ${COMPOSE_FILE} ===${NC}"
-    echo "Checking current port mappings in the compose file..."
-    
-    # Extract and display port mappings
-    BACKEND_PORTS=$(grep -A 3 "ports:" $COMPOSE_FILE | grep -o '"[^"]*"' | grep ":" || echo "No backend port mappings found")
-    FRONTEND_PORTS=$(grep -A 10 "frontend:" $COMPOSE_FILE | grep -A 5 "ports:" | grep -o '"[^"]*"' | grep ":" || echo "No frontend port mappings found")
-    
-    echo -e "${YELLOW}Backend port mappings:${NC}"
-    echo "$BACKEND_PORTS"
-    echo -e "${YELLOW}Frontend port mappings:${NC}"
-    echo "$FRONTEND_PORTS"
-    
-    # Warn if port mappings contain 'z'
-    if echo "$BACKEND_PORTS$FRONTEND_PORTS" | grep -q "z"; then
-        echo -e "${RED}Warning: Port mappings contain 'z' which may cause issues with Podman.${NC}"
-        echo "You may need to manually edit the compose file to fix this."
-    else
-        echo -e "${GREEN}Port mappings format looks correct.${NC}"
-    fi
+    # Skip modifying docker-compose.yml directly since we'll be using a temporary file
+    # This avoids errors when the file doesn't exist
+    echo -e "${GREEN}Port configuration set. Will be applied when creating containers.${NC}"
 fi
 
 echo ""
@@ -440,7 +382,7 @@ services:
     environment:
       - NODE_ENV=production
     ports:
-      - "\${BACKEND_PORT:-3001}:3001"
+      - "\${BACKEND_PORT:-3001}:${API_PORT:-3001}"
     restart: always
     networks:
       app_network:
