@@ -1,5 +1,15 @@
 import 'blob-polyfill';
 
+// Define extended interfaces for our mock crypto implementation
+interface MockCryptoKey extends CryptoKey {
+  _keyId: string;
+}
+
+interface MockAlgorithmParams {
+  iv?: Uint8Array | ArrayBuffer | ArrayBufferView;
+  [key: string]: unknown;
+}
+
 // Enhanced mock for Web Crypto API in test environment
 if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
   // Store encryption keys and data for consistent encryption/decryption
@@ -45,7 +55,7 @@ if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
         algorithm: derivedKeyAlgorithm,
         extractable: extractable,
         usages: keyUsages,
-        _keyId: (baseKey as any)._keyId // Pass through the key ID
+        _keyId: (baseKey as MockCryptoKey)._keyId // Pass through the key ID
       };
     },
     
@@ -60,7 +70,22 @@ if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
       const dataStr = new TextDecoder().decode(dataArray);
       
       // Store the original data with the key ID
-      encryptionStore.set(`${(key as any)._keyId}-${(algorithm as any).iv ? Array.from((algorithm as any).iv).join(',') : 'no-iv'}`, dataStr);
+      const mockKey = key as MockCryptoKey;
+      // Cast to unknown first to avoid type errors
+      const mockAlgorithm = algorithm as unknown as MockAlgorithmParams;
+      
+      // Handle different types of iv
+      let ivString = 'no-iv';
+      if (mockAlgorithm.iv) {
+        const ivArray = mockAlgorithm.iv instanceof Uint8Array
+          ? mockAlgorithm.iv
+          : new Uint8Array(mockAlgorithm.iv instanceof ArrayBuffer
+              ? mockAlgorithm.iv
+              : (mockAlgorithm.iv as ArrayBufferView).buffer);
+        ivString = Array.from(ivArray).join(',');
+      }
+      
+      encryptionStore.set(`${mockKey._keyId}-${ivString}`, dataStr);
       
       // Return a dummy encrypted buffer
       return new TextEncoder().encode(dataStr).buffer;
@@ -70,19 +95,34 @@ if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
     decrypt: async (
       algorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams,
       key: CryptoKey,
-      data: ArrayBuffer | ArrayBufferView
+      _data: ArrayBuffer | ArrayBufferView // Data parameter is required by interface but not used in this mock
     ) => {
       console.log('Mock decrypt called');
-      const keyId = `${(key as any)._keyId}-${(algorithm as any).iv ? Array.from((algorithm as any).iv).join(',') : 'no-iv'}`;
+      const mockKey = key as MockCryptoKey;
+      // Cast to unknown first to avoid type errors
+      const mockAlgorithm = algorithm as unknown as MockAlgorithmParams;
+      
+      // Handle different types of iv
+      let ivString = 'no-iv';
+      if (mockAlgorithm.iv) {
+        const ivArray = mockAlgorithm.iv instanceof Uint8Array
+          ? mockAlgorithm.iv
+          : new Uint8Array(mockAlgorithm.iv instanceof ArrayBuffer
+              ? mockAlgorithm.iv
+              : (mockAlgorithm.iv as ArrayBufferView).buffer);
+        ivString = Array.from(ivArray).join(',');
+      }
+      
+      const keyId = `${mockKey._keyId}-${ivString}`;
       
       // If we have stored data for this key and IV, return it
       if (encryptionStore.has(keyId)) {
-        const originalData = encryptionStore.get(keyId);
-        return new TextEncoder().encode(originalData || '').buffer;
+        const storedData = encryptionStore.get(keyId);
+        return new TextEncoder().encode(storedData || '').buffer;
       }
       
       // If wrong passphrase is used (key ID doesn't match), throw an error
-      if ((key as any)._keyId.includes('wrong-passphrase')) {
+      if ((key as MockCryptoKey)._keyId.includes('wrong-passphrase')) {
         throw new Error('Decryption failed');
       }
       
@@ -122,7 +162,8 @@ if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
   };
   
   // Add mock crypto to global scope
-  global.crypto = mockCrypto as any;
+  // Cast to unknown first, then to Crypto to avoid direct any cast
+  global.crypto = mockCrypto as unknown as Crypto;
   
   console.log('Enhanced WebCrypto mock installed');
 }

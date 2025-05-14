@@ -2,19 +2,47 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import socketIOClient from 'socket.io-client';
 
 // Socket.IO client instance
-let socket: any | null = null;
+// Define a Socket type for better type safety
+type Socket = ReturnType<typeof socketIOClient>;
+let socket: Socket | null = null;
 
 // Socket context interface
+// Define response types for better type safety
+interface JoinResponse {
+  success: boolean;
+  token?: string;
+  error?: string;
+  clients?: Array<{ id: string, name: string }>;
+}
+
+interface ContentResponse {
+  success: boolean;
+  error?: string;
+}
+
+// Define content and chunk types
+interface ContentMetadata {
+  contentId: string;
+  [key: string]: unknown;
+}
+
+interface ChunkData {
+  contentId: string;
+  chunkIndex: number;
+  totalChunks: number;
+  [key: string]: unknown;
+}
+
 interface SocketContextType {
-  socket: any | null;
+  socket: Socket | null;
   isConnected: boolean;
   connectionStatus: 'connected' | 'disconnected' | 'reconnecting';
   connect: () => void;
   disconnect: () => void;
-  joinSession: (sessionId: string, clientName: string, passphrase: string) => Promise<any>;
+  joinSession: (sessionId: string, clientName: string, passphrase: string) => Promise<JoinResponse>;
   leaveSession: (sessionId: string) => void;
-  sendContent: (sessionId: string, content: any, data?: string) => void;
-  sendChunk: (sessionId: string, chunk: any) => void;
+  sendContent: (sessionId: string, content: ContentMetadata, data?: string) => void;
+  sendChunk: (sessionId: string, chunk: ChunkData) => void;
   rejoinSession: (sessionId: string, clientName: string, passphrase: string) => Promise<void>;
 }
 
@@ -153,7 +181,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           if (sessionId && clientName && passphrase) {
             console.log(`[Socket] App visible again, verifying session ${sessionId}`);
             // We'll ping the server to verify our session is still valid
-            socket.emit('ping', { sessionId }, (response: any) => {
+            socket.emit('ping', { sessionId }, (response: { valid: boolean }) => {
               if (!response || !response.valid) {
                 console.log('[Socket] Session invalid, rejoining...');
                 rejoinSession(sessionId, clientName, passphrase);
@@ -175,10 +203,11 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       socket?.off('connect_error', onConnectError);
       socket?.off('reconnect', onReconnect);
       socket?.off('reconnecting', onReconnecting);
-      socket?.off('reconnect_error', () => {});
-      socket?.off('reconnect_failed', () => {});
+      socket?.off('reconnect_error');
+      socket?.off('reconnect_failed');
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -198,7 +227,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const fingerprint = await generateFingerprint(passphrase);
       
       // Join session
-      socket.emit('join', { sessionId, clientName, fingerprint }, (response: any) => {
+      socket.emit('join', { sessionId, clientName, fingerprint }, (response: JoinResponse) => {
         if (response.success) {
           // Update session token
           localStorage.setItem('sessionToken', response.token);
@@ -242,8 +271,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    * @param passphrase Session passphrase
    * @returns Promise that resolves with session data
    */
-  const joinSession = async (sessionId: string, clientName: string, passphrase: string): Promise<any> => {
-    return new Promise(async (resolve, reject) => {
+  const joinSession = async (sessionId: string, clientName: string, passphrase: string): Promise<JoinResponse> => {
+    return new Promise((resolve, reject) => {
       if (!socket) {
         reject(new Error('Socket not initialized'));
         return;
@@ -254,7 +283,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         const fingerprint = await generateFingerprint(passphrase);
 
         // Join session
-        socket.emit('join', { sessionId, clientName, fingerprint }, (response: any) => {
+        socket.emit('join', { sessionId, clientName, fingerprint }, (response: JoinResponse) => {
           if (response.success) {
             // Store session token
             localStorage.setItem('sessionToken', response.token);
@@ -287,7 +316,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    * @param content Content to send
    * @param data Optional data (for small content)
    */
-  const sendContent = (sessionId: string, content: any, data?: string) => {
+  const sendContent = (sessionId: string, content: ContentMetadata, data?: string) => {
     if (socket) {
       console.log('[Socket] Sending content to session:', sessionId, 'Content ID:', content.contentId);
       
@@ -298,7 +327,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return false;
       }
       
-      socket.emit('content', { sessionId, content, data }, (response: any) => {
+      socket.emit('content', { sessionId, content, data }, (response: ContentResponse) => {
         if (response && !response.success) {
           console.error('[Socket] Failed to send content:', response.error);
           
@@ -328,7 +357,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    * @param sessionId Session ID
    * @param chunk Chunk to send
    */
-  const sendChunk = (sessionId: string, chunk: any) => {
+  const sendChunk = (sessionId: string, chunk: ChunkData) => {
     if (socket) {
       console.log(`[Socket] Sending chunk ${chunk.chunkIndex}/${chunk.totalChunks} for content ${chunk.contentId}`);
       
@@ -339,7 +368,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return false;
       }
       
-      socket.emit('chunk', { sessionId, chunk }, (response: any) => {
+      socket.emit('chunk', { sessionId, chunk }, (response: ContentResponse) => {
         if (response && !response.success) {
           console.error('[Socket] Failed to send chunk:', response.error);
           

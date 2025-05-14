@@ -6,14 +6,19 @@ import crypto from 'crypto';
 /**
  * Session authentication information
  */
+/**
+ * Passphrase fingerprint structure
+ */
+export interface PassphraseFingerprint {
+  iv: number[];
+  data: number[];
+}
+
 interface SessionAuth {
   /**
    * Passphrase fingerprint (self-encrypted passphrase)
    */
-  fingerprint: {
-    iv: number[];
-    data: number[];
-  };
+  fingerprint: PassphraseFingerprint;
   
   /**
    * Session creation timestamp
@@ -118,7 +123,7 @@ export class SessionManager {
    */
   async joinSession(
     sessionId: string,
-    fingerprint: any,
+    fingerprint: PassphraseFingerprint,
     clientId: string,
     clientName: string,
     socket: Socket
@@ -129,7 +134,10 @@ export class SessionManager {
     // Check if session exists
     if (this.sessionAuth.has(sessionId)) {
       // Verify fingerprint
-      const storedAuth = this.sessionAuth.get(sessionId)!;
+      const storedAuth = this.sessionAuth.get(sessionId);
+      if (!storedAuth) {
+        return { success: false, error: 'Session not found' };
+      }
       const fingerprintsMatch = this.compareFingerprints(fingerprint, storedAuth.fingerprint);
       console.log(`Fingerprints match: ${fingerprintsMatch}`);
       if (!fingerprintsMatch) {
@@ -145,7 +153,10 @@ export class SessionManager {
     }
     
     // Update last activity
-    const auth = this.sessionAuth.get(sessionId)!;
+    const auth = this.sessionAuth.get(sessionId);
+    if (!auth) {
+      return { success: false, error: 'Session not found' };
+    }
     auth.lastActivity = new Date();
     
     // Generate session token
@@ -236,7 +247,7 @@ export class SessionManager {
    * @param b Second fingerprint
    * @returns Whether the fingerprints match
    */
-  private compareFingerprints(a: any, b: any): boolean {
+  private compareFingerprints(a: PassphraseFingerprint, b: PassphraseFingerprint): boolean {
     // Compare IVs
     if (a.iv.length !== b.iv.length) return false;
     for (let i = 0; i < a.iv.length; i++) {
@@ -285,7 +296,7 @@ export class SessionManager {
           this.sessionAuth.delete(sessionId);
           
           // Remove associated tokens
-          for (const [clientId, _] of this.sessionTokens.entries()) {
+          for (const [clientId] of this.sessionTokens.entries()) {
             if (session?.clients.has(clientId)) {
               this.sessionTokens.delete(clientId);
             }

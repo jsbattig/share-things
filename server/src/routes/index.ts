@@ -1,4 +1,4 @@
-import { Express, Request, Response } from 'express';
+import { Express, Request, Response, NextFunction, Router } from 'express';
 
 /**
  * Sets up Express routes
@@ -19,7 +19,7 @@ export function setupRoutes(app: Express): void {
   });
   
   // Error handler
-  app.use((err: Error, req: Request, res: Response, next: Function) => {
+  app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
     console.error('Unhandled error:', err);
     res.status(500).json({ error: 'Internal server error' });
   });
@@ -28,8 +28,8 @@ export function setupRoutes(app: Express): void {
 /**
  * API routes
  */
-function apiRoutes() {
-  const router = require('express').Router();
+function apiRoutes(): Router {
+  const router = Router();
   
   // Session endpoints
   router.get('/sessions', (req: Request, res: Response) => {

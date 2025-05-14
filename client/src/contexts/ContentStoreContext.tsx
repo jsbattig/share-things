@@ -1,12 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 import { useSocket } from './SocketContext';
 import { useServices } from './ServiceContext';
 import { deriveKeyFromPassphrase, decryptData } from '../utils/encryption';
 import { deserializeChunk } from '../utils/chunking';
-import { formatFileSize } from '../utils/formatters';
 import { ChunkStatus } from '../services/ChunkTrackingService';
-import { Socket } from 'socket.io-client';
 
 // Content types
 export enum ContentType {
@@ -184,7 +181,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     };
 
     // Handle chunk received
-    const handleChunk = async (data: { sessionId: string, chunk: any }) => {
+    const handleChunk = async (data: { sessionId: string, chunk: { contentId: string; [key: string]: unknown } }) => {
       try {
         const { chunk: serializedChunk } = data;
         const passphrase = getPassphrase();
@@ -254,6 +251,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       socket.off('content', handleContent);
       socket.off('chunk', handleChunk);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
 
   /**
@@ -323,7 +321,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       
       let matchingContentId: string | undefined;
       
-      for (const [key, _] of contents.entries()) {
+      for (const [key] of contents.entries()) {
         if (key.startsWith(shortId) || chunk.contentId.startsWith(key.substring(0, 8))) {
           console.log(`[addChunk] Found potential matching content with ID: ${key}`);
           matchingContentId = key;
@@ -356,8 +354,8 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
     
     // Add the chunk if it doesn't exist
-    let newChunkAdded = false;
     if (!store.chunks.has(chunk.chunkIndex)) {
+      // Flag that a new chunk was added (for tracking purposes)
       console.log(`[addChunk] Adding new chunk ${chunk.chunkIndex} to store`);
       
       // Create a deep copy of the chunk to avoid reference issues
@@ -372,7 +370,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Add the chunk to the store in the ref
       store.chunks.set(chunk.chunkIndex, chunkCopy);
       store.receivedChunks++;
-      newChunkAdded = true;
+      // Chunk was added successfully
       
       // Update the React state to trigger a re-render
       // But use the ref for the actual data
@@ -728,8 +726,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
             console.log(`[decryptAndReassemble] New content count: ${newContents.size}`);
             console.log(`[decryptAndReassemble] Content IDs in new map:`, Array.from(newContents.keys()));
             
-            // Store a reference to the updated content for logging outside this function
-            const contentForLogging = updatedContent;
+            // Content has been updated with the reassembled blob
             
             return newContents;
           });
@@ -1139,7 +1136,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       
       // Only clean up chunks that are definitely orphaned (no corresponding content)
       // and have been processed (not pending chunks)
-      for (const [contentId, _] of chunkStoresRef.current.entries()) {
+      for (const [contentId] of chunkStoresRef.current.entries()) {
         if (!activeContentIds.has(contentId)) {
           // Check if this content has been fully processed before cleaning it up
           const trackedChunks = chunkTrackingService.getTrackedChunks(contentId);

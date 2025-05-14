@@ -21,7 +21,7 @@ import {
   AlertIcon,
   AlertDescription
 } from '@chakra-ui/react';
-import { FaUsers, FaClipboard, FaUpload, FaSignOutAlt, FaLock } from 'react-icons/fa';
+import { FaUsers, FaSignOutAlt, FaLock } from 'react-icons/fa';
 import { useSocket } from '../contexts/SocketContext';
 import { useContentStore } from '../contexts/ContentStoreContext';
 import ContentList from '../components/content/ContentList';
@@ -46,7 +46,7 @@ const SessionPage: React.FC = () => {
   // Hooks
   const navigate = useNavigate();
   const toast = useToast();
-  const { isOpen, onOpen, onClose } = useDisclosure();
+  const { onOpen } = useDisclosure();
   
   // Context
   const { socket, isConnected, connectionStatus, joinSession, leaveSession, rejoinSession } = useSocket();

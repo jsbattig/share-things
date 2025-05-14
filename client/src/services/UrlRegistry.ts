@@ -18,7 +18,10 @@ export class UrlRegistry {
       this.urls.set(contentId, []);
     }
     
-    this.urls.get(contentId)!.push(url);
+    const urlArray = this.urls.get(contentId);
+    if (urlArray) {
+      urlArray.push(url);
+    }
     console.log(`[UrlRegistry] Created URL for content ${contentId}: ${url}`);
     return url;
   }
@@ -28,7 +31,7 @@ export class UrlRegistry {
    * @param contentId Content ID
    * @param preserveLatest Whether to preserve the latest URL (useful for image display)
    */
-  revokeAllUrls(contentId: string, preserveLatest: boolean = false): void {
+  revokeAllUrls(contentId: string, preserveLatest = false): void {
     const urls = this.urls.get(contentId);
     if (urls) {
       console.log(`[UrlRegistry] Revoking ${preserveLatest ? 'all but latest of ' : ''}${urls.length} URLs for content ${contentId}`);
@@ -83,7 +86,7 @@ export class UrlRegistry {
    * @param activeContentIds Set of active content IDs
    * @param preserveLatest Whether to preserve the latest URL for each content
    */
-  cleanupOrphanedUrls(activeContentIds: Set<string>, preserveLatest: boolean = false): void {
+  cleanupOrphanedUrls(activeContentIds: Set<string>, preserveLatest = false): void {
     for (const [contentId, urls] of this.urls.entries()) {
       if (!activeContentIds.has(contentId)) {
         if (preserveLatest && urls.length > 0) {
@@ -110,7 +113,7 @@ export class UrlRegistry {
    */
   revokeAllUrlsGlobally(): void {
     console.log(`[UrlRegistry] Revoking all URLs globally`);
-    for (const [contentId, urls] of this.urls.entries()) {
+    for (const [, urls] of this.urls.entries()) {
       urls.forEach(url => URL.revokeObjectURL(url));
     }
     this.urls.clear();

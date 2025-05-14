@@ -131,13 +131,16 @@ describe('UrlRegistry', () => {
   test('should revoke specific URL', () => {
     // Create URLs
     const url1 = urlRegistry.createUrl('content-1', new Blob());
-    const url2 = urlRegistry.createUrl('content-1', new Blob());
+    // Create a second URL that we'll keep (not revoke)
+    const secondUrl = urlRegistry.createUrl('content-1', new Blob());
 
     // Revoke specific URL
     urlRegistry.revokeUrl('content-1', url1);
     
     // Check URL count
+    // Verify we still have the second URL
     expect(urlRegistry.getUrlCount()).toBe(1);
+    expect(urlRegistry.getUrls('content-1')).toContain(secondUrl);
     
     // Check URL.revokeObjectURL calls
     expect(global.URL.revokeObjectURL).toHaveBeenCalledTimes(1);

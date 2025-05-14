@@ -174,7 +174,15 @@ export async function encryptData(
  * @param passphrase The passphrase to generate the fingerprint from
  * @returns The fingerprint
  */
-export async function generateFingerprint(passphrase: string): Promise<any> {
+/**
+ * Interface for the fingerprint object
+ */
+export interface PassphraseFingerprint {
+  iv: number[];
+  data: number[];
+}
+
+export async function generateFingerprint(passphrase: string): Promise<PassphraseFingerprint> {
   try {
     console.log('Generating fingerprint using CryptoJS');
     

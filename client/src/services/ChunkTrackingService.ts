@@ -35,7 +35,11 @@ export class ChunkTrackingService {
       this.chunkRegistry.set(contentId, new Map());
     }
     
-    const contentChunks = this.chunkRegistry.get(contentId)!;
+    const contentChunks = this.chunkRegistry.get(contentId);
+    if (!contentChunks) {
+      console.warn(`[ChunkTracker] Content chunks map not found for ${contentId}`);
+      return;
+    }
     contentChunks.set(chunkIndex, {
       contentId,
       chunkIndex,

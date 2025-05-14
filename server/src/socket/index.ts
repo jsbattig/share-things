@@ -1,6 +1,37 @@
 import { Server, Socket } from 'socket.io';
-import { v4 as uuidv4 } from 'uuid';
 import { SessionManager } from '../services/SessionManager';
+import { PassphraseFingerprint } from '../services/SessionManager';
+
+// Define interfaces for content and chunk data
+interface ContentData {
+  contentId: string;
+  senderId: string;
+  senderName: string;
+  contentType: string;
+  timestamp: number;
+  metadata: Record<string, unknown>;
+  isChunked: boolean;
+  totalChunks?: number;
+  totalSize: number;
+  encryptionMetadata?: {
+    iv: number[];
+  };
+  [key: string]: unknown;
+}
+
+interface ChunkData {
+  contentId: string;
+  chunkIndex: number;
+  totalChunks: number;
+  encryptedData: number[];
+  iv: number[];
+  [key: string]: unknown;
+}
+
+// Define callback types
+interface SocketCallback {
+  (response: Record<string, unknown>): void;
+}
 
 /**
  * Sets up Socket.IO event handlers
@@ -77,7 +108,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
     socket.on('join', async (data: { 
       sessionId: string, 
       clientName: string,
-      fingerprint: any
+      fingerprint: PassphraseFingerprint
     }, callback) => {
       try {
         console.log(`Client ${socket.id} attempting to join session ${data.sessionId}`);
@@ -113,7 +144,16 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
         
         // Notify other clients
         console.log(`Notifying clients in session ${data.sessionId} about new client ${socket.id} (${data.clientName})`);
-        console.log(`Current clients in session: ${Array.from(session!.clients.keys()).join(', ')}`);
+        if (!session) {
+          console.error(`Session ${data.sessionId} not found after joining`);
+          callback({
+            success: false,
+            error: 'Session not found after joining'
+          });
+          return;
+        }
+        
+        console.log(`Current clients in session: ${Array.from(session.clients.keys()).join(', ')}`);
         
         socket.to(data.sessionId).emit('client-joined', {
           sessionId: data.sessionId,
@@ -122,7 +162,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
         });
         
         // Return success with token and existing clients
-        const clientsList = Array.from(session!.clients.values()).map(client => ({
+        const clientsList = Array.from(session.clients.values()).map(client => ({
           id: client.clientId,
           name: client.clientName
         }));
@@ -199,7 +239,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
     });
     
     // Content sharing
-    socket.on('content', (data: { sessionId: string, content: any, data?: string }, callback) => {
+    socket.on('content', (data: { sessionId: string, content: ContentData, data?: string }, callback?: SocketCallback) => {
       try {
         const { sessionId, content, data: contentData } = data;
         
@@ -232,7 +272,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
     });
     
     // Chunk sharing
-    socket.on('chunk', (data: { sessionId: string, chunk: any }, callback) => {
+    socket.on('chunk', (data: { sessionId: string, chunk: ChunkData }, callback?: SocketCallback) => {
       try {
         const { sessionId, chunk } = data;
         

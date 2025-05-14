@@ -36,7 +36,7 @@ export interface ChunkingOptions {
  */
 const DEFAULT_OPTIONS: ChunkingOptions = {
   chunkSize: 64 * 1024, // 64KB
-  onProgress: () => {}
+  onProgress: (_progress: number): void => { /* No-op progress handler */ }
 };
 
 /**
@@ -53,8 +53,8 @@ export async function chunkAndEncryptBlob(
 ): Promise<{ chunks: Chunk[]; contentId: string }> {
   // Merge options with defaults
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  const chunkSize = opts.chunkSize || DEFAULT_OPTIONS.chunkSize!;
-  const onProgress = opts.onProgress || DEFAULT_OPTIONS.onProgress!;
+  const chunkSize = opts.chunkSize || DEFAULT_OPTIONS.chunkSize || 64 * 1024;
+  const onProgress = opts.onProgress || DEFAULT_OPTIONS.onProgress || ((_progress: number): void => { /* Fallback progress handler */ });
   
   // Generate content ID
   const contentId = uuidv4();
@@ -108,7 +108,7 @@ export async function chunkAndEncryptBlob(
 export async function processChunksInBatches(
   chunks: Chunk[],
   processor: (chunk: Chunk) => Promise<void>,
-  batchSize: number = 5,
+  batchSize = 5,
   onProgress?: (progress: number) => void
 ): Promise<void> {
   const totalChunks = chunks.length;
@@ -139,7 +139,15 @@ export async function processChunksInBatches(
  * @param chunk The chunk to serialize
  * @returns Serialized chunk
  */
-export function serializeChunk(chunk: Chunk): any {
+export interface SerializedChunk {
+  contentId: string;
+  chunkIndex: number;
+  totalChunks: number;
+  encryptedData: number[];
+  iv: number[];
+}
+
+export function serializeChunk(chunk: Chunk): SerializedChunk {
   return {
     contentId: chunk.contentId,
     chunkIndex: chunk.chunkIndex,
@@ -154,7 +162,7 @@ export function serializeChunk(chunk: Chunk): any {
  * @param data The serialized chunk data
  * @returns Deserialized chunk
  */
-export function deserializeChunk(data: any): Chunk {
+export function deserializeChunk(data: SerializedChunk): Chunk {
   return {
     contentId: data.contentId,
     chunkIndex: data.chunkIndex,
@@ -170,7 +178,7 @@ export function deserializeChunk(data: any): Chunk {
  * @param chunkSize Chunk size in bytes
  * @returns Estimated number of chunks
  */
-export function estimateChunks(fileSize: number, chunkSize: number = DEFAULT_OPTIONS.chunkSize!): number {
+export function estimateChunks(fileSize: number, chunkSize = DEFAULT_OPTIONS.chunkSize || 64 * 1024): number {
   return Math.ceil(fileSize / chunkSize);
 }
 
@@ -180,6 +188,6 @@ export function estimateChunks(fileSize: number, chunkSize: number = DEFAULT_OPT
  * @param threshold Threshold size in bytes
  * @returns True if chunking is needed
  */
-export function isChunkingNeeded(fileSize: number, threshold: number = DEFAULT_OPTIONS.chunkSize!): boolean {
+export function isChunkingNeeded(fileSize: number, threshold = DEFAULT_OPTIONS.chunkSize || 64 * 1024): boolean {
   return fileSize > threshold;
 }
