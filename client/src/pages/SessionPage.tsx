@@ -27,7 +27,6 @@ import { useContentStore } from '../contexts/ContentStoreContext';
 import ContentList from '../components/content/ContentList';
 import ClientList from '../components/session/ClientList';
 import SharePanel from '../components/content/SharePanel';
-import { useEffect } from 'react';
 
 /**
  * Session page component
