@@ -1,10 +1,10 @@
 # ShareThings
 
-[![Lint](https://img.shields.io/badge/Lint-passing-brightgreen)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
-[![Build and Test](https://img.shields.io/badge/Build%20and%20Test-passing-brightgreen)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
-[![Integration Tests](https://img.shields.io/badge/Integration%20Tests-passing-brightgreen)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
-[![Build Production](https://img.shields.io/badge/Build%20Production-passing-brightgreen)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
-[![Deploy to Production](https://img.shields.io/badge/Deploy%20to%20Production-passing-brightgreen)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Lint](https://img.shields.io/github/actions/workflow/status/jsbattig/share-things/share-things-ci-cd.yml?branch=master&label=Lint&event=push&job=lint)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Build and Test](https://img.shields.io/github/actions/workflow/status/jsbattig/share-things/share-things-ci-cd.yml?branch=master&label=Build%20and%20Test&event=push&job=build)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Integration Tests](https://img.shields.io/github/actions/workflow/status/jsbattig/share-things/share-things-ci-cd.yml?branch=master&label=Integration%20Tests&event=push&job=integration)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Build Production](https://img.shields.io/github/actions/workflow/status/jsbattig/share-things/share-things-ci-cd.yml?branch=master&label=Build%20Production&event=push&job=build-production)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Deploy to Production](https://img.shields.io/github/actions/workflow/status/jsbattig/share-things/share-things-ci-cd.yml?branch=master&label=Deploy%20to%20Production&event=push&job=deploy-production)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
 
 A real-time content sharing application with end-to-end encryption.
 
