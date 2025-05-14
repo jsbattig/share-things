@@ -4,7 +4,7 @@
 
 ShareThings uses end-to-end encryption to ensure that all shared content is secure and private. The encryption is implemented entirely on the client side, ensuring that the server never has access to unencrypted content or encryption keys.
 
-This document outlines the encryption approach, key derivation, and implementation details.
+This document outlines the encryption approach, key derivation, and implementation details based on the current implementation.
 
 ## Encryption Flow
 
@@ -13,7 +13,7 @@ graph TD
     A[Session Passphrase] --> B[Key Derivation]
     B --> C[Derived Encryption Key]
     
-    D[Content to Encrypt] --> E[Generate IV]
+    D[Content to Encrypt] --> E[Generate Deterministic IV]
     C --> F[Encryption]
     E --> F
     D --> F
@@ -39,6 +39,24 @@ graph TD
     P --> Q[Decrypted Content]
 ```
 
+## Implementation Approach
+
+The current implementation uses CryptoJS for encryption operations, which provides compatibility with non-HTTPS environments. This is different from the Web Crypto API approach that might be used in other contexts.
+
+```typescript
+// Import CryptoJS
+import * as CryptoJS from 'crypto-js';
+
+// Define interface for our crypto key
+interface CryptoKey {
+  key: CryptoJS.lib.WordArray;
+  algorithm: string;
+  usages: string[];
+  type: string;
+  extractable: boolean;
+}
+```
+
 ## Key Derivation
 
 The encryption key is derived from the session passphrase using PBKDF2 (Password-Based Key Derivation Function 2):
@@ -46,43 +64,35 @@ The encryption key is derived from the session passphrase using PBKDF2 (Password
 ```typescript
 /**
  * Derives an encryption key from a passphrase
- * @param passphrase The session passphrase
- * @param salt Salt for key derivation (optional, generated if not provided)
- * @returns The derived key and salt
+ * @param passphrase The passphrase to derive the key from
+ * @returns The derived key
  */
-async function deriveKey(passphrase: string, salt?: Uint8Array): Promise<{ key: CryptoKey, salt: Uint8Array }> {
-  // Generate salt if not provided
-  if (!salt) {
-    salt = crypto.getRandomValues(new Uint8Array(16));
-  }
-  
-  // Convert passphrase to buffer
-  const passphraseBuffer = new TextEncoder().encode(passphrase);
-  
-  // Import passphrase as raw key
-  const importedKey = await crypto.subtle.importKey(
-    'raw',
-    passphraseBuffer,
-    { name: 'PBKDF2' },
-    false,
-    ['deriveBits', 'deriveKey']
-  );
-  
-  // Derive key using PBKDF2
-  const derivedKey = await crypto.subtle.deriveKey(
-    {
-      name: 'PBKDF2',
-      salt,
+export async function deriveKeyFromPassphrase(passphrase: string): Promise<CryptoKey> {
+  try {
+    console.log('Deriving key from passphrase using CryptoJS');
+    
+    // Use a fixed salt for deterministic key derivation
+    const salt = CryptoJS.enc.Utf8.parse('ShareThings-Salt-2025');
+    
+    // Derive the key using PBKDF2
+    const key = CryptoJS.PBKDF2(passphrase, salt, {
+      keySize: 256/32, // 256 bits
       iterations: 100000,
-      hash: 'SHA-256'
-    },
-    importedKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  );
-  
-  return { key: derivedKey, salt };
+      hasher: CryptoJS.algo.SHA256
+    });
+    
+    // Return a crypto key object
+    return {
+      key: key,
+      algorithm: 'AES',
+      usages: ['encrypt', 'decrypt'],
+      type: 'secret',
+      extractable: true
+    };
+  } catch (error) {
+    console.error('Error deriving key from passphrase:', error);
+    throw new Error(`Failed to derive key: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 ```
 
@@ -90,49 +100,145 @@ Key features of the key derivation:
 - Uses PBKDF2 with SHA-256
 - 100,000 iterations for security
 - 256-bit AES key
-- Unique salt for each session
+- Fixed salt for deterministic key derivation
 
-## Encryption Algorithm
+## Deterministic IV Generation
 
-The application uses AES-GCM (Advanced Encryption Standard with Galois/Counter Mode) for encryption:
+Unlike the random IV approach often used in encryption, the current implementation uses a deterministic IV generation approach to ensure that the same content encrypted with the same passphrase produces the same ciphertext:
 
 ```typescript
 /**
- * Encrypts data using AES-GCM
- * @param data Data to encrypt (string or ArrayBuffer)
- * @param key Encryption key
- * @param iv Initialization vector (optional, generated if not provided)
- * @returns Encrypted data and IV
+ * Generates a deterministic IV from the passphrase and data
+ * @param passphrase The passphrase
+ * @param data The data to generate the IV from
+ * @returns The deterministic IV
  */
-async function encrypt(data: string | ArrayBuffer, key: CryptoKey, iv?: Uint8Array): Promise<{ encryptedData: ArrayBuffer, iv: Uint8Array }> {
-  // Generate IV if not provided
-  if (!iv) {
-    iv = crypto.getRandomValues(new Uint8Array(12));
+async function generateDeterministicIV(passphrase: string, data: ArrayBuffer | Uint8Array): Promise<Uint8Array> {
+  try {
+    console.log('Generating deterministic IV using CryptoJS');
+    
+    // Convert data to array
+    const dataArray = new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer);
+    
+    // Convert to WordArray for CryptoJS
+    const dataWords = [];
+    for (let i = 0; i < dataArray.length; i += 4) {
+      dataWords.push(
+        ((dataArray[i] || 0) << 24) |
+        ((dataArray[i + 1] || 0) << 16) |
+        ((dataArray[i + 2] || 0) << 8) |
+        (dataArray[i + 3] || 0)
+      );
+    }
+    const dataWordArray = CryptoJS.lib.WordArray.create(dataWords, dataArray.length);
+    
+    // Combine passphrase and data
+    const passphraseWordArray = CryptoJS.enc.Utf8.parse(passphrase);
+    const combinedWordArray = CryptoJS.lib.WordArray.create()
+      .concat(passphraseWordArray)
+      .concat(dataWordArray);
+    
+    // Hash the combined data
+    const hash = CryptoJS.SHA256(combinedWordArray);
+    
+    // Convert to Uint8Array and use first 12 bytes as IV
+    const hashWords = hash.words;
+    const hashBytes = new Uint8Array(16);
+    for (let i = 0; i < 4; i++) {
+      const word = hashWords[i];
+      hashBytes[i * 4] = (word >>> 24) & 0xff;
+      hashBytes[i * 4 + 1] = (word >>> 16) & 0xff;
+      hashBytes[i * 4 + 2] = (word >>> 8) & 0xff;
+      hashBytes[i * 4 + 3] = word & 0xff;
+    }
+    
+    return hashBytes.slice(0, 12);
+  } catch (error) {
+    console.error('Error generating deterministic IV:', error);
+    throw new Error(`Failed to generate IV: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
-  
-  // Convert data to ArrayBuffer if it's a string
-  const dataBuffer = typeof data === 'string' 
-    ? new TextEncoder().encode(data) 
-    : data;
-  
-  // Encrypt the data
-  const encryptedData = await crypto.subtle.encrypt(
-    {
-      name: 'AES-GCM',
-      iv
-    },
-    key,
-    dataBuffer
-  );
-  
-  return { encryptedData, iv };
+}
+```
+
+## Encryption Algorithm
+
+The application uses AES for encryption with PKCS7 padding:
+
+```typescript
+/**
+ * Encrypts data with a key
+ * @param key The encryption key
+ * @param data The data to encrypt
+ * @param passphrase The passphrase (used for IV generation)
+ * @returns The encrypted data and IV
+ */
+export async function encryptData(
+  key: CryptoKey,
+  data: ArrayBuffer | Uint8Array,
+  passphrase: string
+): Promise<{ encryptedData: ArrayBuffer; iv: Uint8Array }> {
+  try {
+    console.log('Encrypting data using CryptoJS');
+    
+    // Generate IV
+    const iv = await generateDeterministicIV(passphrase, data);
+    
+    // Convert data to WordArray
+    const dataArray = new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer);
+    const dataWords = [];
+    for (let i = 0; i < dataArray.length; i += 4) {
+      dataWords.push(
+        ((dataArray[i] || 0) << 24) |
+        ((dataArray[i + 1] || 0) << 16) |
+        ((dataArray[i + 2] || 0) << 8) |
+        (dataArray[i + 3] || 0)
+      );
+    }
+    const dataWordArray = CryptoJS.lib.WordArray.create(dataWords, dataArray.length);
+    
+    // Convert IV to WordArray
+    const ivWords = [];
+    for (let i = 0; i < iv.length; i += 4) {
+      ivWords.push(
+        ((iv[i] || 0) << 24) |
+        ((iv[i + 1] || 0) << 16) |
+        ((iv[i + 2] || 0) << 8) |
+        (iv[i + 3] || 0)
+      );
+    }
+    const ivWordArray = CryptoJS.lib.WordArray.create(ivWords, iv.length);
+    
+    // Encrypt data
+    const encrypted = CryptoJS.AES.encrypt(dataWordArray, key.key, {
+      iv: ivWordArray,
+      padding: CryptoJS.pad.Pkcs7
+    });
+    
+    // Convert to ArrayBuffer
+    const ciphertext = encrypted.ciphertext;
+    const encryptedWords = ciphertext.words;
+    const encryptedBytes = new Uint8Array(ciphertext.sigBytes);
+    
+    for (let i = 0; i < encryptedBytes.length; i += 4) {
+      const word = encryptedWords[i / 4];
+      encryptedBytes[i] = (word >>> 24) & 0xff;
+      if (i + 1 < encryptedBytes.length) encryptedBytes[i + 1] = (word >>> 16) & 0xff;
+      if (i + 2 < encryptedBytes.length) encryptedBytes[i + 2] = (word >>> 8) & 0xff;
+      if (i + 3 < encryptedBytes.length) encryptedBytes[i + 3] = word & 0xff;
+    }
+    
+    return { encryptedData: encryptedBytes.buffer, iv };
+  } catch (error) {
+    console.error('Error encrypting data:', error);
+    throw new Error(`Encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 ```
 
 Key features of the encryption:
-- AES-GCM for authenticated encryption
-- 12-byte random IV for each encryption operation
-- Supports both string and binary data
+- AES encryption with PKCS7 padding
+- Deterministic IV generation based on passphrase and data
+- Supports binary data (ArrayBuffer/Uint8Array)
 
 ## Decryption
 
@@ -140,345 +246,198 @@ The decryption process uses the same key and the IV that was used for encryption
 
 ```typescript
 /**
- * Decrypts data using AES-GCM
- * @param encryptedData Encrypted data
- * @param key Decryption key
- * @param iv Initialization vector used for encryption
- * @param outputType Type of output to return
- * @returns Decrypted data
+ * Decrypts data with a key
+ * @param key The decryption key
+ * @param encryptedData The encrypted data
+ * @param iv The initialization vector
+ * @returns The decrypted data
  */
-async function decrypt(
-  encryptedData: ArrayBuffer, 
-  key: CryptoKey, 
-  iv: Uint8Array,
-  outputType: 'string' | 'arraybuffer' = 'arraybuffer'
-): Promise<string | ArrayBuffer> {
+export async function decryptData(
+  key: CryptoKey,
+  encryptedData: ArrayBuffer | Uint8Array,
+  iv: Uint8Array
+): Promise<ArrayBuffer> {
   try {
-    // Decrypt the data
-    const decryptedBuffer = await crypto.subtle.decrypt(
-      {
-        name: 'AES-GCM',
-        iv
-      },
-      key,
-      encryptedData
-    );
+    console.log('Decrypting data using CryptoJS');
     
-    // Return as string or ArrayBuffer based on outputType
-    if (outputType === 'string') {
-      return new TextDecoder().decode(decryptedBuffer);
+    // Convert encryptedData to WordArray
+    const encryptedArray = new Uint8Array(encryptedData instanceof ArrayBuffer ? encryptedData : encryptedData.buffer);
+    const encryptedWords = [];
+    for (let i = 0; i < encryptedArray.length; i += 4) {
+      encryptedWords.push(
+        ((encryptedArray[i] || 0) << 24) |
+        ((encryptedArray[i + 1] || 0) << 16) |
+        ((encryptedArray[i + 2] || 0) << 8) |
+        (encryptedArray[i + 3] || 0)
+      );
     }
     
-    return decryptedBuffer;
+    // Create WordArray from encryptedData
+    const encryptedWordArray = CryptoJS.lib.WordArray.create(encryptedWords, encryptedArray.length);
+    
+    // Convert IV to WordArray
+    const ivWords = [];
+    for (let i = 0; i < iv.length; i += 4) {
+      ivWords.push(
+        ((iv[i] || 0) << 24) |
+        ((iv[i + 1] || 0) << 16) |
+        ((iv[i + 2] || 0) << 8) |
+        (iv[i + 3] || 0)
+      );
+    }
+    const ivWordArray = CryptoJS.lib.WordArray.create(ivWords, iv.length);
+    
+    // Create a CipherParams object with just the ciphertext
+    const cipherParams = CryptoJS.lib.CipherParams.create({
+      ciphertext: encryptedWordArray
+    });
+    
+    // Decrypt data
+    const decrypted = CryptoJS.AES.decrypt(cipherParams, key.key, {
+      iv: ivWordArray,
+      padding: CryptoJS.pad.Pkcs7
+    });
+    
+    // Convert to ArrayBuffer
+    const decryptedWords = decrypted.words;
+    const decryptedBytes = new Uint8Array(decrypted.sigBytes);
+    
+    for (let i = 0; i < decryptedBytes.length; i += 4) {
+      const word = decryptedWords[i / 4];
+      decryptedBytes[i] = (word >>> 24) & 0xff;
+      if (i + 1 < decryptedBytes.length) decryptedBytes[i + 1] = (word >>> 16) & 0xff;
+      if (i + 2 < decryptedBytes.length) decryptedBytes[i + 2] = (word >>> 8) & 0xff;
+      if (i + 3 < decryptedBytes.length) decryptedBytes[i + 3] = word & 0xff;
+    }
+    
+    // If decryption succeeded but returned empty data, that's suspicious
+    if (decryptedBytes.length === 0) {
+      throw new Error('Decryption failed: Empty result');
+    }
+    
+    return decryptedBytes.buffer;
   } catch (error) {
-    console.error('Decryption failed:', error);
-    throw new Error('Failed to decrypt data. The passphrase may be incorrect.');
+    console.error('Error decrypting data:', error);
+    throw new Error(`Decryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 ```
 
-## Web Workers Implementation
+## Passphrase Fingerprinting
 
-To prevent blocking the main thread during encryption/decryption operations, especially for large content, the application uses Web Workers:
+The application implements passphrase fingerprinting for session authentication:
 
 ```typescript
-// Encryption worker
-class EncryptionWorker {
-  private worker: Worker;
-  private taskQueue: Map<string, { resolve: Function, reject: Function }> = new Map();
-  private nextTaskId: number = 1;
-  
-  constructor() {
-    // Create worker
-    this.worker = new Worker(new URL('./encryption-worker.ts', import.meta.url));
+/**
+ * Generates a deterministic fingerprint from a passphrase
+ * @param passphrase The passphrase to generate the fingerprint from
+ * @returns The fingerprint
+ */
+export async function generateFingerprint(passphrase: string): Promise<any> {
+  try {
+    console.log('Generating fingerprint using CryptoJS');
     
-    // Set up message handler
-    this.worker.onmessage = (e) => {
-      const { taskId, result, error } = e.data;
-      const task = this.taskQueue.get(taskId);
-      
-      if (task) {
-        if (error) {
-          task.reject(new Error(error));
-        } else {
-          task.resolve(result);
-        }
-        
-        this.taskQueue.delete(taskId);
-      }
+    // Use a fixed IV for fingerprint generation
+    const fixedIv = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    
+    // Create a deterministic hash of the passphrase
+    const passphraseWordArray = CryptoJS.enc.Utf8.parse(passphrase);
+    const hash = CryptoJS.SHA256(passphraseWordArray);
+    
+    // Convert hash to bytes
+    const hashWords = hash.words;
+    const hashBytes = new Uint8Array(hash.sigBytes);
+    for (let i = 0; i < hashBytes.length; i += 4) {
+      const word = hashWords[i / 4];
+      hashBytes[i] = (word >>> 24) & 0xff;
+      if (i + 1 < hashBytes.length) hashBytes[i + 1] = (word >>> 16) & 0xff;
+      if (i + 2 < hashBytes.length) hashBytes[i + 2] = (word >>> 8) & 0xff;
+      if (i + 3 < hashBytes.length) hashBytes[i + 3] = word & 0xff;
+    }
+    
+    // Use the first 16 bytes of the hash as the "encrypted data"
+    const dataBytes = hashBytes.slice(0, 16);
+    
+    return {
+      iv: Array.from(fixedIv),
+      data: Array.from(dataBytes)
     };
-  }
-  
-  /**
-   * Encrypts data in a worker
-   */
-  async encrypt(data: string | ArrayBuffer, key: CryptoKey, iv?: Uint8Array): Promise<{ encryptedData: ArrayBuffer, iv: Uint8Array }> {
-    const taskId = `task_${this.nextTaskId++}`;
-    
-    // Create exportable key
-    const exportedKey = await crypto.subtle.exportKey('raw', key);
-    
-    return new Promise((resolve, reject) => {
-      this.taskQueue.set(taskId, { resolve, reject });
-      
-      this.worker.postMessage({
-        taskId,
-        action: 'encrypt',
-        data,
-        key: exportedKey,
-        iv
-      }, [
-        ...(data instanceof ArrayBuffer ? [data] : []),
-        exportedKey
-      ]);
-    });
-  }
-  
-  /**
-   * Decrypts data in a worker
-   */
-  async decrypt(
-    encryptedData: ArrayBuffer, 
-    key: CryptoKey, 
-    iv: Uint8Array,
-    outputType: 'string' | 'arraybuffer' = 'arraybuffer'
-  ): Promise<string | ArrayBuffer> {
-    const taskId = `task_${this.nextTaskId++}`;
-    
-    // Create exportable key
-    const exportedKey = await crypto.subtle.exportKey('raw', key);
-    
-    return new Promise((resolve, reject) => {
-      this.taskQueue.set(taskId, { resolve, reject });
-      
-      this.worker.postMessage({
-        taskId,
-        action: 'decrypt',
-        data: encryptedData,
-        key: exportedKey,
-        iv,
-        outputType
-      }, [
-        encryptedData,
-        exportedKey
-      ]);
-    });
-  }
-  
-  /**
-   * Terminates the worker
-   */
-  terminate() {
-    this.worker.terminate();
-    this.taskQueue.clear();
-  }
-}
-```
-
-The worker script (`encryption-worker.ts`):
-
-```typescript
-// Import necessary crypto functions
-import { importKey, encrypt, decrypt } from './crypto-utils';
-
-// Handle messages from main thread
-self.onmessage = async (e) => {
-  const { taskId, action, data, key, iv, outputType } = e.data;
-  
-  try {
-    // Import the key
-    const importedKey = await importKey(key);
-    
-    if (action === 'encrypt') {
-      // Encrypt data
-      const { encryptedData, iv: generatedIv } = await encrypt(data, importedKey, iv);
-      
-      // Send result back to main thread
-      self.postMessage({
-        taskId,
-        result: {
-          encryptedData,
-          iv: generatedIv
-        }
-      }, [encryptedData]);
-    } else if (action === 'decrypt') {
-      // Decrypt data
-      const decryptedData = await decrypt(data, importedKey, iv, outputType);
-      
-      // Send result back to main thread
-      if (decryptedData instanceof ArrayBuffer) {
-        self.postMessage({
-          taskId,
-          result: decryptedData
-        }, [decryptedData]);
-      } else {
-        self.postMessage({
-          taskId,
-          result: decryptedData
-        });
-      }
-    }
   } catch (error) {
-    // Send error back to main thread
-    self.postMessage({
-      taskId,
-      error: error.message
-    });
-  }
-};
-```
-
-## Worker Pool
-
-For efficient processing of multiple encryption/decryption tasks, especially when dealing with chunked content, the application uses a worker pool:
-
-```typescript
-class EncryptionWorkerPool {
-  private workers: EncryptionWorker[] = [];
-  private availableWorkers: EncryptionWorker[] = [];
-  private taskQueue: Array<{
-    task: () => Promise<any>,
-    resolve: Function,
-    reject: Function
-  }> = [];
-  
-  constructor(size: number = navigator.hardwareConcurrency || 4) {
-    // Create workers
-    for (let i = 0; i < size; i++) {
-      const worker = new EncryptionWorker();
-      this.workers.push(worker);
-      this.availableWorkers.push(worker);
-    }
-  }
-  
-  /**
-   * Executes a task in the pool
-   */
-  async execute<T>(task: () => Promise<T>): Promise<T> {
-    // If there's an available worker, use it
-    if (this.availableWorkers.length > 0) {
-      const worker = this.availableWorkers.pop()!;
-      
-      try {
-        const result = await task();
-        this.availableWorkers.push(worker);
-        this.processQueue();
-        return result;
-      } catch (error) {
-        this.availableWorkers.push(worker);
-        this.processQueue();
-        throw error;
-      }
-    }
-    
-    // Otherwise, queue the task
-    return new Promise((resolve, reject) => {
-      this.taskQueue.push({ task, resolve, reject });
-    });
-  }
-  
-  /**
-   * Processes the task queue
-   */
-  private processQueue() {
-    if (this.taskQueue.length > 0 && this.availableWorkers.length > 0) {
-      const { task, resolve, reject } = this.taskQueue.shift()!;
-      const worker = this.availableWorkers.pop()!;
-      
-      task().then(result => {
-        resolve(result);
-        this.availableWorkers.push(worker);
-        this.processQueue();
-      }).catch(error => {
-        reject(error);
-        this.availableWorkers.push(worker);
-        this.processQueue();
-      });
-    }
-  }
-  
-  /**
-   * Terminates all workers
-   */
-  terminate() {
-    for (const worker of this.workers) {
-      worker.terminate();
-    }
-    
-    this.workers = [];
-    this.availableWorkers = [];
-    this.taskQueue = [];
+    console.error('Error generating fingerprint:', error);
+    throw new Error(`Failed to generate fingerprint: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 ```
 
-## Encryption Service
+This fingerprint is used for session authentication without exposing the actual passphrase to the server.
 
-The EncryptionService provides a high-level API for encryption operations:
+## High-Level Encryption Functions
+
+The application provides high-level functions for encrypting and decrypting different types of data:
+
+### Text Encryption/Decryption
 
 ```typescript
-class EncryptionService {
-  private key: CryptoKey | null = null;
-  private salt: Uint8Array | null = null;
-  private workerPool: EncryptionWorkerPool;
-  
-  constructor() {
-    this.workerPool = new EncryptionWorkerPool();
-  }
-  
-  /**
-   * Initializes the encryption service with a passphrase
-   */
-  async initialize(passphrase: string, salt?: Uint8Array): Promise<void> {
-    const result = await deriveKey(passphrase, salt);
-    this.key = result.key;
-    this.salt = result.salt;
-  }
-  
-  /**
-   * Encrypts data
-   */
-  async encrypt(data: string | ArrayBuffer): Promise<{ encryptedData: ArrayBuffer, iv: Uint8Array }> {
-    if (!this.key) {
-      throw new Error('Encryption service not initialized');
-    }
-    
-    return this.workerPool.execute(() => {
-      const worker = new EncryptionWorker();
-      const result = worker.encrypt(data, this.key!);
-      worker.terminate();
-      return result;
-    });
-  }
-  
-  /**
-   * Decrypts data
-   */
-  async decrypt(
-    encryptedData: ArrayBuffer, 
-    iv: Uint8Array,
-    outputType: 'string' | 'arraybuffer' = 'arraybuffer'
-  ): Promise<string | ArrayBuffer> {
-    if (!this.key) {
-      throw new Error('Encryption service not initialized');
-    }
-    
-    return this.workerPool.execute(() => {
-      const worker = new EncryptionWorker();
-      const result = worker.decrypt(encryptedData, this.key!, iv, outputType);
-      worker.terminate();
-      return result;
-    });
-  }
-  
-  /**
-   * Cleans up resources
-   */
-  cleanup() {
-    this.key = null;
-    this.salt = null;
-    this.workerPool.terminate();
-  }
+/**
+ * Encrypts text with a passphrase
+ * @param passphrase The encryption passphrase
+ * @param text The text to encrypt
+ * @returns The encrypted text and IV as base64 strings
+ */
+export async function encryptText(
+  passphrase: string,
+  text: string
+): Promise<{ encryptedText: string; iv: string }> {
+  // Implementation details...
+}
+
+/**
+ * Decrypts text with a passphrase
+ * @param passphrase The decryption passphrase
+ * @param encryptedText The encrypted text as a base64 string
+ * @param ivBase64 The IV as a base64 string
+ * @returns The decrypted text
+ */
+export async function decryptText(
+  passphrase: string,
+  encryptedText: string,
+  ivBase64: string
+): Promise<string> {
+  // Implementation details...
+}
+```
+
+### Blob Encryption/Decryption
+
+```typescript
+/**
+ * Encrypts a blob with a passphrase
+ * @param passphrase The encryption passphrase
+ * @param blob The blob to encrypt
+ * @returns The encrypted blob and IV
+ */
+export async function encryptBlob(
+  passphrase: string,
+  blob: Blob
+): Promise<{ encryptedBlob: Blob; iv: Uint8Array }> {
+  // Implementation details...
+}
+
+/**
+ * Decrypts a blob with a passphrase
+ * @param passphrase The decryption passphrase
+ * @param encryptedBlob The encrypted blob
+ * @param iv The initialization vector
+ * @param mimeType The original MIME type
+ * @returns The decrypted blob
+ */
+export async function decryptBlob(
+  passphrase: string,
+  encryptedBlob: Blob,
+  iv: Uint8Array,
+  mimeType: string
+): Promise<Blob> {
+  // Implementation details...
 }
 ```
 
@@ -495,9 +454,9 @@ class EncryptionService {
    - Keys are cleared when leaving a session
 
 3. **IV Management**:
-   - Unique IV for each encryption operation
+   - Deterministic IV generation based on passphrase and data
    - IV is transmitted alongside encrypted data
-   - IV is not reused
+   - Fixed IV for fingerprint generation
 
 4. **Secure Transmission**:
    - All communication is over HTTPS/WSS
@@ -505,20 +464,20 @@ class EncryptionService {
    - Metadata is kept to a minimum
 
 5. **Browser Support**:
-   - Check for Web Crypto API support
-   - Provide fallbacks where possible
-   - Notify users of unsupported browsers
+   - CryptoJS provides compatibility with a wide range of browsers
+   - No Web Workers are used in the current implementation
+   - Error handling for encryption/decryption failures
 
 ## Limitations
 
 1. **Browser Compatibility**:
-   - Web Crypto API is supported in modern browsers
-   - Older browsers may not support all features
+   - CryptoJS is supported in all modern browsers
+   - Performance may vary across browsers
 
 2. **Performance**:
-   - Large files may still cause performance issues
-   - Web Workers help but have overhead
-   - Progressive chunking mitigates some issues
+   - CryptoJS is not as performant as the Web Crypto API
+   - Large files may cause performance issues
+   - No Web Workers are used for non-blocking operations
 
 3. **Key Recovery**:
    - No key recovery mechanism
@@ -532,7 +491,7 @@ The encryption implementation should be thoroughly tested:
 1. **Unit Tests**:
    - Test key derivation
    - Test encryption/decryption
-   - Test worker communication
+   - Test fingerprint generation
 
 2. **Integration Tests**:
    - Test end-to-end encryption flow
@@ -542,7 +501,6 @@ The encryption implementation should be thoroughly tested:
 3. **Performance Tests**:
    - Test with large files
    - Test with multiple concurrent operations
-   - Test worker pool efficiency
 
 4. **Security Tests**:
    - Verify encryption strength

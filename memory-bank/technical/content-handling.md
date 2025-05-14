@@ -2,7 +2,7 @@
 
 ## Overview
 
-ShareThings uses a unified approach to handle different types of content (text, images, files) with a consistent processing pipeline. This document outlines the content handling strategy, from capture to display.
+ShareThings uses a unified approach to handle different types of content (text, images, files) with a consistent processing pipeline. This document outlines the current content handling implementation based on the actual code.
 
 ## Content Types
 
@@ -11,9 +11,10 @@ The application supports the following content types:
 1. **Text**: Plain text, formatted text, code snippets
 2. **Image**: Images from clipboard or files
 3. **File**: Any file type (including images that should be treated as files)
-4. **Other**: Any other content type that might be supported in the future
 
 ## Content Processing Pipeline
+
+The current implementation follows this simplified pipeline:
 
 ```mermaid
 graph TD
@@ -21,7 +22,7 @@ graph TD
     B --> C[Metadata Extraction]
     C --> D[Size Analysis]
     
-    D -->|Small Content| E[Single Encryption]
+    D -->|Small Content| E[Direct Encryption]
     D -->|Large Content| F[Chunking]
     
     F --> G[Chunk Encryption]
@@ -53,39 +54,7 @@ Content can be captured from multiple sources:
 - **File Selection**: Files selected through a file picker
 - **Text Input**: Text entered directly into the application
 
-```typescript
-// Content capture service
-class ContentCaptureService {
-  // Capture from clipboard
-  async captureFromClipboard(): Promise<CapturedContent> {
-    const items = await navigator.clipboard.read();
-    return this.processClipboardItems(items);
-  }
-  
-  // Capture from drop event
-  captureFromDrop(event: React.DragEvent): Promise<CapturedContent> {
-    const items = event.dataTransfer.items;
-    return this.processDataTransferItems(items);
-  }
-  
-  // Capture from file input
-  captureFromFileInput(files: FileList): Promise<CapturedContent> {
-    return this.processFiles(files);
-  }
-  
-  // Capture text input
-  captureText(text: string): CapturedContent {
-    return {
-      type: 'text',
-      data: text,
-      metadata: {
-        mimeType: 'text/plain',
-        size: text.length
-      }
-    };
-  }
-}
-```
+The current implementation handles these sources through React components and event handlers.
 
 ### 2. Type Detection
 
@@ -96,7 +65,7 @@ Content type is detected based on:
 - Content analysis
 
 ```typescript
-// Content type detection
+// Content type detection (simplified from actual implementation)
 function detectContentType(data: any, mimeType?: string): ContentType {
   if (typeof data === 'string') {
     // Check if it's a base64 image
@@ -119,259 +88,241 @@ function detectContentType(data: any, mimeType?: string): ContentType {
 
 ### 3. Metadata Extraction
 
-Metadata is extracted based on content type:
+Metadata is extracted based on content type, including:
 
-```typescript
-// Metadata extraction
-async function extractMetadata(data: any, contentType: ContentType): Promise<ContentMetadata> {
-  const baseMetadata: ContentMetadata = {
-    mimeType: '',
-    size: 0
-  };
-  
-  switch (contentType) {
-    case ContentType.TEXT:
-      return {
-        ...baseMetadata,
-        mimeType: 'text/plain',
-        size: typeof data === 'string' ? data.length : 0,
-        textInfo: {
-          encoding: 'utf-8',
-          lineCount: typeof data === 'string' ? data.split('\n').length : 0
-        }
-      };
-      
-    case ContentType.IMAGE:
-      // For images, extract dimensions
-      let width = 0;
-      let height = 0;
-      
-      if (data instanceof Blob || data instanceof File) {
-        const img = await createImageFromBlob(data);
-        width = img.width;
-        height = img.height;
-      }
-      
-      return {
-        ...baseMetadata,
-        mimeType: data.type || 'image/png',
-        size: data.size || 0,
-        fileName: data.name,
-        imageInfo: {
-          width,
-          height,
-          format: data.type?.split('/')[1] || 'png'
-        }
-      };
-      
-    case ContentType.FILE:
-      return {
-        ...baseMetadata,
-        fileName: data.name,
-        mimeType: data.type || 'application/octet-stream',
-        size: data.size || 0,
-        fileInfo: {
-          extension: data.name?.split('.').pop() || ''
-        }
-      };
-      
-    default:
-      return baseMetadata;
-  }
-}
-```
+- File name
+- MIME type
+- Size
+- For images: dimensions and format
+- For text: encoding and line count
 
 ### 4. Size Analysis and Chunking
 
-Content is analyzed to determine if it needs to be chunked:
+Content is analyzed to determine if it needs to be chunked. The current implementation uses a fixed threshold of 64KB:
 
 ```typescript
-// Size analysis and chunking
-function analyzeAndChunk(data: Blob | string, metadata: ContentMetadata): ChunkingResult {
-  const MAX_CHUNK_SIZE = 64 * 1024; // 64KB default chunk size
-  const size = typeof data === 'string' ? data.length : data.size;
+// From chunking.ts
+export function isChunkingNeeded(fileSize: number, threshold: number = DEFAULT_OPTIONS.chunkSize!): boolean {
+  return fileSize > threshold;
+}
+
+const DEFAULT_OPTIONS: ChunkingOptions = {
+  chunkSize: 64 * 1024, // 64KB
+  onProgress: () => {}
+};
+```
+
+If chunking is needed, the content is split into fixed-size chunks:
+
+```typescript
+// From chunking.ts
+export async function chunkAndEncryptBlob(
+  blob: Blob,
+  passphrase: string,
+  options: ChunkingOptions = {}
+): Promise<{ chunks: Chunk[]; contentId: string }> {
+  // Merge options with defaults
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+  const chunkSize = opts.chunkSize || DEFAULT_OPTIONS.chunkSize!;
+  const onProgress = opts.onProgress || DEFAULT_OPTIONS.onProgress!;
   
-  // Determine if chunking is needed
-  if (size <= MAX_CHUNK_SIZE) {
-    return {
-      needsChunking: false,
-      chunks: [],
-      originalData: data
-    };
-  }
+  // Generate content ID
+  const contentId = uuidv4();
   
-  // Determine optimal chunk size based on content size
-  let chunkSize = MAX_CHUNK_SIZE;
-  if (size > 10 * 1024 * 1024) { // > 10MB
-    chunkSize = 256 * 1024; // 256KB chunks for large files
-  } else if (size > 1 * 1024 * 1024) { // > 1MB
-    chunkSize = 128 * 1024; // 128KB chunks for medium files
-  }
+  // Calculate total chunks
+  const totalChunks = Math.ceil(blob.size / chunkSize);
+  
+  // Derive encryption key
+  const key = await deriveKeyFromPassphrase(passphrase);
   
   // Create chunks
-  const chunks = [];
-  let offset = 0;
-  let chunkIndex = 0;
+  const chunks: Chunk[] = [];
   
-  while (offset < size) {
-    let chunkData;
+  for (let i = 0; i < totalChunks; i++) {
+    // Calculate chunk range
+    const start = i * chunkSize;
+    const end = Math.min(start + chunkSize, blob.size);
     
-    if (typeof data === 'string') {
-      chunkData = data.substring(offset, offset + chunkSize);
-    } else {
-      chunkData = data.slice(offset, offset + chunkSize);
-    }
+    // Extract chunk data
+    const chunkBlob = blob.slice(start, end);
+    const arrayBuffer = await chunkBlob.arrayBuffer();
+    const chunkData = new Uint8Array(arrayBuffer);
+
+    // Encrypt chunk
+    const { encryptedData, iv } = await encryptData(key, chunkData, passphrase);
     
+    // Create chunk
     chunks.push({
-      index: chunkIndex,
-      data: chunkData
+      contentId,
+      chunkIndex: i,
+      totalChunks,
+      encryptedData: new Uint8Array(encryptedData),
+      iv
     });
     
-    offset += chunkSize;
-    chunkIndex++;
+    // Report progress
+    onProgress((i + 1) / totalChunks);
   }
   
-  return {
-    needsChunking: true,
-    chunks,
-    totalChunks: chunks.length
-  };
+  return { chunks, contentId };
 }
 ```
 
 ### 5. Encryption
 
-Content is encrypted using Web Crypto API in Web Workers:
+Unlike the Web Crypto API approach described in earlier documentation, the current implementation uses CryptoJS for encryption:
 
 ```typescript
-// Encryption in Web Worker
-self.addEventListener('message', async (e) => {
-  const { action, data, key, iv } = e.data;
-  
-  if (action === 'encrypt') {
-    try {
-      const encryptedData = await encrypt(data, key, iv);
-      self.postMessage({ success: true, encryptedData, iv });
-    } catch (error) {
-      self.postMessage({ success: false, error: error.message });
+// From encryption.ts
+export async function encryptData(
+  key: CryptoKey,
+  data: ArrayBuffer | Uint8Array,
+  passphrase: string
+): Promise<{ encryptedData: ArrayBuffer; iv: Uint8Array }> {
+  try {
+    console.log('Encrypting data using CryptoJS');
+    
+    // Generate IV
+    const iv = await generateDeterministicIV(passphrase, data);
+    
+    // Convert data to WordArray
+    const dataArray = new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer);
+    const dataWords = [];
+    for (let i = 0; i < dataArray.length; i += 4) {
+      dataWords.push(
+        ((dataArray[i] || 0) << 24) |
+        ((dataArray[i + 1] || 0) << 16) |
+        ((dataArray[i + 2] || 0) << 8) |
+        (dataArray[i + 3] || 0)
+      );
     }
-  } else if (action === 'decrypt') {
-    try {
-      const decryptedData = await decrypt(data, key, iv);
-      self.postMessage({ success: true, decryptedData });
-    } catch (error) {
-      self.postMessage({ success: false, error: error.message });
+    const dataWordArray = CryptoJS.lib.WordArray.create(dataWords, dataArray.length);
+    
+    // Convert IV to WordArray
+    const ivWords = [];
+    for (let i = 0; i < iv.length; i += 4) {
+      ivWords.push(
+        ((iv[i] || 0) << 24) |
+        ((iv[i + 1] || 0) << 16) |
+        ((iv[i + 2] || 0) << 8) |
+        (iv[i + 3] || 0)
+      );
     }
+    const ivWordArray = CryptoJS.lib.WordArray.create(ivWords, iv.length);
+    
+    // Encrypt data
+    const encrypted = CryptoJS.AES.encrypt(dataWordArray, key.key, {
+      iv: ivWordArray,
+      padding: CryptoJS.pad.Pkcs7
+    });
+    
+    // Convert to ArrayBuffer
+    const ciphertext = encrypted.ciphertext;
+    const encryptedWords = ciphertext.words;
+    const encryptedBytes = new Uint8Array(ciphertext.sigBytes);
+    
+    for (let i = 0; i < encryptedBytes.length; i += 4) {
+      const word = encryptedWords[i / 4];
+      encryptedBytes[i] = (word >>> 24) & 0xff;
+      if (i + 1 < encryptedBytes.length) encryptedBytes[i + 1] = (word >>> 16) & 0xff;
+      if (i + 2 < encryptedBytes.length) encryptedBytes[i + 2] = (word >>> 8) & 0xff;
+      if (i + 3 < encryptedBytes.length) encryptedBytes[i + 3] = word & 0xff;
+    }
+    
+    return { encryptedData: encryptedBytes.buffer, iv };
+  } catch (error) {
+    console.error('Error encrypting data:', error);
+    throw new Error(`Encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
-});
-
-async function encrypt(data, key, iv) {
-  // Convert data to ArrayBuffer if it's a string
-  const dataBuffer = typeof data === 'string' 
-    ? new TextEncoder().encode(data) 
-    : await data.arrayBuffer();
-  
-  // Encrypt the data
-  const encryptedBuffer = await crypto.subtle.encrypt(
-    {
-      name: 'AES-GCM',
-      iv
-    },
-    key,
-    dataBuffer
-  );
-  
-  return encryptedBuffer;
 }
 ```
 
+Key differences from earlier documentation:
+- Uses CryptoJS instead of Web Crypto API
+- Does not use Web Workers
+- Uses deterministic IV generation based on passphrase and data
+
 ### 6. Transmission
 
-Content is transmitted via Socket.IO:
+Content is transmitted via Socket.IO. For chunked content, chunks are processed in batches to avoid blocking the UI:
 
 ```typescript
-// Content transmission
-async function transmitContent(content: SharedContent, data?: ArrayBuffer | string): Promise<void> {
-  if (!content.isChunked) {
-    // Send as single message
-    socket.emit('content', {
-      sessionId,
-      content,
-      data: typeof data === 'string' ? data : arrayBufferToBase64(data)
-    });
-    return;
-  }
+// From chunking.ts
+export async function processChunksInBatches(
+  chunks: Chunk[],
+  processor: (chunk: Chunk) => Promise<void>,
+  batchSize: number = 5,
+  onProgress?: (progress: number) => void
+): Promise<void> {
+  const totalChunks = chunks.length;
+  let processedChunks = 0;
   
-  // Send content metadata first
-  socket.emit('content', {
-    sessionId,
-    content
-  });
-  
-  // Then send chunks
-  for (const chunk of chunks) {
-    socket.emit('chunk', {
-      sessionId,
-      chunk
-    });
+  // Process chunks in batches
+  for (let i = 0; i < totalChunks; i += batchSize) {
+    const batch = chunks.slice(i, i + batchSize);
     
-    // Wait for acknowledgment or add delay between chunks
-    await new Promise(resolve => setTimeout(resolve, 50));
+    // Process batch in parallel
+    await Promise.all(batch.map(async (chunk) => {
+      await processor(chunk);
+      processedChunks++;
+      
+      // Report progress
+      if (onProgress) {
+        onProgress(processedChunks / totalChunks);
+      }
+    }));
+    
+    // Yield to UI thread
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
 }
 ```
 
 ### 7. Reception and Reassembly
 
-Receiving clients collect chunks and reassemble content:
+The ContentStoreContext handles the reception and reassembly of content:
 
 ```typescript
-// Content reception
-socket.on('content', (message) => {
-  const { content, data } = message;
+// Simplified from ContentStoreContext.tsx
+const addChunk = useCallback(async (chunk: Chunk) => {
+  // Get or create chunk store
+  const contentId = chunk.contentId;
+  const chunkStore = chunkStores.current.get(contentId) || {
+    chunks: new Map<number, Chunk>(),
+    totalChunks: chunk.totalChunks
+  };
   
-  // Add to content store
-  contentStore.addContent(content, data);
-});
-
-socket.on('chunk', (message) => {
-  const { chunk } = message;
+  // Add chunk
+  chunkStore.chunks.set(chunk.chunkIndex, chunk);
+  chunkStores.current.set(contentId, chunkStore);
   
-  // Add chunk to content store
-  contentStore.addChunk(chunk).then(isComplete => {
-    if (isComplete) {
-      // Content is now complete
-      notifyContentComplete(chunk.contentId);
-    }
-  });
-});
+  // Check if all chunks received
+  if (chunkStore.chunks.size === chunkStore.totalChunks) {
+    // Reassemble content
+    await reassembleContent(contentId, chunkStore);
+    return true;
+  }
+  
+  return false;
+}, [reassembleContent]);
 ```
 
 ### 8. Display
 
-Content is displayed based on its type:
+Content is displayed based on its type using React components:
 
 ```tsx
-// Content display component
-const ContentDisplay: React.FC<{ contentId: string }> = ({ contentId }) => {
-  const content = useContent(contentId);
-  
-  if (!content) {
-    return <ContentPlaceholder />;
-  }
-  
-  switch (content.metadata.contentType) {
-    case ContentType.TEXT:
-      return <TextDisplay content={content} />;
-      
-    case ContentType.IMAGE:
-      return <ImageDisplay content={content} />;
-      
-    case ContentType.FILE:
-      return <FileDisplay content={content} />;
-      
+// Simplified content display component
+const ContentItem: React.FC<{ content: ContentItemType }> = ({ content }) => {
+  switch (content.contentType) {
+    case 'text':
+      return <TextContent content={content} />;
+    case 'image':
+      return <ImageContent content={content} />;
+    case 'file':
+      return <FileContent content={content} />;
     default:
-      return <GenericDisplay content={content} />;
+      return <GenericContent content={content} />;
   }
 };
 ```
@@ -380,94 +331,86 @@ const ContentDisplay: React.FC<{ contentId: string }> = ({ contentId }) => {
 
 ### Text Content
 
-- Syntax highlighting for code
-- Formatting options
+- Display in a pre-formatted or formatted container
 - Copy to clipboard functionality
+- Syntax highlighting for code (if implemented)
 
 ### Image Content
 
-- Responsive sizing
-- Zoom functionality
+- Display in an img element with appropriate sizing
 - Download option
 - Copy to clipboard functionality
 
 ### File Content
 
-- File icon based on type
-- File size and name display
+- Display file information (name, size, type)
 - Download button
-- Preview for supported file types
+- File icon based on type
 
 ## Content Store
 
-The ContentStore manages all shared content:
+The ContentStoreContext manages all shared content:
 
 ```typescript
-class ContentStore {
-  private contentItems: Map<string, ContentEntry> = new Map();
-  private chunkStores: Map<string, ChunkStore> = new Map();
+// Simplified from ContentStoreContext.tsx
+export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [contentItems, setContentItems] = useState<Map<string, ContentItem>>(new Map());
+  const chunkStores = useRef<Map<string, ChunkStore>>(new Map());
   
-  // Add new content
-  async addContent(content: SharedContent, data?: Blob|string): Promise<void> {
-    const entry: ContentEntry = {
-      metadata: content,
-      data: data,
-      lastAccessed: new Date(),
-      isComplete: !content.isChunked || (data !== undefined)
-    };
-    
-    this.contentItems.set(content.contentId, entry);
-    
-    // If chunked but no data provided, create chunk store
-    if (content.isChunked && !data) {
-      this.chunkStores.set(content.contentId, new ChunkStore(content.totalChunks || 0));
-    }
-    
-    // Notify listeners
-    this.notifyContentAdded(content.contentId);
-  }
+  // Add content
+  const addContent = useCallback((content: ContentMetadata, data?: string | Blob) => {
+    setContentItems(prev => {
+      const newMap = new Map(prev);
+      newMap.set(content.contentId, {
+        metadata: content,
+        data,
+        timestamp: Date.now()
+      });
+      return newMap;
+    });
+  }, []);
   
-  // Add a chunk
-  async addChunk(chunk: ContentChunk): Promise<boolean> {
-    const chunkStore = this.chunkStores.get(chunk.contentId);
-    if (!chunkStore) {
-      console.error(`No chunk store found for content ${chunk.contentId}`);
-      return false;
-    }
-    
-    chunkStore.addChunk(chunk);
-    
-    // Check if we have all chunks
-    if (chunkStore.hasAllChunks()) {
-      // Assemble the content
-      await this.assembleContent(chunk.contentId);
-      return true;
-    }
-    
-    // Notify progress
-    this.notifyChunkProgress(chunk.contentId, chunkStore.receivedChunks, chunkStore.totalChunks);
-    return false;
-  }
+  // Add chunk
+  const addChunk = useCallback(async (chunk: Chunk) => {
+    // Implementation details...
+  }, []);
   
-  // Other methods...
-}
+  // Get content
+  const getContent = useCallback((contentId: string) => {
+    return contentItems.get(contentId);
+  }, [contentItems]);
+  
+  // Context value
+  const value = useMemo(() => ({
+    contentItems,
+    addContent,
+    addChunk,
+    getContent,
+    // Other methods...
+  }), [contentItems, addContent, addChunk, getContent]);
+  
+  return (
+    <ContentStoreContext.Provider value={value}>
+      {children}
+    </ContentStoreContext.Provider>
+  );
+};
 ```
 
 ## Memory Management
 
-To prevent memory issues with large content:
+The current implementation includes basic memory management:
 
-1. **Lazy Loading**: Only decrypt and process content when needed
-2. **Content Eviction**: Remove old content when storage limits are reached
-3. **Chunk Cleanup**: Remove chunks after reassembly
-4. **Session Cleanup**: Clear content when leaving a session
+1. **Content Eviction**: Old content can be removed when no longer needed
+2. **Chunk Cleanup**: Chunks are removed after reassembly
+3. **Session Cleanup**: Content is cleared when leaving a session
 
-## Progressive Enhancement
+## Future Enhancements
 
-The application uses progressive enhancement to handle different browser capabilities:
+Potential future enhancements to the content handling implementation could include:
 
-1. Check for Web Crypto API support
-2. Check for Clipboard API support
-3. Check for Web Workers support
-4. Provide fallbacks where possible
-5. Notify users of unsupported features
+1. **Web Workers**: Implement Web Workers for non-blocking encryption and processing
+2. **Progressive Enhancement**: Add better feature detection and fallbacks
+3. **Advanced Content Types**: Add support for more content types and formats
+4. **Content Previews**: Implement previews for different file types
+5. **Content Editing**: Add basic editing capabilities for text content

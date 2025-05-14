@@ -11,17 +11,31 @@ classDiagram
     class Session {
         +String sessionId
         +Map~String,Client~ clients
+        +Date createdAt
+        +Date lastActivity
         +addClient(client)
         +removeClient(clientId)
         +broadcastContent(content, excludeClientId)
+        +getClientCount()
+        +getLastActivity()
+        +updateActivity()
+        +isExpired(expiryTime)
     }
     
     class Client {
         +String clientId
         +String clientName
         +Socket socket
+        +Date connectedAt
+        +Date lastActivity
         +sendContent(content)
+        +sendChunk(chunk)
+        +sendNotification(type, data)
         +disconnect()
+        +getLastActivity()
+        +updateActivity()
+        +isConnected()
+        +getInfo()
     }
     
     class SharedContent {
@@ -65,13 +79,75 @@ classDiagram
 The Session represents a sharing room where multiple clients can connect and share content.
 
 ```typescript
-interface Session {
-  sessionId: string;
-  clients: Map<string, Client>;
+class Session {
+  /**
+   * Session identifier
+   */
+  public readonly sessionId: string;
   
-  addClient(client: Client): void;
-  removeClient(clientId: string): void;
-  broadcastContent(content: SharedContent | ContentChunk, excludeClientId?: string): void;
+  /**
+   * Map of clients in the session
+   */
+  public readonly clients: Map<string, Client>;
+  
+  /**
+   * Creation timestamp
+   */
+  public readonly createdAt: Date;
+  
+  /**
+   * Last activity timestamp
+   */
+  private lastActivity: Date;
+  
+  /**
+   * Creates a new session
+   * @param sessionId Session identifier
+   */
+  constructor(sessionId: string);
+  
+  /**
+   * Adds a client to the session
+   * @param client Client to add
+   */
+  public addClient(client: Client): void;
+  
+  /**
+   * Removes a client from the session
+   * @param clientId Client identifier
+   */
+  public removeClient(clientId: string): void;
+  
+  /**
+   * Broadcasts content to all clients in the session
+   * @param content Content to broadcast
+   * @param excludeClientId Client to exclude from broadcast
+   */
+  public broadcastContent(content: any, excludeClientId?: string): void;
+  
+  /**
+   * Gets the number of clients in the session
+   * @returns Number of clients
+   */
+  public getClientCount(): number;
+  
+  /**
+   * Gets the last activity timestamp
+   * @returns Last activity timestamp
+   */
+  public getLastActivity(): Date;
+  
+  /**
+   * Updates the last activity timestamp
+   */
+  private updateActivity(): void;
+  
+  /**
+   * Checks if the session is expired
+   * @param expiryTime Expiry time in milliseconds
+   * @returns True if the session is expired
+   */
+  public isExpired(expiryTime: number): boolean;
 }
 ```
 
@@ -80,13 +156,86 @@ interface Session {
 The Client represents a connected user in a session.
 
 ```typescript
-interface Client {
-  clientId: string;
-  clientName: string;
-  socket: Socket;
+class Client {
+  /**
+   * Client identifier (Socket.IO socket ID)
+   */
+  public readonly clientId: string;
   
-  sendContent(content: SharedContent | ContentChunk): void;
-  disconnect(): void;
+  /**
+   * Client display name
+   */
+  public readonly clientName: string;
+  
+  /**
+   * Socket.IO socket
+   */
+  private readonly socket: Socket;
+  
+  /**
+   * Connection timestamp
+   */
+  public readonly connectedAt: Date;
+  
+  /**
+   * Last activity timestamp
+   */
+  private lastActivity: Date;
+  
+  /**
+   * Creates a new client
+   * @param clientId Client identifier
+   * @param clientName Client display name
+   * @param socket Socket.IO socket
+   */
+  constructor(clientId: string, clientName: string, socket: Socket);
+  
+  /**
+   * Sends content to the client
+   * @param content Content to send
+   */
+  public sendContent(content: any): void;
+  
+  /**
+   * Sends a chunk to the client
+   * @param chunk Chunk to send
+   */
+  public sendChunk(chunk: any): void;
+  
+  /**
+   * Sends a notification to the client
+   * @param type Notification type
+   * @param data Notification data
+   */
+  public sendNotification(type: string, data: any): void;
+  
+  /**
+   * Disconnects the client
+   */
+  public disconnect(): void;
+  
+  /**
+   * Gets the last activity timestamp
+   * @returns Last activity timestamp
+   */
+  public getLastActivity(): Date;
+  
+  /**
+   * Updates the last activity timestamp
+   */
+  private updateActivity(): void;
+  
+  /**
+   * Checks if the client is connected
+   * @returns True if the client is connected
+   */
+  public isConnected(): boolean;
+  
+  /**
+   * Gets client information
+   * @returns Client information
+   */
+  public getInfo(): { id: string, name: string };
 }
 ```
 
@@ -197,6 +346,57 @@ class ChunkStore {
 }
 ```
 
+## Authentication Data Structures
+
+### SessionAuth
+
+SessionAuth contains authentication information for a session.
+
+```typescript
+interface SessionAuth {
+  /**
+   * Passphrase fingerprint (self-encrypted passphrase)
+   */
+  fingerprint: {
+    iv: number[];
+    data: number[];
+  };
+  
+  /**
+   * Session creation timestamp
+   */
+  createdAt: Date;
+  
+  /**
+   * Last activity timestamp
+   */
+  lastActivity: Date;
+}
+```
+
+### SessionJoinResult
+
+SessionJoinResult represents the result of a session join operation.
+
+```typescript
+interface SessionJoinResult {
+  /**
+   * Whether the join was successful
+   */
+  success: boolean;
+  
+  /**
+   * Session token (if successful)
+   */
+  token?: string;
+  
+  /**
+   * Error message (if unsuccessful)
+   */
+  error?: string;
+}
+```
+
 ## Socket.IO Message Types
 
 The application uses the following Socket.IO message types:
@@ -206,6 +406,10 @@ The application uses the following Socket.IO message types:
    interface JoinMessage {
      sessionId: string;
      clientName: string;
+     fingerprint: {
+       iv: number[];
+       data: number[];
+     };
    }
    ```
 
@@ -213,7 +417,6 @@ The application uses the following Socket.IO message types:
    ```typescript
    interface LeaveMessage {
      sessionId: string;
-     clientId: string;
    }
    ```
 
@@ -253,16 +456,32 @@ The application uses the following Socket.IO message types:
 
 ## Data Flow
 
-1. Client creates or joins a session
-2. Client captures content (text, image, file)
-3. Content is analyzed and metadata extracted
-4. If content is small, it's sent as a single message
-5. If content is large, it's split into chunks and sent sequentially
-6. Server forwards content/chunks to other clients in the session
-7. Receiving clients reassemble chunks if necessary
-8. Content is displayed based on its type
+1. **Session Establishment**:
+   - Client creates or joins a session with a name, client name, and passphrase
+   - Client creates a passphrase fingerprint
+   - Server verifies the fingerprint or creates a new session
+   - Server issues a session token
+   - Client stores the token for future requests
 
-## Encryption
+2. **Content Sharing**:
+   - Client captures content (clipboard, file, etc.)
+   - Content is analyzed and metadata extracted
+   - Content is chunked if necessary
+   - Each chunk is encrypted with a key derived from the passphrase
+   - Encrypted chunks are sent to the server with the session token
+   - Server validates the token and forwards chunks to other clients
+   - Receiving clients decrypt and reassemble content
+   - Content is displayed based on its type
+
+3. **Session Termination**:
+   - Client disconnects from session
+   - Server removes client from room
+   - Server notifies other clients of departure
+   - If no clients remain, session is marked for expiration
+
+## Encryption and Security
+
+### Encryption
 
 All content is encrypted before transmission:
 
@@ -271,3 +490,81 @@ All content is encrypted before transmission:
 3. A unique initialization vector (IV) is generated for each encryption
 4. The IV is sent along with the encrypted data
 5. Receiving clients use the same passphrase to derive the key and decrypt
+
+### Passphrase Fingerprinting
+
+To verify the passphrase without exposing it, a self-encryption approach is used:
+
+1. The client creates a SHA-256 hash of the passphrase
+2. The first half of the hash is used as an encryption key
+3. The second half of the hash is encrypted using the key
+4. The resulting encrypted data and IV form the "fingerprint"
+
+```typescript
+async function createPassphraseFingerprint(passphrase: string): Promise<{ iv: number[], data: number[] }> {
+  // Create a key from the passphrase
+  const encoder = new TextEncoder();
+  const passphraseData = encoder.encode(passphrase);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', passphraseData);
+  const hashArray = new Uint8Array(hashBuffer);
+  
+  // Use the first half of the hash to encrypt the second half
+  const encryptionPart = hashArray.slice(0, 16);
+  const dataPart = hashArray.slice(16, 32);
+  
+  // Import the key
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encryptionPart,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt']
+  );
+  
+  // Generate IV
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  
+  // Encrypt
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    dataPart
+  );
+  
+  // Return fingerprint
+  return {
+    iv: Array.from(iv),
+    data: Array.from(new Uint8Array(encrypted))
+  };
+}
+```
+
+### Session Tokens
+
+After successful authentication, the server issues a session token:
+
+1. The token is a cryptographically secure random string
+2. The token is associated with the client ID on the server
+3. The client stores the token in localStorage
+4. The token is included in subsequent requests
+
+```typescript
+// Server-side token generation
+private generateSessionToken(): string {
+  // Generate a random token
+  const array = Buffer.alloc(32);
+  crypto.randomFillSync(array);
+  return array.toString('hex');
+}
+
+// Client-side token storage
+localStorage.setItem('sessionToken', response.token);
+```
+
+### Session Expiration
+
+Sessions expire after a period of inactivity:
+
+1. The server tracks the last activity timestamp for each session
+2. If no activity occurs for the configured timeout period (default: 10 minutes), the session is expired
+3. Expired sessions are automatically cleaned up

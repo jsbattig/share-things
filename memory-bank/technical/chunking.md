@@ -2,9 +2,9 @@
 
 ## Overview
 
-ShareThings implements a progressive chunking strategy for handling large content transfers. This approach allows the application to efficiently transfer content of any size while maintaining responsiveness and preventing WebSocket disconnections.
+ShareThings implements a chunking strategy for handling large content transfers. This approach allows the application to efficiently transfer content of any size while maintaining responsiveness and preventing WebSocket disconnections.
 
-This document outlines the chunking strategy, implementation details, and optimization techniques.
+This document outlines the current chunking implementation, based on the actual code in `chunking.ts`.
 
 ## Why Chunking is Necessary
 
@@ -22,563 +22,260 @@ Chunking addresses these challenges by breaking large content into manageable pi
 - Tracked for progress
 - Resumed if interrupted
 
-## Progressive Chunking Approach
+## Current Chunking Implementation
 
-ShareThings uses a progressive chunking approach that adapts to content size:
+The current implementation uses a fixed-size chunking approach with a default chunk size of 64KB:
 
 ```mermaid
 graph TD
     A[Content to Transfer] --> B[Size Analysis]
     
-    B -->|Small Content| C[Single Transfer]
-    B -->|Medium Content| D[Standard Chunking]
-    B -->|Large Content| E[Large Chunking]
-    B -->|Very Large Content| F[Streaming Chunking]
+    B -->|Size <= 64KB| C[No Chunking]
+    B -->|Size > 64KB| D[Fixed-Size Chunking]
     
-    C --> G[Direct Transmission]
-    D --> H[Fixed-Size Chunks]
-    E --> I[Larger Chunks]
-    F --> J[Progressive Chunks]
+    C --> E[Direct Transmission]
+    D --> F[Split into 64KB Chunks]
     
-    H --> K[Sequential Transfer]
-    I --> K
-    J --> K
+    F --> G[Process Chunks in Batches]
+    G --> H[Sequential Transmission]
     
-    K --> L[Reassembly]
-    G --> M[Content Ready]
-    L --> M
+    E --> I[Content Ready]
+    H --> I
 ```
 
-### Size Thresholds
+### Core Interfaces
 
-The chunking strategy uses adaptive thresholds based on content size:
-
-| Content Size | Chunk Size | Strategy |
-|--------------|------------|----------|
-| < 64 KB | No chunking | Direct transmission |
-| 64 KB - 1 MB | 64 KB | Standard chunking |
-| 1 MB - 10 MB | 128 KB | Medium chunking |
-| 10 MB - 100 MB | 256 KB | Large chunking |
-| > 100 MB | 512 KB | Very large chunking |
-
-These thresholds balance transfer efficiency with memory usage and are configurable based on application requirements.
-
-## Chunking Implementation
-
-### Content Analysis
-
-Before transfer, content is analyzed to determine the appropriate chunking strategy:
+The chunking implementation defines the following interfaces:
 
 ```typescript
 /**
- * Analyzes content and determines chunking strategy
- * @param content Content to analyze
- * @returns Chunking strategy
+ * Chunk metadata
  */
-function analyzeContent(content: Blob | string): ChunkingStrategy {
-  const size = typeof content === 'string' ? content.length : content.size;
-  
-  // Determine chunking strategy based on size
-  if (size <= 64 * 1024) { // 64 KB
-    return {
-      needsChunking: false,
-      chunkSize: 0,
-      estimatedChunks: 1
-    };
-  } else if (size <= 1 * 1024 * 1024) { // 1 MB
-    return {
-      needsChunking: true,
-      chunkSize: 64 * 1024, // 64 KB chunks
-      estimatedChunks: Math.ceil(size / (64 * 1024))
-    };
-  } else if (size <= 10 * 1024 * 1024) { // 10 MB
-    return {
-      needsChunking: true,
-      chunkSize: 128 * 1024, // 128 KB chunks
-      estimatedChunks: Math.ceil(size / (128 * 1024))
-    };
-  } else if (size <= 100 * 1024 * 1024) { // 100 MB
-    return {
-      needsChunking: true,
-      chunkSize: 256 * 1024, // 256 KB chunks
-      estimatedChunks: Math.ceil(size / (256 * 1024))
-    };
-  } else {
-    return {
-      needsChunking: true,
-      chunkSize: 512 * 1024, // 512 KB chunks
-      estimatedChunks: Math.ceil(size / (512 * 1024))
-    };
-  }
+export interface ChunkMetadata {
+  contentId: string;
+  chunkIndex: number;
+  totalChunks: number;
+  size: number;
+  iv: Uint8Array;
+}
+
+/**
+ * Chunk data
+ */
+export interface Chunk {
+  contentId: string;
+  chunkIndex: number;
+  totalChunks: number;
+  encryptedData: Uint8Array;
+  iv: Uint8Array;
+}
+
+/**
+ * Chunking options
+ */
+export interface ChunkingOptions {
+  chunkSize?: number;
+  onProgress?: (progress: number) => void;
 }
 ```
 
-### Content Chunking
+### Default Configuration
 
-Once the strategy is determined, content is split into chunks:
+The current implementation uses a fixed default chunk size:
 
 ```typescript
 /**
- * Splits content into chunks
- * @param content Content to split
- * @param strategy Chunking strategy
- * @returns Array of content chunks
+ * Default chunking options
  */
-function splitIntoChunks(content: Blob | string, strategy: ChunkingStrategy): ContentChunkData[] {
-  if (!strategy.needsChunking) {
-    return [{
-      index: 0,
-      data: content,
-      isLast: true
-    }];
-  }
+const DEFAULT_OPTIONS: ChunkingOptions = {
+  chunkSize: 64 * 1024, // 64KB
+  onProgress: () => {}
+};
+```
+
+Unlike the progressive chunking approach described in earlier documentation, the current implementation uses a single fixed chunk size for all content, regardless of size.
+
+### Chunking and Encryption
+
+The main chunking function combines chunking with encryption:
+
+```typescript
+/**
+ * Chunks and encrypts a blob
+ * @param blob The blob to chunk and encrypt
+ * @param passphrase The encryption passphrase
+ * @param options Chunking options
+ * @returns Array of chunks and content ID
+ */
+export async function chunkAndEncryptBlob(
+  blob: Blob,
+  passphrase: string,
+  options: ChunkingOptions = {}
+): Promise<{ chunks: Chunk[]; contentId: string }> {
+  // Merge options with defaults
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+  const chunkSize = opts.chunkSize || DEFAULT_OPTIONS.chunkSize!;
+  const onProgress = opts.onProgress || DEFAULT_OPTIONS.onProgress!;
   
-  const chunks: ContentChunkData[] = [];
-  const totalSize = typeof content === 'string' ? content.length : content.size;
-  const chunkSize = strategy.chunkSize;
-  const totalChunks = Math.ceil(totalSize / chunkSize);
+  // Generate content ID
+  const contentId = uuidv4();
+  
+  // Calculate total chunks
+  const totalChunks = Math.ceil(blob.size / chunkSize);
+  
+  // Derive encryption key
+  const key = await deriveKeyFromPassphrase(passphrase);
+  
+  // Create chunks
+  const chunks: Chunk[] = [];
   
   for (let i = 0; i < totalChunks; i++) {
+    // Calculate chunk range
     const start = i * chunkSize;
-    const end = Math.min(start + chunkSize, totalSize);
+    const end = Math.min(start + chunkSize, blob.size);
     
-    let chunkData: string | Blob;
+    // Extract chunk data
+    const chunkBlob = blob.slice(start, end);
+    const arrayBuffer = await chunkBlob.arrayBuffer();
+    const chunkData = new Uint8Array(arrayBuffer);
+
+    // Encrypt chunk
+    const { encryptedData, iv } = await encryptData(key, chunkData, passphrase);
     
-    if (typeof content === 'string') {
-      chunkData = content.substring(start, end);
-    } else {
-      chunkData = content.slice(start, end);
-    }
-    
+    // Create chunk
     chunks.push({
-      index: i,
-      data: chunkData,
-      isLast: i === totalChunks - 1
-    });
-  }
-  
-  return chunks;
-}
-```
-
-### Chunk Processing
-
-Each chunk is processed (encrypted) before transmission:
-
-```typescript
-/**
- * Processes chunks for transmission
- * @param chunks Content chunks
- * @param contentId Unique content identifier
- * @param encryptionService Encryption service
- * @returns Processed chunks ready for transmission
- */
-async function processChunks(
-  chunks: ContentChunkData[],
-  contentId: string,
-  encryptionService: EncryptionService
-): Promise<ContentChunk[]> {
-  const totalChunks = chunks.length;
-  const processedChunks: ContentChunk[] = [];
-  
-  // Process chunks sequentially to avoid memory issues
-  for (const chunk of chunks) {
-    // Encrypt chunk data
-    const { encryptedData, iv } = await encryptionService.encrypt(chunk.data);
-    
-    // Create content chunk
-    const contentChunk: ContentChunk = {
       contentId,
-      chunkIndex: chunk.index,
+      chunkIndex: i,
       totalChunks,
       encryptedData: new Uint8Array(encryptedData),
       iv
-    };
+    });
     
-    processedChunks.push(contentChunk);
+    // Report progress
+    onProgress((i + 1) / totalChunks);
   }
   
-  return processedChunks;
+  return { chunks, contentId };
 }
 ```
 
-### Chunk Transmission
+### Batch Processing
 
-Chunks are transmitted sequentially with progress tracking:
+Instead of using Web Workers as described in earlier documentation, the current implementation uses a simpler batch processing approach to avoid blocking the UI:
 
 ```typescript
 /**
- * Transmits chunks to the server
- * @param chunks Processed content chunks
- * @param sessionId Session identifier
- * @param socketService Socket service for transmission
- * @param progressCallback Callback for progress updates
- * @returns Promise that resolves when all chunks are transmitted
+ * Processes chunks in batches to avoid blocking the UI
+ * @param chunks Array of chunks to process
+ * @param processor Function to process each chunk
+ * @param batchSize Number of chunks to process in each batch
+ * @param onProgress Progress callback
+ * @returns Promise that resolves when all chunks are processed
  */
-async function transmitChunks(
-  chunks: ContentChunk[],
-  sessionId: string,
-  socketService: SocketService,
-  progressCallback?: (progress: number) => void
+export async function processChunksInBatches(
+  chunks: Chunk[],
+  processor: (chunk: Chunk) => Promise<void>,
+  batchSize: number = 5,
+  onProgress?: (progress: number) => void
 ): Promise<void> {
   const totalChunks = chunks.length;
+  let processedChunks = 0;
   
-  for (let i = 0; i < totalChunks; i++) {
-    const chunk = chunks[i];
+  // Process chunks in batches
+  for (let i = 0; i < totalChunks; i += batchSize) {
+    const batch = chunks.slice(i, i + batchSize);
     
-    // Transmit chunk
-    await new Promise<void>((resolve, reject) => {
-      socketService.emit('chunk', {
-        sessionId,
-        chunk
-      }, (response: { success: boolean, error?: string }) => {
-        if (response.success) {
-          resolve();
-        } else {
-          reject(new Error(response.error || 'Failed to transmit chunk'));
-        }
-      });
-    });
-    
-    // Update progress
-    if (progressCallback) {
-      progressCallback((i + 1) / totalChunks);
-    }
-    
-    // Small delay between chunks to prevent flooding
-    if (i < totalChunks - 1) {
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
-  }
-}
-```
-
-## Chunk Reception and Reassembly
-
-On the receiving end, chunks are collected and reassembled:
-
-```typescript
-class ChunkManager {
-  private chunkStores: Map<string, ChunkStore> = new Map();
-  private contentService: ContentService;
-  
-  constructor(contentService: ContentService) {
-    this.contentService = contentService;
-  }
-  
-  /**
-   * Handles a received content chunk
-   * @param chunk Received content chunk
-   * @returns True if all chunks for the content have been received
-   */
-  async handleChunk(chunk: ContentChunk): Promise<boolean> {
-    const { contentId, chunkIndex, totalChunks } = chunk;
-    
-    // Get or create chunk store
-    let chunkStore = this.chunkStores.get(contentId);
-    if (!chunkStore) {
-      chunkStore = new ChunkStore(totalChunks);
-      this.chunkStores.set(contentId, chunkStore);
-    }
-    
-    // Add chunk to store
-    chunkStore.addChunk(chunk);
-    
-    // Check if all chunks have been received
-    if (chunkStore.isComplete()) {
-      // Reassemble content
-      await this.reassembleContent(contentId);
-      return true;
-    }
-    
-    return false;
-  }
-  
-  /**
-   * Reassembles content from chunks
-   * @param contentId Content identifier
-   */
-  private async reassembleContent(contentId: string): Promise<void> {
-    const chunkStore = this.chunkStores.get(contentId);
-    if (!chunkStore) {
-      throw new Error(`No chunk store found for content ${contentId}`);
-    }
-    
-    // Get ordered chunks
-    const orderedChunks = chunkStore.getOrderedChunks();
-    
-    // Decrypt chunks
-    const decryptedChunks = await Promise.all(
-      orderedChunks.map(chunk => 
-        this.contentService.decryptChunk(chunk)
-      )
-    );
-    
-    // Combine chunks based on content type
-    const content = await this.contentService.getContent(contentId);
-    if (!content) {
-      throw new Error(`Content metadata not found for ${contentId}`);
-    }
-    
-    let combinedData: Blob | string;
-    
-    if (content.contentType === 'text') {
-      // Combine text chunks
-      combinedData = decryptedChunks.join('');
-    } else {
-      // Combine binary chunks
-      const blobParts = decryptedChunks.map(chunk => 
-        chunk instanceof Blob ? chunk : new Blob([chunk])
-      );
-      combinedData = new Blob(blobParts, { type: content.metadata.mimeType });
-    }
-    
-    // Update content with combined data
-    await this.contentService.updateContent(contentId, combinedData);
-    
-    // Clean up chunk store
-    this.chunkStores.delete(contentId);
-  }
-}
-
-class ChunkStore {
-  private chunks: Map<number, ContentChunk> = new Map();
-  private totalChunks: number;
-  
-  constructor(totalChunks: number) {
-    this.totalChunks = totalChunks;
-  }
-  
-  /**
-   * Adds a chunk to the store
-   * @param chunk Content chunk
-   */
-  addChunk(chunk: ContentChunk): void {
-    this.chunks.set(chunk.chunkIndex, chunk);
-  }
-  
-  /**
-   * Checks if all chunks have been received
-   * @returns True if all chunks are present
-   */
-  isComplete(): boolean {
-    return this.chunks.size === this.totalChunks;
-  }
-  
-  /**
-   * Gets chunks in order
-   * @returns Ordered array of chunks
-   */
-  getOrderedChunks(): ContentChunk[] {
-    return Array.from(this.chunks.entries())
-      .sort(([indexA], [indexB]) => indexA - indexB)
-      .map(([_, chunk]) => chunk);
-  }
-  
-  /**
-   * Gets the number of received chunks
-   * @returns Number of received chunks
-   */
-  getReceivedCount(): number {
-    return this.chunks.size;
-  }
-  
-  /**
-   * Gets the total number of chunks
-   * @returns Total number of chunks
-   */
-  getTotalCount(): number {
-    return this.totalChunks;
-  }
-}
-```
-
-## Web Worker Integration
-
-To prevent blocking the main thread during chunk processing, Web Workers are used:
-
-```typescript
-// In main thread
-class ChunkProcessor {
-  private workerPool: WorkerPool;
-  
-  constructor(poolSize: number = navigator.hardwareConcurrency || 4) {
-    this.workerPool = new WorkerPool(poolSize);
-  }
-  
-  /**
-   * Processes a content chunk
-   * @param chunk Content chunk data
-   * @param contentId Content identifier
-   * @param encryptionKey Encryption key
-   * @returns Processed chunk
-   */
-  async processChunk(
-    chunk: ContentChunkData,
-    contentId: string,
-    encryptionKey: CryptoKey
-  ): Promise<ContentChunk> {
-    // Get a worker from the pool
-    const worker = await this.workerPool.getWorker();
-    
-    try {
-      // Process chunk in worker
-      const result = await worker.processChunk(chunk.data, encryptionKey);
+    // Process batch in parallel
+    await Promise.all(batch.map(async (chunk) => {
+      await processor(chunk);
+      processedChunks++;
       
-      // Create content chunk
-      const contentChunk: ContentChunk = {
-        contentId,
-        chunkIndex: chunk.index,
-        totalChunks: chunk.totalChunks,
-        encryptedData: new Uint8Array(result.encryptedData),
-        iv: result.iv
-      };
-      
-      return contentChunk;
-    } finally {
-      // Return worker to pool
-      this.workerPool.releaseWorker(worker);
-    }
+      // Report progress
+      if (onProgress) {
+        onProgress(processedChunks / totalChunks);
+      }
+    }));
+    
+    // Yield to UI thread
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
 }
 ```
 
-## Progress Tracking
+This approach processes chunks in small batches with a yield to the UI thread between batches, which helps prevent UI freezing without the complexity of Web Workers.
 
-The chunking system includes progress tracking for both sending and receiving:
+### Serialization for Transmission
 
-```typescript
-class TransferProgress {
-  private contentId: string;
-  private totalChunks: number;
-  private processedChunks: number = 0;
-  private transmittedChunks: number = 0;
-  private startTime: number;
-  private listeners: Array<(progress: TransferProgressInfo) => void> = [];
-  
-  constructor(contentId: string, totalChunks: number) {
-    this.contentId = contentId;
-    this.totalChunks = totalChunks;
-    this.startTime = Date.now();
-  }
-  
-  /**
-   * Updates processing progress
-   * @param processed Number of processed chunks
-   */
-  updateProcessing(processed: number): void {
-    this.processedChunks = processed;
-    this.notifyListeners();
-  }
-  
-  /**
-   * Updates transmission progress
-   * @param transmitted Number of transmitted chunks
-   */
-  updateTransmission(transmitted: number): void {
-    this.transmittedChunks = transmitted;
-    this.notifyListeners();
-  }
-  
-  /**
-   * Notifies all listeners of progress update
-   */
-  private notifyListeners(): void {
-    const elapsedTime = Date.now() - this.startTime;
-    const processingProgress = this.processedChunks / this.totalChunks;
-    const transmissionProgress = this.transmittedChunks / this.totalChunks;
-    const overallProgress = (processingProgress + transmissionProgress) / 2;
-    
-    const progressInfo: TransferProgressInfo = {
-      contentId: this.contentId,
-      totalChunks: this.totalChunks,
-      processedChunks: this.processedChunks,
-      transmittedChunks: this.transmittedChunks,
-      processingProgress,
-      transmissionProgress,
-      overallProgress,
-      elapsedTime,
-      estimatedTimeRemaining: this.estimateTimeRemaining(overallProgress, elapsedTime)
-    };
-    
-    for (const listener of this.listeners) {
-      listener(progressInfo);
-    }
-  }
-  
-  /**
-   * Estimates remaining time based on progress
-   * @param progress Current progress (0-1)
-   * @param elapsedTime Elapsed time in milliseconds
-   * @returns Estimated time remaining in milliseconds
-   */
-  private estimateTimeRemaining(progress: number, elapsedTime: number): number {
-    if (progress === 0) {
-      return 0;
-    }
-    
-    const timePerPercent = elapsedTime / progress;
-    return timePerPercent * (1 - progress);
-  }
-}
-```
-
-## Memory Management
-
-Careful memory management is implemented to prevent memory leaks:
+The chunking implementation includes functions for serializing and deserializing chunks for transmission:
 
 ```typescript
 /**
- * Manages memory for chunk processing
- * @param maxMemoryUsage Maximum memory usage in bytes
- * @param cleanupThreshold Threshold for cleanup (0-1)
+ * Serializes a chunk for transmission
+ * @param chunk The chunk to serialize
+ * @returns Serialized chunk
  */
-class ChunkMemoryManager {
-  private maxMemoryUsage: number;
-  private cleanupThreshold: number;
-  private currentMemoryUsage: number = 0;
-  private chunks: Map<string, { size: number, lastAccessed: number }> = new Map();
-  
-  constructor(maxMemoryUsage: number = 100 * 1024 * 1024, cleanupThreshold: number = 0.8) {
-    this.maxMemoryUsage = maxMemoryUsage;
-    this.cleanupThreshold = cleanupThreshold;
-  }
-  
-  /**
-   * Registers a chunk in memory
-   * @param chunkId Chunk identifier
-   * @param size Chunk size in bytes
-   */
-  registerChunk(chunkId: string, size: number): void {
-    this.chunks.set(chunkId, {
-      size,
-      lastAccessed: Date.now()
-    });
-    
-    this.currentMemoryUsage += size;
-    
-    // Check if cleanup is needed
-    if (this.currentMemoryUsage > this.maxMemoryUsage * this.cleanupThreshold) {
-      this.cleanup();
-    }
-  }
-  
-  /**
-   * Cleans up memory by removing oldest chunks
-   */
-  private cleanup(): void {
-    // Sort chunks by last accessed time
-    const sortedChunks = Array.from(this.chunks.entries())
-      .sort(([_, a], [__, b]) => a.lastAccessed - b.lastAccessed);
-    
-    // Remove oldest chunks until we're under threshold
-    for (const [chunkId, chunk] of sortedChunks) {
-      if (this.currentMemoryUsage <= this.maxMemoryUsage * 0.7) {
-        break;
-      }
-      
-      this.currentMemoryUsage -= chunk.size;
-      this.chunks.delete(chunkId);
-    }
-  }
+export function serializeChunk(chunk: Chunk): any {
+  return {
+    contentId: chunk.contentId,
+    chunkIndex: chunk.chunkIndex,
+    totalChunks: chunk.totalChunks,
+    encryptedData: Array.from(chunk.encryptedData),
+    iv: Array.from(chunk.iv)
+  };
 }
+
+/**
+ * Deserializes a chunk from transmission
+ * @param data The serialized chunk data
+ * @returns Deserialized chunk
+ */
+export function deserializeChunk(data: any): Chunk {
+  return {
+    contentId: data.contentId,
+    chunkIndex: data.chunkIndex,
+    totalChunks: data.totalChunks,
+    encryptedData: new Uint8Array(data.encryptedData),
+    iv: new Uint8Array(data.iv)
+  };
+}
+```
+
+### Utility Functions
+
+The implementation includes utility functions for estimating chunks and determining if chunking is needed:
+
+```typescript
+/**
+ * Estimates the number of chunks for a given file size
+ * @param fileSize File size in bytes
+ * @param chunkSize Chunk size in bytes
+ * @returns Estimated number of chunks
+ */
+export function estimateChunks(fileSize: number, chunkSize: number = DEFAULT_OPTIONS.chunkSize!): number {
+  return Math.ceil(fileSize / chunkSize);
+}
+
+/**
+ * Checks if chunking is needed for a given file size
+ * @param fileSize File size in bytes
+ * @param threshold Threshold size in bytes
+ * @returns True if chunking is needed
+ */
+export function isChunkingNeeded(fileSize: number, threshold: number = DEFAULT_OPTIONS.chunkSize!): boolean {
+  return fileSize > threshold;
+}
+```
+
+## Integration with Content Store
+
+The chunking implementation is integrated with the ContentStoreContext, which handles the storage and reassembly of chunks. The ContentStoreContext maintains a collection of chunks for each content item and reassembles them when all chunks are received.
+
+## Future Enhancements
+
+Potential future enhancements to the chunking implementation could include:
+
+1. **Adaptive Chunk Sizing**: Implement a progressive chunking approach with adaptive thresholds based on content size
+2. **Web Worker Integration**: Use Web Workers for non-blocking chunk processing
+3. **Resumable Transfers**: Add support for resuming interrupted transfers
+4. **Chunk Compression**: Add compression to reduce transfer size
+5. **Parallel Uploads**: Implement parallel chunk uploads for faster transfers
