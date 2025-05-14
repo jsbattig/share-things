@@ -1,0 +1,7 @@
+# This file defines code owners for specific paths in the repository
+# Code owners are automatically requested for review when someone opens a pull request
+# that modifies code they own.
+# Learn more: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Only jsbattig can approve changes to workflow files
+/.github/workflows/ @jsbattig
