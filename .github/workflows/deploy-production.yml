@@ -2,7 +2,7 @@ name: Deploy to Production
 
 on:
   workflow_run:
-    workflows: ["Lint", "Build", "Dockered Build and Tests", "Build Production"]
+    workflows: ["Build Production"]
     types:
       - completed
     branches:
