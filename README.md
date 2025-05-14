@@ -1,10 +1,10 @@
 # ShareThings
 
-[![Lint](https://img.shields.io/badge/Lint-passing-brightgreen)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
-[![Build and Test](https://img.shields.io/badge/Build%20and%20Test-passing-brightgreen)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
-[![Integration Tests](https://img.shields.io/badge/Integration%20Tests-failing-red)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
-[![Build Production](https://img.shields.io/badge/Build%20Production-failing-red)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
-[![Deploy to Production](https://img.shields.io/badge/Deploy%20to%20Production-failing-red)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Lint](https://img.shields.io/github/workflow/status/jsbattig/share-things/ShareThings%20CI%2FCD%20Pipeline?label=Lint)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Build and Test](https://img.shields.io/github/workflow/status/jsbattig/share-things/ShareThings%20CI%2FCD%20Pipeline?label=Build%20and%20Test)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Integration Tests](https://img.shields.io/github/workflow/status/jsbattig/share-things/ShareThings%20CI%2FCD%20Pipeline?label=Integration%20Tests)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Build Production](https://img.shields.io/github/workflow/status/jsbattig/share-things/ShareThings%20CI%2FCD%20Pipeline?label=Build%20Production)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Deploy to Production](https://img.shields.io/github/workflow/status/jsbattig/share-things/ShareThings%20CI%2FCD%20Pipeline?label=Deploy%20to%20Production)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
 
 A real-time content sharing application with end-to-end encryption.
 
