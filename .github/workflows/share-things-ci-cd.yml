@@ -207,7 +207,7 @@ jobs:
           echo "No running update-server.sh process detected. Proceeding with deployment..."
           
           # Set up SSH connection and run the update script, capturing the exit code
-          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd /share-things && ./update-server.sh"
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && ./update-server.sh"
           DEPLOY_EXIT_CODE=$?
           
           # Check if the deployment was successful
