@@ -11,6 +11,68 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
   io.on('connection', (socket: Socket) => {
     console.log(`Client connected: ${socket.id}`);
     
+    // Ping handler to verify session validity
+    socket.on('ping', (data: { sessionId: string }, callback) => {
+      try {
+        const { sessionId } = data;
+        
+        // Check if session exists
+        const session = sessionManager.getSession(sessionId);
+        if (!session) {
+          console.log(`[Ping] Session ${sessionId} not found for client ${socket.id}`);
+          callback({ valid: false, error: 'Session not found' });
+          return;
+        }
+        
+        // Check if client is in session
+        const client = session.clients.get(socket.id);
+        if (!client) {
+          console.log(`[Ping] Client ${socket.id} not found in session ${sessionId}`);
+          callback({ valid: false, error: 'Client not in session' });
+          return;
+        }
+        
+        // Check if token is valid
+        const token = socket.data.sessionToken;
+        if (!token || !sessionManager.validateSessionToken(socket.id, token)) {
+          console.log(`[Ping] Invalid token for client ${socket.id} in session ${sessionId}`);
+          callback({ valid: false, error: 'Invalid token' });
+          return;
+        }
+        
+        console.log(`[Ping] Session ${sessionId} valid for client ${socket.id}`);
+        callback({ valid: true });
+      } catch (error) {
+        console.error('[Ping] Error:', error);
+        callback({ valid: false, error: 'Internal error' });
+      }
+    });
+    
+    // Client rejoined notification
+    socket.on('client-rejoined', (data: { sessionId: string, clientName: string }) => {
+      try {
+        const { sessionId, clientName } = data;
+        
+        console.log(`[Rejoin] Client ${socket.id} (${clientName}) rejoined session ${sessionId}`);
+        
+        // Get session
+        const session = sessionManager.getSession(sessionId);
+        if (!session) {
+          console.log(`[Rejoin] Session ${sessionId} not found`);
+          return;
+        }
+        
+        // Notify other clients
+        socket.to(sessionId).emit('client-rejoined', {
+          sessionId,
+          clientId: socket.id,
+          clientName
+        });
+      } catch (error) {
+        console.error('[Rejoin] Error:', error);
+      }
+    });
+    
     // Join session
     socket.on('join', async (data: { 
       sessionId: string, 
@@ -137,19 +199,21 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
     });
     
     // Content sharing
-    socket.on('content', (data: { sessionId: string, content: any, data?: string }) => {
+    socket.on('content', (data: { sessionId: string, content: any, data?: string }, callback) => {
       try {
         const { sessionId, content, data: contentData } = data;
         
         // Validate session
         if (socket.data.sessionId !== sessionId) {
           console.error(`Client ${socket.id} tried to share content in session ${sessionId} but is not in it`);
+          if (callback) callback({ success: false, error: 'Invalid session' });
           return;
         }
         
         // Get session
         const session = sessionManager.getSession(sessionId);
         if (!session) {
+          if (callback) callback({ success: false, error: 'Session not found' });
           return;
         }
         
@@ -161,13 +225,14 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
         });
         
         console.log(`Content ${content.contentId} shared in session ${sessionId}`);
+        if (callback) callback({ success: true });
       } catch (error) {
         console.error('Error sharing content:', error);
       }
     });
     
     // Chunk sharing
-    socket.on('chunk', (data: { sessionId: string, chunk: any }) => {
+    socket.on('chunk', (data: { sessionId: string, chunk: any }, callback) => {
       try {
         const { sessionId, chunk } = data;
         
@@ -177,6 +242,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
         // Validate session
         if (socket.data.sessionId !== sessionId) {
           console.error(`Client ${socket.id} tried to share chunk in session ${sessionId} but is not in it`);
+          if (callback) callback({ success: false, error: 'Invalid session' });
           return;
         }
         
@@ -184,6 +250,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
         const session = sessionManager.getSession(sessionId);
         if (!session) {
           console.error(`Session ${sessionId} not found for chunk ${chunk.chunkIndex}`);
+          if (callback) callback({ success: false, error: 'Session not found' });
           return;
         }
         
@@ -197,6 +264,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
         });
         
         console.log(`Chunk ${chunk.chunkIndex}/${chunk.totalChunks} for content ${chunk.contentId} shared in session ${sessionId}`);
+        if (callback) callback({ success: true });
       } catch (error) {
         console.error('Error sharing chunk:', error);
       }

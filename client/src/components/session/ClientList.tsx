@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   List,
@@ -7,7 +7,8 @@ import {
   Text,
   Avatar,
   Badge,
-  Divider
+  Divider,
+  Tooltip
 } from '@chakra-ui/react';
 import { useSocket } from '../../contexts/SocketContext';
 
@@ -15,17 +16,61 @@ interface ClientListProps {
   clients: Array<{ id: string, name: string }>;
 }
 
+interface ClientWithStatus {
+  id: string;
+  name: string;
+  status: 'active' | 'reconnected' | 'you';
+  lastActivity: number;
+}
+
 /**
  * Client list component
  */
 const ClientList: React.FC<ClientListProps> = ({ clients }) => {
-  const { socket } = useSocket();
+  const { socket, connectionStatus } = useSocket();
+  const [clientsWithStatus, setClientsWithStatus] = useState<ClientWithStatus[]>([]);
   
   // Get current client ID
   const currentClientId = socket?.id;
   
+  // Update clients with status
+  useEffect(() => {
+    const updatedClients = clients.map(client => ({
+      id: client.id,
+      name: client.name,
+      status: client.id === currentClientId ? 'you' as const : 'active' as const,
+      lastActivity: Date.now()
+    }));
+    
+    setClientsWithStatus(updatedClients);
+  }, [clients, currentClientId]);
+  
+  // Listen for client rejoined events
+  useEffect(() => {
+    if (!socket) return;
+    
+    const handleClientRejoined = (data: { clientId: string, clientName: string }) => {
+      console.log(`Client rejoined: ${data.clientName} (${data.clientId})`);
+      
+      setClientsWithStatus(prev => {
+        return prev.map(client => {
+          if (client.id === data.clientId) {
+            return { ...client, status: 'reconnected' as const, lastActivity: Date.now() };
+          }
+          return client;
+        });
+      });
+    };
+    
+    socket.on('client-rejoined', handleClientRejoined);
+    
+    return () => {
+      socket.off('client-rejoined', handleClientRejoined);
+    };
+  }, [socket]);
+  
   // Sort clients: current user first, then alphabetically by name
-  const sortedClients = [...clients].sort((a, b) => {
+  const sortedClients = [...clientsWithStatus].sort((a, b) => {
     if (a.id === currentClientId) return -1;
     if (b.id === currentClientId) return 1;
     return a.name.localeCompare(b.name);
@@ -58,7 +103,7 @@ const ClientList: React.FC<ClientListProps> = ({ clients }) => {
       .substring(0, 2);
   };
   
-  if (clients.length === 0) {
+  if (clientsWithStatus.length === 0) {
     return (
       <Box textAlign="center" py={4}>
         <Text color="gray.500">No users connected</Text>
@@ -80,10 +125,17 @@ const ClientList: React.FC<ClientListProps> = ({ clients }) => {
             />
             <Text fontWeight="medium" isTruncated>
               {client.name}
-              {client.id === currentClientId && (
+              {client.status === 'you' && (
                 <Badge ml={2} colorScheme="green" fontSize="xs">
-                  You
+                  You {connectionStatus !== 'connected' && `(${connectionStatus})`}
                 </Badge>
+              )}
+              {client.status === 'reconnected' && (
+                <Tooltip label={`Reconnected ${Math.floor((Date.now() - client.lastActivity) / 1000)} seconds ago`}>
+                  <Badge ml={2} colorScheme="blue" fontSize="xs">
+                    Reconnected
+                  </Badge>
+                </Tooltip>
               )}
             </Text>
           </HStack>

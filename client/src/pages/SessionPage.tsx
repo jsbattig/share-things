@@ -27,6 +27,7 @@ import { useContentStore } from '../contexts/ContentStoreContext';
 import ContentList from '../components/content/ContentList';
 import ClientList from '../components/session/ClientList';
 import SharePanel from '../components/content/SharePanel';
+import { useEffect } from 'react';
 
 /**
  * Session page component
@@ -49,7 +50,7 @@ const SessionPage: React.FC = () => {
   const { isOpen, onOpen, onClose } = useDisclosure();
   
   // Context
-  const { socket, isConnected, joinSession, leaveSession } = useSocket();
+  const { socket, isConnected, connectionStatus, joinSession, leaveSession, rejoinSession } = useSocket();
   const { clearContents } = useContentStore();
   
   // Load session info from localStorage
@@ -126,6 +127,19 @@ const SessionPage: React.FC = () => {
     
     join();
   }, [isConnected, sessionId, clientName, passphrase, joinSession, toast, navigate]);
+  
+  // Handle manual reconnection when connection status changes
+  useEffect(() => {
+    if (connectionStatus === 'disconnected' && sessionId && clientName && passphrase) {
+      console.log('[SessionPage] Connection lost, will attempt to rejoin when reconnected');
+    } else if (connectionStatus === 'connected' && sessionId && clientName && passphrase) {
+      // Check if we need to rejoin the session
+      if (socket && clients.length === 0) {
+        console.log('[SessionPage] Connected but no clients, attempting to rejoin session');
+        rejoinSession(sessionId, clientName, passphrase);
+      }
+    }
+  }, [connectionStatus, sessionId, clientName, passphrase, socket, clients.length, rejoinSession]);
   
   // Set up socket event listeners separately
   useEffect(() => {
@@ -257,7 +271,15 @@ const SessionPage: React.FC = () => {
               <HStack spacing={2} mt={1}>
                 <Text fontWeight="bold">Session:</Text>
                 <Text>{sessionId}</Text>
-                <Badge colorScheme="green">Active</Badge>
+                {connectionStatus === 'connected' && (
+                  <Badge colorScheme="green">Connected</Badge>
+                )}
+                {connectionStatus === 'disconnected' && (
+                  <Badge colorScheme="red">Disconnected</Badge>
+                )}
+                {connectionStatus === 'reconnecting' && (
+                  <Badge colorScheme="yellow">Reconnecting...</Badge>
+                )}
                 <Icon as={FaLock} color="green.500" title="End-to-end encrypted" />
               </HStack>
             </Box>
