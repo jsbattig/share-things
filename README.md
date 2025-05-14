@@ -4,6 +4,7 @@
 [![Build and Test](https://github.com/jsbattig/share-things/actions/workflows/build.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/build.yml)
 [![Build Production](https://github.com/jsbattig/share-things/actions/workflows/build-production.yml/badge.svg?branch=master)](https://github.com/jsbattig/share-things/actions/workflows/build-production.yml)
 [![Dockered Build and Tests](https://github.com/jsbattig/share-things/actions/workflows/integration.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/integration.yml)
+[![Deploy to Production](https://github.com/jsbattig/share-things/actions/workflows/deploy-production.yml/badge.svg)](https://github.com/jsbattig/share-things/actions/workflows/deploy-production.yml)
 
 A real-time content sharing application with end-to-end encryption.
 
@@ -201,6 +202,18 @@ share-things/
     ├── technical/         # Technical documentation
     └── ...
 ```
+
+## Continuous Integration and Deployment
+
+ShareThings uses GitHub Actions for continuous integration and deployment:
+
+1. **Lint**: Runs linting checks on the codebase
+2. **Build and Test**: Builds the application and runs unit tests
+3. **Build Production**: Builds and verifies the production Docker configuration
+4. **Dockered Build and Tests**: Runs tests in Docker containers
+5. **Deploy to Production**: Automatically deploys to the production server when all other workflows succeed
+
+The deployment workflow uses a self-hosted runner on Rocky Linux to connect to the production server via SSH and run the update script.
 
 ## Security
 

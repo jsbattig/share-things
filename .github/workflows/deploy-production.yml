@@ -1,0 +1,29 @@
+name: Deploy to Production
+
+on:
+  workflow_run:
+    workflows: ["Lint", "Build", "Dockered Build and Tests", "Build Production"]
+    types:
+      - completed
+    branches:
+      - master
+
+jobs:
+  deploy:
+    # Only run if all dependent workflows succeeded
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    
+    # Use the self-hosted Rocky Linux runner
+    runs-on: [self-hosted, Rocky]
+    
+    steps:
+      - name: Deploy to production server
+        # Use sshpass to handle password authentication
+        run: |
+          # Install sshpass if not already installed
+          if ! command -v sshpass &> /dev/null; then
+            sudo yum install -y sshpass
+          fi
+          
+          # Set up SSH connection and run the update script
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd /share-things && ./update-server.sh"
