@@ -189,14 +189,23 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         console.log(`[ContentStore] Received chunk data:`, serializedChunk);
         
         // Check if content metadata exists before processing chunk
-        const contentExists = contents.has(serializedChunk.contentId);
+        const contentExists = contents.has(serializedChunk.contentId as string);
         console.log(`[ContentStore] Content metadata exists for ${serializedChunk.contentId}: ${contentExists}`);
         
         // DEBUG: Log all content IDs to help diagnose metadata issues
         console.log(`[ContentStore] All content IDs in store:`, Array.from(contents.keys()));
         
+        // Create a properly typed SerializedChunk object from the received data
+        const typedChunk: import('../utils/chunking').SerializedChunk = {
+          contentId: serializedChunk.contentId as string,
+          chunkIndex: serializedChunk.chunkIndex as number,
+          totalChunks: serializedChunk.totalChunks as number,
+          encryptedData: serializedChunk.encryptedData as number[],
+          iv: serializedChunk.iv as number[]
+        };
+        
         // Deserialize the chunk
-        const chunk = deserializeChunk(serializedChunk);
+        const chunk = deserializeChunk(typedChunk);
         console.log(`[ContentStore] Deserialized chunk ${chunk.chunkIndex}/${chunk.totalChunks} for content ${chunk.contentId}`);
         
         // Track the chunk
@@ -434,21 +443,23 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         
         // Use setTimeout to ensure this runs after the current execution context
         // Add a slightly longer delay to ensure content metadata is available
-        setTimeout(() => {
-          decryptAndReassembleContent(chunk.contentId, passphrase)
-            .catch(error => {
-              console.error(`[addChunk] Error during immediate reassembly: ${error}`);
-              
-              // If reassembly fails, try again after a short delay
-              // This helps when content metadata arrives slightly after chunks
-              setTimeout(() => {
+        setTimeout(async () => {
+          try {
+            await decryptAndReassembleContent(chunk.contentId, passphrase);
+          } catch(error) {
+            console.error(`[addChunk] Error during immediate reassembly: ${error}`);
+            
+            // If reassembly fails, try again after a short delay
+            // This helps when content metadata arrives slightly after chunks
+            setTimeout(async () => {
+              try {
                 console.log(`[addChunk] Retrying reassembly for content ${chunk.contentId} after delay`);
-                decryptAndReassembleContent(chunk.contentId, passphrase)
-                  .catch(retryError => {
-                    console.error(`[addChunk] Error during retry reassembly: ${retryError}`);
-                  });
-              }, 500);
-            });
+                await decryptAndReassembleContent(chunk.contentId, passphrase);
+              } catch(retryError) {
+                console.error(`[addChunk] Error during retry reassembly: ${retryError}`);
+              }
+            }, 500);
+          }
         }, 100);
       } else {
         console.warn(`[addChunk] Content ${chunk.contentId} not found in contents map`);

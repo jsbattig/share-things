@@ -28,7 +28,7 @@ import {
   FaSpinner
 } from 'react-icons/fa';
 import { v4 as uuidv4 } from 'uuid';
-import { useSocket } from '../../contexts/SocketContext';
+import { useSocket, ChunkData } from '../../contexts/SocketContext';
 import { useContentStore, ContentType } from '../../contexts/ContentStoreContext';
 import { formatFileSize } from '../../utils/formatters';
 import {
@@ -305,7 +305,18 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
                   // Send serialized chunk
                   const serializedChunk = serializeChunk(chunk);
                   console.log(`[ShareFile] Serialized chunk contentId: ${serializedChunk.contentId}`);
-                  sendChunk(sessionId, serializedChunk);
+                  
+                  // Convert serialized chunk to ChunkData format
+                  const chunkData: ChunkData = {
+                    contentId: serializedChunk.contentId,
+                    chunkIndex: serializedChunk.chunkIndex,
+                    totalChunks: serializedChunk.totalChunks,
+                    // Add the remaining properties as unknown
+                    encryptedData: serializedChunk.encryptedData,
+                    iv: serializedChunk.iv
+                  };
+                  
+                  sendChunk(sessionId, chunkData);
                   
                   // Update progress
                   sentChunks++;

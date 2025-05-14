@@ -26,7 +26,7 @@ interface ContentMetadata {
   [key: string]: unknown;
 }
 
-interface ChunkData {
+export interface ChunkData {
   contentId: string;
   chunkIndex: number;
   totalChunks: number;
@@ -146,19 +146,21 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
 
     // Add event listeners
-    socket.on('connect', onConnect);
-    socket.on('disconnect', onDisconnect);
-    socket.on('connect_error', onConnectError);
-    socket.on('reconnect', onReconnect);
-    socket.on('reconnecting', onReconnecting);
-    socket.on('reconnect_error', (error: Error) => console.error('[Socket] Reconnection error:', error));
-    socket.on('reconnect_failed', () => {
-      console.error('[Socket] Failed to reconnect after all attempts');
-      setConnectionStatus('disconnected');
-    });
+    if (socket) {
+      socket.on('connect', onConnect);
+      socket.on('disconnect', onDisconnect);
+      socket.on('connect_error', onConnectError);
+      socket.on('reconnect', onReconnect);
+      socket.on('reconnecting', onReconnecting);
+      socket.on('reconnect_error', (error: Error) => console.error('[Socket] Reconnection error:', error));
+      socket.on('reconnect_failed', () => {
+        console.error('[Socket] Failed to reconnect after all attempts');
+        setConnectionStatus('disconnected');
+      });
+    }
 
     // Connect socket
-    if (!socket.connected) {
+    if (socket && !socket.connected) {
       socket.connect();
     }
 
@@ -230,11 +232,15 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       socket.emit('join', { sessionId, clientName, fingerprint }, (response: JoinResponse) => {
         if (response.success) {
           // Update session token
-          localStorage.setItem('sessionToken', response.token);
+          if (response.token) {
+            localStorage.setItem('sessionToken', response.token);
+          }
           console.log('[Socket] Successfully rejoined session');
           
           // Notify application that we've rejoined
-          socket.emit('client-rejoined', { sessionId, clientName });
+          if (socket) {
+            socket.emit('client-rejoined', { sessionId, clientName });
+          }
         } else {
           console.error('[Socket] Failed to rejoin session:', response.error);
         }
@@ -272,7 +278,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    * @returns Promise that resolves with session data
    */
   const joinSession = async (sessionId: string, clientName: string, passphrase: string): Promise<JoinResponse> => {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       if (!socket) {
         reject(new Error('Socket not initialized'));
         return;
@@ -284,7 +290,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
         // Join session
         socket.emit('join', { sessionId, clientName, fingerprint }, (response: JoinResponse) => {
-          if (response.success) {
+          if (response.success && response.token) {
             // Store session token
             localStorage.setItem('sessionToken', response.token);
             resolve(response);
