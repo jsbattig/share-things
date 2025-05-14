@@ -1,0 +1,219 @@
+name: ShareThings CI/CD Pipeline
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install root dependencies
+      run: npm ci
+    
+    - name: Install client dependencies
+      run: cd client && npm ci && npm install crypto-js @types/crypto-js
+    
+    - name: Install server dependencies
+      run: cd server && npm ci
+    
+    - name: Lint server
+      run: cd server && npm run lint
+    
+    - name: Lint client
+      run: cd client && npm run lint
+
+  build:
+    name: Build and Test
+    needs: [lint]
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install root dependencies
+      run: npm ci
+    
+    - name: Install client dependencies
+      run: cd client && npm ci && npm install crypto-js @types/crypto-js
+    
+    - name: Install server dependencies
+      run: cd server && npm ci
+    
+    - name: Build server
+      run: cd server && npm run build
+    
+    - name: Build client
+      run: cd client && npm run build
+    
+    - name: Test server
+      run: cd server && npm test
+    
+    - name: Test client
+      run: cd client && npm test
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: |
+          server/dist
+          client/dist
+
+  integration:
+    name: Dockered Build and Tests
+    needs: [build]
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Cache Docker layers
+      uses: actions/cache@v3
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ runner.os }}-buildx-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-
+    
+    - name: Make build-and-test script executable
+      run: chmod +x build-and-test.sh
+    
+    - name: Debug environment
+      run: |
+        echo "GitHub Actions environment:"
+        echo "Working directory: $(pwd)"
+        ls -la
+        echo "Docker version:"
+        docker --version
+        echo "Docker Compose version:"
+        docker-compose --version || docker compose version
+        echo "Docker info:"
+        docker info
+        echo "Available disk space:"
+        df -h
+    
+    - name: Build and run tests with verbose output
+      run: bash -x ./build-and-test.sh
+      env:
+        CI: true
+        DOCKER_BUILDKIT: 1
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results
+        path: test-results/
+
+  build-production:
+    name: Build Production
+    needs: [integration]
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Cache Docker layers
+      uses: actions/cache@v3
+      with:
+        path: /tmp/.buildx-cache
+        key: ${{ runner.os }}-buildx-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-
+    
+    - name: Make build-production script executable
+      run: |
+        chmod +x build-production.sh
+    
+    - name: Debug environment
+      run: |
+        echo "GitHub Actions environment:"
+        echo "Working directory: $(pwd)"
+        ls -la
+        echo "Docker version:"
+        docker --version
+        echo "Docker Compose version:"
+        docker-compose --version || docker compose version
+        echo "Docker info:"
+        docker info
+    
+    - name: Build production containers
+      run: ./build-production.sh
+      env:
+        CI: true
+        DOCKER_BUILDKIT: 1
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: production-build-artifacts
+        path: |
+          server/dist
+          client/dist
+
+  deploy-production:
+    name: Deploy to Production
+    needs: [build-production]
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    runs-on: [self-hosted, Rocky Linux]
+    
+    steps:
+      - name: Deploy to production server
+        # Use sshpass to handle password authentication
+        run: |
+          # Install sshpass if not already installed
+          if ! command -v sshpass &> /dev/null; then
+            sudo yum install -y sshpass
+          fi
+          
+          # Function to check if update-server.sh is running
+          check_update_script_running() {
+            sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "pgrep -f update-server.sh" > /dev/null
+            return $?
+          }
+          
+          # Wait until any existing update-server.sh process completes
+          echo "Checking if update-server.sh is already running on the production server..."
+          while check_update_script_running; do
+            echo "update-server.sh is currently running. Waiting 30 seconds before checking again..."
+            sleep 30
+          done
+          
+          echo "No running update-server.sh process detected. Proceeding with deployment..."
+          
+          # Set up SSH connection and run the update script, capturing the exit code
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd /share-things && ./update-server.sh"
+          DEPLOY_EXIT_CODE=$?
+          
+          # Check if the deployment was successful
+          if [ $DEPLOY_EXIT_CODE -ne 0 ]; then
+            echo "Deployment failed with exit code $DEPLOY_EXIT_CODE"
+            exit $DEPLOY_EXIT_CODE
+          else
+            echo "Deployment completed successfully"
+          fi
