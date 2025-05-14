@@ -28,15 +28,19 @@ Replace:
 
 ### ShareThings Badges
 
-For the ShareThings project, add these badges:
+For the ShareThings project, add these job-specific badges:
 
 ```markdown
-[![Lint](https://github.com/yourusername/share-things/actions/workflows/lint.yml/badge.svg)](https://github.com/yourusername/share-things/actions/workflows/lint.yml)
-[![Build](https://github.com/yourusername/share-things/actions/workflows/build.yml/badge.svg)](https://github.com/yourusername/share-things/actions/workflows/build.yml)
-[![Integration Tests](https://github.com/yourusername/share-things/actions/workflows/integration.yml/badge.svg)](https://github.com/yourusername/share-things/actions/workflows/integration.yml)
+[![Lint](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=lint)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Build and Test](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=build)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Integration Tests](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=integration)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Build Production](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=build-production)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Deploy to Production](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=deploy-production)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
 ```
 
-Make sure to replace `yourusername` with your actual GitHub username.
+Note the important `job=jobname` parameter in each badge URL, which shows the status of a specific job rather than the overall workflow status.
+
+Make sure to replace `jsbattig` with your actual GitHub username if different.
 
 ## Updated README Structure
 
@@ -60,9 +64,11 @@ Here's a sample of what the updated README.md should look like:
 ```markdown
 # ShareThings
 
-[![Lint](https://github.com/yourusername/share-things/actions/workflows/lint.yml/badge.svg)](https://github.com/yourusername/share-things/actions/workflows/lint.yml)
-[![Build](https://github.com/yourusername/share-things/actions/workflows/build.yml/badge.svg)](https://github.com/yourusername/share-things/actions/workflows/build.yml)
-[![Integration Tests](https://github.com/yourusername/share-things/actions/workflows/integration.yml/badge.svg)](https://github.com/yourusername/share-things/actions/workflows/integration.yml)
+[![Lint](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=lint)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Build and Test](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=build)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Integration Tests](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=integration)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Build Production](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=build-production)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Deploy to Production](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=deploy-production)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
 
 A real-time content sharing application with end-to-end encryption.
 

@@ -32,15 +32,13 @@ GitHub Actions workflows are stored in the `.github/workflows` directory in your
 mkdir -p .github/workflows
 ```
 
-### 2. Add Workflow Files
+### 2. Add Workflow File
 
-Create the three workflow files in the `.github/workflows` directory:
+Create the combined workflow file in the `.github/workflows` directory:
 
-- `lint.yml`: For linting checks
-- `build.yml`: For building and unit testing
-- `integration.yml`: For dockerized build and testing
+- `share-things-ci-cd.yml`: Contains all jobs in a sequential workflow
 
-The content of these files is provided in the [CI/CD Implementation Plan](./ci-cd-implementation-plan.md).
+The content of this file is provided in the [GitHub Actions Sequence Plan](./github-actions-sequence-plan.md).
 
 ### 3. Configure Repository Secrets
 
@@ -70,20 +68,24 @@ GitHub Actions should be enabled by default for your repository. If not:
 
 ## Workflow Configuration
 
-### Lint Workflow
+### Sequential Workflow Jobs
 
-The `lint.yml` workflow runs linting checks on both the client and server code. It:
+The `share-things-ci-cd.yml` workflow contains multiple jobs that run in sequence:
+
+#### Lint Job
+
+The `lint` job runs linting checks on both the client and server code. It:
 
 1. Checks out the repository
 2. Sets up Node.js
 3. Installs dependencies
 4. Runs the lint scripts for both client and server
 
-This workflow helps ensure code quality and consistency.
+This job helps ensure code quality and consistency.
 
-### Build Workflow
+#### Build Job
 
-The `build.yml` workflow builds the application and runs unit tests. It:
+The `build` job builds the application and runs unit tests. It:
 
 1. Checks out the repository
 2. Sets up Node.js
@@ -91,18 +93,35 @@ The `build.yml` workflow builds the application and runs unit tests. It:
 4. Builds the server and client
 5. Runs unit tests for both
 
-This workflow helps catch build errors and unit test failures early.
+This job helps catch build errors and unit test failures early.
 
-### Dockered Build and Tests Workflow
+#### Integration Job
 
-The `integration.yml` workflow runs tests in Docker containers. It:
+The `integration` job runs tests in Docker containers. It:
 
 1. Checks out the repository
 2. Sets up Docker Buildx
 3. Runs the `build-and-test.sh` script
 4. Uploads test results as artifacts
 
-This workflow helps ensure that the application works correctly as a whole.
+This job helps ensure that the application works correctly as a whole.
+
+#### Build Production Job
+
+The `build-production` job builds the production Docker configuration. It:
+
+1. Checks out the repository
+2. Sets up Docker Buildx
+3. Runs the `build-production.sh` script
+
+#### Deploy Production Job
+
+The `deploy-production` job deploys to the production server. It:
+
+1. Connects to the production server via SSH
+2. Runs the update script on the server
+
+This job only runs on pushes to the master branch, not on pull requests.
 
 ## Understanding the Results
 
@@ -123,7 +142,15 @@ You can view the status of your workflows in several places:
 
 ### Status Badges
 
-The status badges in the README show the current status of each workflow on the default branch (usually `main`). They provide a quick visual indication of the health of your codebase.
+The status badges in the README show the current status of each job in the workflow on the default branch (usually `master`). They provide a quick visual indication of the health of your codebase.
+
+The badges use the following format:
+
+```markdown
+[![Job Name](https://github.com/username/repository/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=job-name)](https://github.com/username/repository/actions/workflows/share-things-ci-cd.yml)
+```
+
+The `job=job-name` parameter is crucial as it shows the status of a specific job rather than the overall workflow status.
 
 The badges are linked to the workflow runs, so you can click on them to see more details.
 

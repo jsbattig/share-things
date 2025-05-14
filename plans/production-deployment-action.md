@@ -48,7 +48,7 @@ jobs:
           fi
           
           # Set up SSH connection and run the update script
-          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd /share-things && ./update-server.sh"
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && ./update-server.sh"
 ```
 
 ### 2. Workflow Explanation
@@ -62,7 +62,7 @@ jobs:
 4. **Deployment Step**:
    - Installs `sshpass` if not already installed (to handle password authentication)
    - Uses `sshpass` to establish an SSH connection to the deployment server
-   - Runs the `update-server.sh` script in the `/share-things` directory
+   - Runs the `update-server.sh` script in the `~/share-things` directory
 
 ### 3. Security Considerations
 
@@ -109,7 +109,7 @@ jobs:
       
       - name: Deploy to production server
         run: |
-          ssh ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd /share-things && ./update-server.sh"
+          ssh ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && ./update-server.sh"
 ```
 
 This approach requires setting up an SSH key pair and adding the private key as a GitHub secret named `SSH_PRIVATE_KEY`.

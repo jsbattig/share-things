@@ -37,12 +37,10 @@ The following documents have been created to guide the implementation:
 ### Phase 2: GitHub Actions Setup
 
 1. Create the `.github/workflows` directory
-2. Create the three workflow files:
-   - `lint.yml` for linting checks
-   - `build.yml` for building and unit testing
-   - `integration.yml` for integration and end-to-end testing
+2. Create the combined workflow file:
+   - `share-things-ci-cd.yml` with sequential jobs for lint, build, integration, build-production, and deploy-production
 3. Push the changes to GitHub
-4. Verify that the workflows run correctly
+4. Verify that the workflow runs correctly
 
 ### Phase 3: README Update
 
@@ -73,15 +71,17 @@ The `build-and-test.sh` script automates the process of setting up, building, an
 5. Runs end-to-end tests
 6. Reports the results
 
-### GitHub Actions Workflows
+### GitHub Actions Workflow
 
-Three GitHub Actions workflows have been designed:
+A combined GitHub Actions workflow has been designed with sequential jobs:
 
 1. **Lint**: Runs linting checks on the codebase
 2. **Build**: Builds the application and runs unit tests
-3. **Dockered Build and Tests**: Runs tests in Docker containers
+3. **Integration**: Runs tests in Docker containers
+4. **Build Production**: Builds the production Docker configuration
+5. **Deploy Production**: Deploys to the production server
 
-These workflows run automatically on push to the main branch and on pull requests.
+This workflow runs automatically on push to the master branch and on pull requests, with each job depending on the success of previous jobs. The deployment job only runs on pushes to the master branch, not on pull requests.
 
 ### Docker Test Environment
 
@@ -94,7 +94,9 @@ A Docker-based test environment has been designed to ensure consistent testing a
 
 ### README Badges
 
-The README badges provide a visual indication of the status of the CI/CD pipelines. They are linked to the GitHub Actions workflows and update automatically.
+The README badges provide a visual indication of the status of each job in the CI/CD pipeline. They use job-specific parameters to show the status of individual jobs rather than the overall workflow status. This allows for more granular status reporting, where you can see exactly which part of the pipeline succeeded or failed.
+
+The badges are linked to the GitHub Actions workflow and update automatically.
 
 ## Benefits
 

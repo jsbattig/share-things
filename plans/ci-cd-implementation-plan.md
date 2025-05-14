@@ -223,145 +223,49 @@ chmod +x build-and-test.sh
 ./build-and-test.sh
 ```
 
-## GitHub Actions Workflows
+## GitHub Actions Workflow
 
 ### Overview
 
-We'll create three GitHub Actions workflows:
+We'll create a combined GitHub Actions workflow with sequential jobs:
 
 1. **Lint**: Runs linting checks on the codebase
 2. **Build**: Builds the application and runs unit tests
-3. **Dockered Build and Tests**: Runs tests in Docker containers
+3. **Integration**: Runs tests in Docker containers
+4. **Build Production**: Builds the production Docker configuration
+5. **Deploy Production**: Deploys to the production server
 
-### Workflow Files
+### Workflow File
 
-#### 1. Lint Workflow (.github/workflows/lint.yml)
+The workflow is defined in a single file: `.github/workflows/share-things-ci-cd.yml`
 
-```yaml
-name: Lint
+This approach ensures that jobs run in sequence and that later jobs only run if earlier jobs succeed. For the complete workflow file content, see the [GitHub Actions Sequence Plan](./github-actions-sequence-plan.md).
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+Key features of this approach:
 
-jobs:
-  lint:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: |
-        npm ci
-        cd client && npm ci
-        cd ../server && npm ci
-    
-    - name: Lint server
-      run: cd server && npm run lint
-    
-    - name: Lint client
-      run: cd client && npm run lint
-```
-
-#### 2. Build Workflow (.github/workflows/build.yml)
-
-```yaml
-name: Build
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
-        cache: 'npm'
-    
-    - name: Install dependencies
-      run: |
-        npm ci
-        cd client && npm ci
-        cd ../server && npm ci
-    
-    - name: Build server
-      run: cd server && npm run build
-    
-    - name: Build client
-      run: cd client && npm run build
-    
-    - name: Test server
-      run: cd server && npm test
-    
-    - name: Test client
-      run: cd client && npm test
-```
-
-#### 3. Integration Workflow (.github/workflows/integration.yml)
-
-```yaml
-name: Dockered Build and Tests
-
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
-
-jobs:
-  integration:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-    
-    - name: Build and run tests
-      run: |
-        chmod +x build-and-test.sh
-        ./build-and-test.sh
-    
-    - name: Upload test results
-      uses: actions/upload-artifact@v3
-      if: always()
-      with:
-        name: test-results
-        path: test-results/
-```
+1. **Sequential Execution**: Jobs run in the specified sequence (Lint → Build → Integration → Build Production → Deploy to Production)
+2. **Dependency Chain**: Each job has a `needs` parameter that specifies which job(s) must complete successfully before it can run
+3. **Conditional Deployment**: The deployment job only runs on pushes to the master branch, not on pull requests
+4. **Badge Status**: Job-specific badges accurately reflect the status of each step in the pipeline
+5. **Failure Handling**: If any job fails, all subsequent jobs will be skipped automatically
 
 ## README Badge Integration
 
-Add the following badges to the top of your README.md file:
+Add the following job-specific badges to the top of your README.md file:
 
 ```markdown
 # ShareThings
 
-[![Lint](https://github.com/yourusername/share-things/actions/workflows/lint.yml/badge.svg)](https://github.com/yourusername/share-things/actions/workflows/lint.yml)
-[![Build](https://github.com/yourusername/share-things/actions/workflows/build.yml/badge.svg)](https://github.com/yourusername/share-things/actions/workflows/build.yml)
-[![Integration Tests](https://github.com/yourusername/share-things/actions/workflows/integration.yml/badge.svg)](https://github.com/yourusername/share-things/actions/workflows/integration.yml)
+[![Lint](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=lint)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Build and Test](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=build)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Integration Tests](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=integration)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Build Production](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=build-production)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Deploy to Production](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=deploy-production)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
 
 A real-time content sharing application with end-to-end encryption.
 ```
+
+The `job=jobname` parameter in each badge URL is crucial as it shows the status of a specific job rather than the overall workflow status.
 
 ## Implementation Steps
 
@@ -373,8 +277,8 @@ A real-time content sharing application with end-to-end encryption.
 
 2. **Set Up GitHub Actions**:
    - Create the `.github/workflows` directory
-   - Create the three workflow files: `lint.yml`, `build.yml`, and `integration.yml`
-   - Customize the workflows as needed for your specific repository
+   - Create the combined workflow file: `share-things-ci-cd.yml`
+   - Customize the workflow as needed for your specific repository
 
 3. **Update the README**:
    - Add the badges to the top of the README.md file
