@@ -23,7 +23,7 @@ ShareThings consists of:
 
 1. React frontend with Chakra UI
 2. Express backend with Socket.IO
-3. End-to-end encryption using Web Crypto API
+3. End-to-end encryption using CryptoJS library
 
 ## Docker Deployment
 
@@ -209,8 +209,8 @@ ShareThings uses GitHub Actions for continuous integration and deployment:
 
 1. **Lint**: Runs linting checks on the codebase
 2. **Build and Test**: Builds the application and runs unit tests
-3. **Build Production**: Builds and verifies the production Docker configuration
-4. **Dockered Build and Tests**: Runs tests in Docker containers
+3. **Dockered Build and Tests**: Runs tests in Docker containers (Integration tests)
+4. **Build Production**: Builds and verifies the production Docker configuration
 5. **Deploy to Production**: Automatically deploys to the production server when all other workflows succeed
 
 The deployment workflow uses a self-hosted runner on Rocky Linux to connect to the production server via SSH and run the update script.
