@@ -102,10 +102,17 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     
     if [ -n "$FRONTEND_ID" ]; then
         echo -e "${GREEN}Found frontend container: $FRONTEND_ID${NC}"
+        # Debug: Show the actual output of podman port
+        echo -e "${YELLOW}Debug - podman port output for frontend:${NC}"
+        PODMAN_PORT_OUTPUT=$(podman port $FRONTEND_ID)
+        echo "$PODMAN_PORT_OUTPUT"
+        
         # Improved port detection with multiple patterns to handle different output formats
-        FRONTEND_PORT_MAPPING=$(podman port $FRONTEND_ID | grep -oP '(?<=0.0.0.0:)\d+(?=->80)' ||
-                               podman port $FRONTEND_ID | grep -oP '(?<=:)\d+(?=->80)' ||
-                               podman port $FRONTEND_ID | grep -E '.*->80/tcp' | awk -F':' '{print $NF}' | sed 's/->80\/tcp//')
+        FRONTEND_PORT_MAPPING=$(echo "$PODMAN_PORT_OUTPUT" | grep -oP '(?<=0.0.0.0:)\d+(?=->80)' ||
+                               echo "$PODMAN_PORT_OUTPUT" | grep -oP '(?<=:)\d+(?=->80)' ||
+                               echo "$PODMAN_PORT_OUTPUT" | grep -E '.*->80/tcp' | awk -F':' '{print $NF}' | sed 's/->80\/tcp//' ||
+                               echo "$PODMAN_PORT_OUTPUT" | grep -oP '0.0.0.0:\K\d+(?=->80/tcp)' ||
+                               podman ps | grep $FRONTEND_ID | grep -oP '0.0.0.0:\K\d+(?=->80/tcp)')
         echo -e "${GREEN}Frontend port mapping: $FRONTEND_PORT_MAPPING${NC}"
     else
         echo -e "${YELLOW}No frontend container found${NC}"
@@ -113,10 +120,17 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     
     if [ -n "$BACKEND_ID" ]; then
         echo -e "${GREEN}Found backend container: $BACKEND_ID${NC}"
+        # Debug: Show the actual output of podman port
+        echo -e "${YELLOW}Debug - podman port output for backend:${NC}"
+        PODMAN_PORT_OUTPUT=$(podman port $BACKEND_ID)
+        echo "$PODMAN_PORT_OUTPUT"
+        
         # Improved port detection with multiple patterns to handle different output formats
-        BACKEND_PORT_MAPPING=$(podman port $BACKEND_ID | grep -oP '(?<=0.0.0.0:)\d+(?=->)' ||
-                              podman port $BACKEND_ID | grep -oP '(?<=:)\d+(?=->\d+)' ||
-                              podman port $BACKEND_ID | grep -E '.*->[0-9]+/tcp' | awk -F':' '{print $NF}' | sed 's/->[0-9]*\/tcp//')
+        BACKEND_PORT_MAPPING=$(echo "$PODMAN_PORT_OUTPUT" | grep -oP '(?<=0.0.0.0:)\d+(?=->)' ||
+                              echo "$PODMAN_PORT_OUTPUT" | grep -oP '(?<=:)\d+(?=->\d+)' ||
+                              echo "$PODMAN_PORT_OUTPUT" | grep -E '.*->[0-9]+/tcp' | awk -F':' '{print $NF}' | sed 's/->[0-9]*\/tcp//' ||
+                              echo "$PODMAN_PORT_OUTPUT" | grep -oP '0.0.0.0:\K\d+(?=->\d+/tcp)' ||
+                              podman ps | grep $BACKEND_ID | grep -oP '0.0.0.0:\K\d+(?=->\d+/tcp)')
         
         # Try multiple approaches to get the API port
         API_PORT=$(podman inspect $BACKEND_ID --format '{{range $p, $conf := .NetworkSettings.Ports}}{{if eq $p "3001/tcp"}}{{(index $conf 0).HostPort}}{{end}}{{end}}' 2>/dev/null ||
@@ -146,10 +160,17 @@ else
     
     if [ -n "$FRONTEND_ID" ]; then
         echo -e "${GREEN}Found frontend container: $FRONTEND_ID${NC}"
+        # Debug: Show the actual output of docker port
+        echo -e "${YELLOW}Debug - docker port output for frontend:${NC}"
+        DOCKER_PORT_OUTPUT=$(docker port $FRONTEND_ID)
+        echo "$DOCKER_PORT_OUTPUT"
+        
         # Improved port detection with multiple patterns to handle different output formats
-        FRONTEND_PORT_MAPPING=$(docker port $FRONTEND_ID | grep -oP '(?<=0.0.0.0:)\d+(?=->80)' ||
-                               docker port $FRONTEND_ID | grep -oP '(?<=:)\d+(?=->80)' ||
-                               docker port $FRONTEND_ID | grep -E '.*->80/tcp' | awk -F':' '{print $NF}' | sed 's/->80\/tcp//')
+        FRONTEND_PORT_MAPPING=$(echo "$DOCKER_PORT_OUTPUT" | grep -oP '(?<=0.0.0.0:)\d+(?=->80)' ||
+                               echo "$DOCKER_PORT_OUTPUT" | grep -oP '(?<=:)\d+(?=->80)' ||
+                               echo "$DOCKER_PORT_OUTPUT" | grep -E '.*->80/tcp' | awk -F':' '{print $NF}' | sed 's/->80\/tcp//' ||
+                               echo "$DOCKER_PORT_OUTPUT" | grep -oP '0.0.0.0:\K\d+(?=->80/tcp)' ||
+                               docker ps | grep $FRONTEND_ID | grep -oP '0.0.0.0:\K\d+(?=->80/tcp)')
         echo -e "${GREEN}Frontend port mapping: $FRONTEND_PORT_MAPPING${NC}"
     else
         echo -e "${YELLOW}No frontend container found${NC}"
@@ -157,10 +178,17 @@ else
     
     if [ -n "$BACKEND_ID" ]; then
         echo -e "${GREEN}Found backend container: $BACKEND_ID${NC}"
+        # Debug: Show the actual output of docker port
+        echo -e "${YELLOW}Debug - docker port output for backend:${NC}"
+        DOCKER_PORT_OUTPUT=$(docker port $BACKEND_ID)
+        echo "$DOCKER_PORT_OUTPUT"
+        
         # Improved port detection with multiple patterns to handle different output formats
-        BACKEND_PORT_MAPPING=$(docker port $BACKEND_ID | grep -oP '(?<=0.0.0.0:)\d+(?=->)' ||
-                              docker port $BACKEND_ID | grep -oP '(?<=:)\d+(?=->\d+)' ||
-                              docker port $BACKEND_ID | grep -E '.*->[0-9]+/tcp' | awk -F':' '{print $NF}' | sed 's/->[0-9]*\/tcp//')
+        BACKEND_PORT_MAPPING=$(echo "$DOCKER_PORT_OUTPUT" | grep -oP '(?<=0.0.0.0:)\d+(?=->)' ||
+                              echo "$DOCKER_PORT_OUTPUT" | grep -oP '(?<=:)\d+(?=->\d+)' ||
+                              echo "$DOCKER_PORT_OUTPUT" | grep -E '.*->[0-9]+/tcp' | awk -F':' '{print $NF}' | sed 's/->[0-9]*\/tcp//' ||
+                              echo "$DOCKER_PORT_OUTPUT" | grep -oP '0.0.0.0:\K\d+(?=->\d+/tcp)' ||
+                              docker ps | grep $BACKEND_ID | grep -oP '0.0.0.0:\K\d+(?=->\d+/tcp)')
         
         # Try multiple approaches to get the API port
         API_PORT=$(docker inspect $BACKEND_ID --format '{{range $p, $conf := .NetworkSettings.Ports}}{{if eq $p "3001/tcp"}}{{(index $conf 0).HostPort}}{{end}}{{end}}' 2>/dev/null ||
@@ -168,6 +196,12 @@ else
                   echo "")
         echo -e "${GREEN}Backend port mapping: $BACKEND_PORT_MAPPING${NC}"
         echo -e "${GREEN}API port: $API_PORT${NC}"
+        
+        # If API_PORT is still empty, try to extract it from the backend port mapping
+        if [ -z "$API_PORT" ] && [ -n "$BACKEND_PORT_MAPPING" ]; then
+            API_PORT=$BACKEND_PORT_MAPPING
+            echo -e "${YELLOW}Setting API_PORT to backend port mapping: $API_PORT${NC}"
+        fi
     else
         echo -e "${YELLOW}No backend container found${NC}"
     fi
@@ -222,27 +256,78 @@ else
         export FRONTEND_PORT=$FRONTEND_PORT_MAPPING
         echo -e "${GREEN}Setting FRONTEND_PORT=$FRONTEND_PORT${NC}"
     else
-        # Use known production port if detection fails
-        FRONTEND_PORT=${FRONTEND_PORT:-15000}
-        echo -e "${YELLOW}No frontend port mapping found, using production port: $FRONTEND_PORT${NC}"
+        # Try one more approach - direct parsing from container ps output
+        echo -e "${YELLOW}Attempting to extract port mapping directly from ${CONTAINER_ENGINE^} ps output...${NC}"
+        if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+            CONTAINER_PS_OUTPUT=$(podman ps | grep $FRONTEND_ID)
+        else
+            CONTAINER_PS_OUTPUT=$(docker ps | grep $FRONTEND_ID)
+        fi
+        echo "$CONTAINER_PS_OUTPUT"
+        
+        DIRECT_PORT_MAPPING=$(echo "$CONTAINER_PS_OUTPUT" | grep -oP '0.0.0.0:\K\d+(?=->80/tcp)')
+        if [ -n "$DIRECT_PORT_MAPPING" ]; then
+            FRONTEND_PORT=$DIRECT_PORT_MAPPING
+            echo -e "${GREEN}Found frontend port mapping from direct parsing: $FRONTEND_PORT${NC}"
+        else
+            # Use known production port if detection fails
+            FRONTEND_PORT=${FRONTEND_PORT:-15000}
+            echo -e "${YELLOW}No frontend port mapping found, using production port: $FRONTEND_PORT${NC}"
+        fi
     fi
     
     if [ -n "$BACKEND_PORT_MAPPING" ]; then
         export BACKEND_PORT=$BACKEND_PORT_MAPPING
         echo -e "${GREEN}Setting BACKEND_PORT=$BACKEND_PORT${NC}"
     else
-        # Use known production port if detection fails
-        BACKEND_PORT=${BACKEND_PORT:-15001}
-        echo -e "${YELLOW}No backend port mapping found, using production port: $BACKEND_PORT${NC}"
+        # Try one more approach - direct parsing from container ps output
+        echo -e "${YELLOW}Attempting to extract port mapping directly from ${CONTAINER_ENGINE^} ps output...${NC}"
+        if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+            CONTAINER_PS_OUTPUT=$(podman ps | grep $BACKEND_ID)
+        else
+            CONTAINER_PS_OUTPUT=$(docker ps | grep $BACKEND_ID)
+        fi
+        echo "$CONTAINER_PS_OUTPUT"
+        
+        DIRECT_PORT_MAPPING=$(echo "$CONTAINER_PS_OUTPUT" | grep -oP '0.0.0.0:\K\d+(?=->\d+/tcp)')
+        if [ -n "$DIRECT_PORT_MAPPING" ]; then
+            BACKEND_PORT=$DIRECT_PORT_MAPPING
+            echo -e "${GREEN}Found backend port mapping from direct parsing: $BACKEND_PORT${NC}"
+        else
+            # Use known production port if detection fails
+            BACKEND_PORT=${BACKEND_PORT:-15001}
+            echo -e "${YELLOW}No backend port mapping found, using production port: $BACKEND_PORT${NC}"
+        fi
     fi
     
     if [ -n "$API_PORT" ]; then
         export API_PORT=$API_PORT
         echo -e "${GREEN}Setting API_PORT=$API_PORT${NC}"
     else
-        # Use known production port if detection fails
-        API_PORT=${API_PORT:-15001}
-        echo -e "${YELLOW}No API port found, using production port: $API_PORT${NC}"
+        # Try one more approach - use the backend port if available
+        if [ -n "$BACKEND_PORT" ]; then
+            API_PORT=$BACKEND_PORT
+            echo -e "${GREEN}Using backend port for API: $API_PORT${NC}"
+        else
+            # Try direct parsing from container ps output
+            echo -e "${YELLOW}Attempting to extract API port directly from ${CONTAINER_ENGINE^} ps output...${NC}"
+            if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+                CONTAINER_PS_OUTPUT=$(podman ps | grep $BACKEND_ID)
+            else
+                CONTAINER_PS_OUTPUT=$(docker ps | grep $BACKEND_ID)
+            fi
+            echo "$CONTAINER_PS_OUTPUT"
+            
+            DIRECT_PORT_MAPPING=$(echo "$CONTAINER_PS_OUTPUT" | grep -oP '0.0.0.0:\K\d+(?=->\d+/tcp)')
+            if [ -n "$DIRECT_PORT_MAPPING" ]; then
+                API_PORT=$DIRECT_PORT_MAPPING
+                echo -e "${GREEN}Found API port from direct parsing: $API_PORT${NC}"
+            else
+                # Use known production port if detection fails
+                API_PORT=${API_PORT:-15001}
+                echo -e "${YELLOW}No API port found, using production port: $API_PORT${NC}"
+            fi
+        fi
     fi
 fi
 
