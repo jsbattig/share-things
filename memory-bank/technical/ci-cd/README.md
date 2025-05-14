@@ -26,9 +26,11 @@ node memory-bank/technical/ci-cd/validate-badges.js
 
 ### Key Findings
 
-- The old badge format (`https://img.shields.io/github/actions/workflow/status/jsbattig/share-things/share-things-ci-cd.yml?label=X`) shows the overall workflow status for all jobs.
-- The new badge format (`https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=X`) shows the status of a specific job.
+- The old badge format (`https://img.shields.io/github/actions/workflow/status/jsbattig/share-things/share-things-ci-cd.yml?label=X`) without the job parameter shows the overall workflow status for all jobs.
+- The new badge format (`https://img.shields.io/github/actions/workflow/status/jsbattig/share-things/share-things-ci-cd.yml?label=X&job=X`) with the job parameter shows the status of a specific job.
 - The `job=jobname` parameter is crucial for showing the status of specific jobs within the workflow.
+- We initially tried using GitHub's native badge URLs (`https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml/badge.svg?branch=master&event=push&job=X`) but they didn't work as expected.
+- We reverted to shields.io URLs but added the job parameter to fix the issue.
 
 ### Related Files
 
