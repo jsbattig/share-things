@@ -46,7 +46,7 @@ check_and_fix_permissions() {
     if ! touch .permission_test 2>/dev/null; then
         echo "No write permission in current directory."
         
-        if [ "$IS_CI_CD" = true ]; then
+        if [ "$IS_CI_CD" = "true" ]; then
             echo "Running in CI/CD environment, skipping permission fixes that require sudo."
             # Just continue, we'll use alternative paths for file operations
             return 1
@@ -263,22 +263,22 @@ verify_containers_running() {
         # Set status messages
         if [ -n "$FRONTEND_RUNNING" ]; then
             echo "Frontend container is running."
-            FRONTEND_OK=true
+            FRONTEND_OK="true"
         else
             echo "No frontend container running yet."
-            FRONTEND_OK=false
+            FRONTEND_OK="false"
         fi
         
         if [ -n "$BACKEND_RUNNING" ]; then
             echo "Backend container is running."
-            BACKEND_OK=true
+            BACKEND_OK="true"
         else
             echo "No backend container running yet."
-            BACKEND_OK=false
+            BACKEND_OK="false"
         fi
         
         # Success if either FRONTEND_OK or BACKEND_OK is true, or if ANY_SERVICE_RUNNING is not empty
-        if $FRONTEND_OK || $BACKEND_OK || [ -n "$ANY_SERVICE_RUNNING" ]; then
+        if [ "$FRONTEND_OK" = "true" ] || [ "$BACKEND_OK" = "true" ] || [ -n "$ANY_SERVICE_RUNNING" ]; then
             echo "Verification successful - at least one container is running."
             return 0
         fi
@@ -966,7 +966,7 @@ verify_containers_running
 VERIFICATION_RESULT=$?
 
 # Always assume success in CI/CD environments
-if [ "$IS_CI_CD" = true ]; then
+if [ "$IS_CI_CD" = "true" ]; then
     echo "Running in CI/CD environment - assuming containers are starting correctly"
     echo "Container startup may take longer than verification can wait for"
     VERIFICATION_RESULT=0
@@ -997,7 +997,7 @@ check_container_logs "backend"
 check_container_logs "frontend"
 
 # In CI/CD, we'll always report success
-if [ "$IS_CI_CD" = true ]; then
+if [ "$IS_CI_CD" = "true" ]; then
     echo "CI/CD deployment completed - containers may still be initializing"
     echo "This is normal behavior in automated environments"
 fi
