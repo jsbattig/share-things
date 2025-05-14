@@ -11,18 +11,6 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-# Set to non-interactive mode for CI/CD
-export DEBIAN_FRONTEND=noninteractive
-export NEEDRESTART_MODE=a
-
-# Detect if running in a CI/CD environment
-if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ] || [ -n "$JENKINS_URL" ] || ! tty -s; then
-    IS_CI_CD=true
-    echo "Running in CI/CD or non-interactive environment"
-else
-    IS_CI_CD=false
-fi
-
 # Detect OS for sed compatibility
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS uses BSD sed which requires an extension argument for -i
@@ -36,364 +24,15 @@ echo -e "${BLUE}=== ShareThings Server Update ===${NC}"
 echo "This script will update your ShareThings deployment with the latest code."
 echo ""
 
-#######################
-# New helper functions
-#######################
-
-# Check and fix permissions without sudo if possible
-check_and_fix_permissions() {
-    echo "Checking script permissions..."
-    if ! touch .permission_test 2>/dev/null; then
-        echo "No write permission in current directory."
-        
-        if [ "$IS_CI_CD" = "true" ]; then
-            echo "Running in CI/CD environment, skipping permission fixes that require sudo."
-            # Just continue, we'll use alternative paths for file operations
-            return 1
-        else
-            # Try simple chmod first without sudo
-            chmod -R u+w . 2>/dev/null
-            if ! touch .permission_test 2>/dev/null; then
-                echo "Still no permission. Will use alternative paths for file operations."
-                return 1
-            fi
-        fi
-    else
-        rm .permission_test
-        echo "Permission check passed."
-        return 0
-    fi
-}
-
-# Flexible container ID finding
-find_container_id() {
-    local container_type=$1
-    local patterns=(
-        "share-things-${container_type}"
-        "share-things_${container_type}"
-        "share-things_${container_type}_1"
-        "${container_type}"
-    )
-    
-    for pattern in "${patterns[@]}"; do
-        container_id=$($CONTAINER_CMD ps -qa --filter name=${pattern} | head -1)
-        if [ -n "$container_id" ]; then
-            echo "$container_id"
-            return 0
-        fi
-    done
-    
-    # Try partial name match as last resort
-    container_id=$($CONTAINER_CMD ps -qa | xargs -I {} $CONTAINER_CMD inspect {} --format '{{.Name}}' 2>/dev/null | grep -i "${container_type}" | head -1 | xargs)
-    if [ -n "$container_id" ]; then
-        echo "$container_id"
-        return 0
-    fi
-    
-    return 1
-}
-
-# Improved git repository handling for CI/CD environments
-handle_git_repository() {
-    if [ -d .git ]; then
-        echo "Checking git repository status..."
-        
-        # Get the absolute path of the repository
-        REPO_PATH=$(pwd)
-        echo "Repository path: $REPO_PATH"
-        
-        # Try multiple approaches to fix git ownership issues
-        echo "Attempting to fix git ownership issues..."
-        
-        # Approach 1: Use git config directly (no sudo)
-        git config --global --add safe.directory "$REPO_PATH" 2>/dev/null
-        
-        # Approach 2: Try with HOME explicitly set
-        HOME=$(eval echo ~$(whoami)) git config --global --add safe.directory "$REPO_PATH" 2>/dev/null
-        
-        # Approach 3: Write directly to git config file
-        if [ -n "$HOME" ] && [ -f "$HOME/.gitconfig" ]; then
-            echo "Directly modifying .gitconfig file..."
-            if ! grep -q "safe.directory" "$HOME/.gitconfig" 2>/dev/null; then
-                echo -e "[safe]\n    directory = $REPO_PATH" >> "$HOME/.gitconfig"
-            elif ! grep -q "$REPO_PATH" "$HOME/.gitconfig" 2>/dev/null; then
-                echo -e "    directory = $REPO_PATH" >> "$HOME/.gitconfig"
-            fi
-        fi
-        
-        # Approach 4: Try with GIT_CONFIG_GLOBAL explicitly set to a writable location
-        export GIT_CONFIG_GLOBAL="/tmp/.gitconfig.temp"
-        git config --global --add safe.directory "$REPO_PATH" 2>/dev/null
-        
-        # Approach 5: Try with git -c option (doesn't require config file)
-        echo "Trying git pull with -c option to bypass config..."
-        
-        # Verify if any of our approaches worked
-        if git rev-parse --git-dir &>/dev/null; then
-            echo "Git permissions fixed successfully."
-        else
-            echo "Still having git permission issues. Will try alternative approaches for pulling."
-        fi
-        
-        # Try to pull code using multiple approaches
-        echo "Pulling latest code from git repository..."
-        
-        # First try: Standard pull
-        git pull 2>/dev/null
-        
-        # Second try: Pull with -c option to bypass config
-        if [ $? -ne 0 ]; then
-            echo "Standard pull failed, trying with -c option..."
-            git -c safe.directory="$REPO_PATH" pull 2>/dev/null
-        fi
-        
-        # Third try: Pull with GIT_ALLOW_PROTOCOL
-        if [ $? -ne 0 ]; then
-            echo "Trying with GIT_ALLOW_PROTOCOL..."
-            GIT_ALLOW_PROTOCOL=file git -c safe.directory="$REPO_PATH" pull 2>/dev/null
-        fi
-        
-        # Fourth try: Clone to temp and copy
-        if [ $? -ne 0 ]; then
-            echo "All git pull attempts failed. Trying alternative approach..."
-            
-            # Get remote URL
-            REMOTE_URL=$(git config --get remote.origin.url 2>/dev/null)
-            
-            if [ -n "$REMOTE_URL" ]; then
-                echo "Will try to clone from $REMOTE_URL to a temporary location..."
-                TEMP_DIR="/tmp/share-things-temp-$(date +%s)"
-                
-                if git clone "$REMOTE_URL" "$TEMP_DIR" 2>/dev/null; then
-                    echo "Temporary clone successful. Copying files..."
-                    # Copy all files except .git directory
-                    find "$TEMP_DIR" -mindepth 1 -maxdepth 1 -not -name ".git" -exec cp -r {} . \; 2>/dev/null
-                    rm -rf "$TEMP_DIR"
-                    echo "Files updated from temporary clone."
-                else
-                    echo "Failed to pull latest code using all methods."
-                    echo "Continuing with update anyway in autonomous mode..."
-                fi
-            else
-                echo "Failed to pull latest code. No remote URL found."
-                echo "Continuing with update anyway in autonomous mode..."
-            fi
-        else
-            echo "Latest code pulled successfully."
-        fi
-    else
-        echo "Not a git repository. Skipping code update."
-        echo "Continuing with container rebuild in autonomous mode..."
-    fi
-}
-
-# Robust file creation with error handling - refactored to prevent color code leakage
-create_file() {
-    local file_path="$1"
-    local dir_name=$(dirname "$file_path")
-    local base_name=$(basename "$file_path")
-    local result_path=""
-    
-    # Try current directory first
-    mkdir -p "$dir_name" 2>/dev/null
-    if touch "$file_path" 2>/dev/null; then
-        result_path="$file_path"
-    else
-        # Try temp directory as reliable fallback
-        result_path="/tmp/$base_name"
-        touch "$result_path" 2>/dev/null
-        
-        if [ ! -f "$result_path" ]; then
-            echo "ERROR: Cannot create file $base_name anywhere. Check permissions."
-            return 1
-        fi
-    fi
-    
-    echo "Using file path: $result_path"
-    echo "$result_path"
-}
-
-# Enhanced container verification with retries and waiting
-verify_containers_running() {
-    local max_attempts=12  # Try for up to 2 minutes (12 x 10 seconds)
-    local attempt=1
-    local delay=10
-    
-    echo "Performing container verification (with $max_attempts attempts, $delay second intervals)..."
-    
-    while [ $attempt -le $max_attempts ]; do
-        echo "Verification attempt $attempt of $max_attempts..."
-        
-        # Method 1: Check for any container matching our service pattern
-        ALL_CONTAINERS=$($CONTAINER_CMD ps -a --format "{{.Names}},{{.ID}},{{.Status}}" 2>/dev/null | grep -i "share\|frontend\|backend" || echo "")
-        
-        if [ -z "$ALL_CONTAINERS" ]; then
-            echo "No containers found that match our services using format search."
-            
-            # Method 2: Try a simpler container list approach
-            ALL_CONTAINERS=$($CONTAINER_CMD ps | grep -i "share\|frontend\|backend" || echo "")
-            
-            if [ -z "$ALL_CONTAINERS" ]; then
-                echo "No containers found using simple list either."
-                
-                # Method 3: Try listing all containers to see what's there
-                echo "Listing all running containers to see what's available:"
-                $CONTAINER_CMD ps
-            else
-                echo "Found containers using simple grep method:"
-                echo "$ALL_CONTAINERS"
-            fi
-        else
-            echo "Found these potential service containers:"
-            echo "$ALL_CONTAINERS"
-        fi
-        
-        # Check for running containers (specific check for frontend/backend)
-        FRONTEND_RUNNING=$($CONTAINER_CMD ps -q --filter name=share-things-frontend 2>/dev/null || 
-                         $CONTAINER_CMD ps -q --filter name=share-things_frontend 2>/dev/null || 
-                         $CONTAINER_CMD ps -q --filter name=frontend 2>/dev/null || echo "")
-        
-        BACKEND_RUNNING=$($CONTAINER_CMD ps -q --filter name=share-things-backend 2>/dev/null || 
-                        $CONTAINER_CMD ps -q --filter name=share-things_backend 2>/dev/null || 
-                        $CONTAINER_CMD ps -q --filter name=backend 2>/dev/null || echo "")
-        
-        # Additional approach - check anything running with a broader pattern
-        ANY_SERVICE_RUNNING=$($CONTAINER_CMD ps -q | xargs $CONTAINER_CMD inspect 2>/dev/null | grep -i "share\|frontend\|backend" || echo "")
-        
-        # Set status messages
-        if [ -n "$FRONTEND_RUNNING" ]; then
-            echo "Frontend container is running."
-            FRONTEND_OK="true"
-        else
-            echo "No frontend container running yet."
-            FRONTEND_OK="false"
-        fi
-        
-        if [ -n "$BACKEND_RUNNING" ]; then
-            echo "Backend container is running."
-            BACKEND_OK="true"
-        else
-            echo "No backend container running yet."
-            BACKEND_OK="false"
-        fi
-        
-        # Success if either FRONTEND_OK or BACKEND_OK is true, or if ANY_SERVICE_RUNNING is not empty
-        if [ "$FRONTEND_OK" = "true" ] || [ "$BACKEND_OK" = "true" ] || [ -n "$ANY_SERVICE_RUNNING" ]; then
-            echo "Verification successful - at least one container is running."
-            return 0
-        fi
-        
-        # Not successful yet, wait and try again if not the last attempt
-        if [ $attempt -lt $max_attempts ]; then
-            echo "Waiting $delay seconds for containers to start before trying again..."
-            sleep $delay
-        fi
-        
-        attempt=$((attempt + 1))
-    done
-    
-    echo "Verification timed out after $max_attempts attempts."
-    
-    # Final "Hail Mary" check - maybe the container is running but we couldn't detect it
-    echo "Performing last-resort verification by checking for ANY listening containers..."
-    
-    # Try to find any listening service on expected ports
-    if command -v netstat &>/dev/null; then
-        echo "Checking port $FRONTEND_PORT via netstat:"
-        netstat -tulpn 2>/dev/null | grep "$FRONTEND_PORT" || echo "No service on port $FRONTEND_PORT"
-        
-        echo "Checking port $BACKEND_PORT via netstat:"
-        netstat -tulpn 2>/dev/null | grep "$BACKEND_PORT" || echo "No service on port $BACKEND_PORT"
-    elif command -v ss &>/dev/null; then
-        echo "Checking port $FRONTEND_PORT via ss:"
-        ss -tulpn 2>/dev/null | grep "$FRONTEND_PORT" || echo "No service on port $FRONTEND_PORT"
-        
-        echo "Checking port $BACKEND_PORT via ss:"
-        ss -tulpn 2>/dev/null | grep "$BACKEND_PORT" || echo "No service on port $BACKEND_PORT"
-    elif command -v lsof &>/dev/null; then
-        echo "Checking port $FRONTEND_PORT via lsof:"
-        lsof -i:$FRONTEND_PORT 2>/dev/null || echo "No service on port $FRONTEND_PORT"
-        
-        echo "Checking port $BACKEND_PORT via lsof:"
-        lsof -i:$BACKEND_PORT 2>/dev/null || echo "No service on port $BACKEND_PORT"
-    fi
-    
-    # Even if verification failed, treat as non-fatal
-    echo "Container verification couldn't confirm running containers, but continuing anyway."
-    echo "This is treated as a non-fatal issue - containers may still be starting."
-    return 1
-}
-
-# Improved log checking function
-check_container_logs() {
-    local container_type=$1
-    echo "Checking ${container_type} container logs:"
-    
-    # Try multiple naming patterns for logs
-    local patterns=(
-        "share-things-${container_type}"
-        "share-things_${container_type}"
-        "share-things_${container_type}_1"
-        "${container_type}"
-    )
-    
-    local logs_found=0
-    
-    for pattern in "${patterns[@]}"; do
-        if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-            if podman logs $pattern --tail 30 2>/dev/null; then
-                logs_found=1
-                break
-            fi
-        else
-            if docker logs $pattern --tail 30 2>/dev/null; then
-                logs_found=1
-                break
-            fi
-        fi
-    done
-    
-    if [ $logs_found -eq 0 ]; then
-        # Try to find any container with name containing container_type
-        if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-            local container_id=$(podman ps -a --format "{{.ID}},{{.Names}}" | grep -i "${container_type}" | head -1 | cut -d',' -f1)
-            if [ -n "$container_id" ]; then
-                echo "Found container matching '${container_type}': ${container_id}"
-                podman logs $container_id --tail 30 2>/dev/null || echo "No logs available"
-                logs_found=1
-            fi
-        else
-            local container_id=$(docker ps -a --format "{{.ID}},{{.Names}}" | grep -i "${container_type}" | head -1 | cut -d',' -f1)
-            if [ -n "$container_id" ]; then
-                echo "Found container matching '${container_type}': ${container_id}"
-                docker logs $container_id --tail 30 2>/dev/null || echo "No logs available"
-                logs_found=1
-            fi
-        fi
-    fi
-    
-    if [ $logs_found -eq 0 ]; then
-        echo "No logs available for ${container_type} container"
-    fi
-}
-
-#######################
-# Main Script Execution
-#######################
-
-# Check permissions without requiring sudo
-check_and_fix_permissions
-HAS_PERMISSIONS=$?
-
 # Detect which container engine is being used
 if command -v podman &> /dev/null; then
     if podman ps --all | grep -q "share-things"; then
         CONTAINER_ENGINE="podman"
         COMPOSE_CMD="podman-compose"
         CONTAINER_CMD="podman"
-        echo "Detected running Podman containers"
+        echo -e "${GREEN}Detected running Podman containers${NC}"
     else
-        echo "No running Podman containers detected"
+        echo -e "${YELLOW}No running Podman containers detected${NC}"
         CONTAINER_ENGINE="podman"
         COMPOSE_CMD="podman-compose"
         CONTAINER_CMD="podman"
@@ -403,62 +42,83 @@ elif command -v docker &> /dev/null; then
         CONTAINER_ENGINE="docker"
         COMPOSE_CMD="docker-compose"
         CONTAINER_CMD="docker"
-        echo "Detected running Docker containers"
+        echo -e "${GREEN}Detected running Docker containers${NC}"
     else
-        echo "No running Docker containers detected"
+        echo -e "${YELLOW}No running Docker containers detected${NC}"
         CONTAINER_ENGINE="docker"
         COMPOSE_CMD="docker-compose"
         CONTAINER_CMD="docker"
     fi
 else
-    echo "No container engine detected. Defaulting to Docker..."
+    echo -e "${YELLOW}No container engine detected. Defaulting to Docker...${NC}"
     CONTAINER_ENGINE="docker"
     COMPOSE_CMD="docker-compose"
     CONTAINER_CMD="docker"
 fi
 
-echo "Using ${CONTAINER_ENGINE^} for container operations"
+echo -e "${GREEN}Using ${CONTAINER_ENGINE^} for container operations${NC}"
 
 # Backup current configuration files
-echo "Backing up current configuration..."
-BACKUP_DIR="/tmp/sharethings-backup-$(date +%Y%m%d_%H%M%S)"
-mkdir -p "$BACKUP_DIR"
+echo -e "${YELLOW}Backing up current configuration...${NC}"
+mkdir -p ./backups/$(date +%Y%m%d_%H%M%S)
+cp .env ./backups/$(date +%Y%m%d_%H%M%S)/.env 2>/dev/null || echo "No .env file to backup"
+cp client/.env ./backups/$(date +%Y%m%d_%H%M%S)/client.env 2>/dev/null || echo "No client/.env file to backup"
+cp server/.env ./backups/$(date +%Y%m%d_%H%M%S)/server.env 2>/dev/null || echo "No server/.env file to backup"
+cp docker-compose.prod.yml ./backups/$(date +%Y%m%d_%H%M%S)/docker-compose.prod.yml 2>/dev/null || echo "No docker-compose.prod.yml file to backup"
+echo -e "${GREEN}Configuration backed up to ./backups/$(date +%Y%m%d_%H%M%S)/${NC}"
 
-cp .env "$BACKUP_DIR/.env" 2>/dev/null || echo "No .env file to backup"
-cp client/.env "$BACKUP_DIR/client.env" 2>/dev/null || echo "No client/.env file to backup"
-cp server/.env "$BACKUP_DIR/server.env" 2>/dev/null || echo "No server/.env file to backup"
-cp docker-compose.prod.yml "$BACKUP_DIR/docker-compose.prod.yml" 2>/dev/null || echo "No docker-compose.prod.yml file to backup"
-echo "Configuration backed up to $BACKUP_DIR/"
-
-# Pull latest code without sudo
-handle_git_repository
-
-# Capture current container configuration before stopping
-echo "Capturing current container configuration..."
-
-# Use our flexible container detection function to find frontends and backends
-FRONTEND_ID=$(find_container_id "frontend")
-if [ -n "$FRONTEND_ID" ]; then
-    echo "Found frontend container: $FRONTEND_ID"
-    # Improved port detection with multiple patterns to handle different output formats
-    FRONTEND_PORT_MAPPING=$($CONTAINER_CMD port $FRONTEND_ID | grep -oP '(?<=0.0.0.0:)\d+(?=->80)' ||
-                            $CONTAINER_CMD port $FRONTEND_ID | grep -oP '(?<=:)\d+(?=->80)' ||
-                            $CONTAINER_CMD port $FRONTEND_ID | grep -E '.*->80/tcp' | awk -F':' '{print $NF}' | sed 's/->80\/tcp//')
-    echo "Frontend port mapping: $FRONTEND_PORT_MAPPING"
+# Pull latest code if this is a git repository
+if [ -d .git ]; then
+    echo -e "${YELLOW}Pulling latest code from git repository...${NC}"
+    git pull
+    GIT_EXIT_CODE=$?
+    if [ $GIT_EXIT_CODE -ne 0 ]; then
+        echo -e "${RED}Failed to pull latest code. You may have local changes.${NC}"
+        echo -e "${YELLOW}Continuing with update anyway in autonomous mode...${NC}"
+    else
+        echo -e "${GREEN}Latest code pulled successfully.${NC}"
+    fi
 else
-    echo "No frontend container found"
+    echo -e "${YELLOW}Not a git repository. Skipping code update.${NC}"
+    echo -e "${YELLOW}Continuing with container rebuild in autonomous mode...${NC}"
 fi
 
-BACKEND_ID=$(find_container_id "backend")
-if [ -n "$BACKEND_ID" ]; then
-    echo "Found backend container: $BACKEND_ID"
-    # Improved port detection with multiple patterns to handle different output formats
-    BACKEND_PORT_MAPPING=$($CONTAINER_CMD port $BACKEND_ID | grep -oP '(?<=0.0.0.0:)\d+(?=->)' ||
-                           $CONTAINER_CMD port $BACKEND_ID | grep -oP '(?<=:)\d+(?=->\d+)' ||
-                           $CONTAINER_CMD port $BACKEND_ID | grep -E '.*->[0-9]+/tcp' | awk -F':' '{print $NF}' | sed 's/->[0-9]*\/tcp//')
+# Capture current container configuration before stopping
+echo -e "${YELLOW}Capturing current container configuration...${NC}"
+
+# Capture port configurations and other parameters
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    # Get container IDs for frontend and backend
+    # Try both naming conventions (with hyphens and with underscores)
+    FRONTEND_ID=$(podman ps -q --filter name=share-things-frontend)
+    if [ -z "$FRONTEND_ID" ]; then
+        FRONTEND_ID=$(podman ps -q --filter name=share-things_frontend)
+    fi
     
-    # Try multiple approaches to get the API port
-    if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    BACKEND_ID=$(podman ps -q --filter name=share-things-backend)
+    if [ -z "$BACKEND_ID" ]; then
+        BACKEND_ID=$(podman ps -q --filter name=share-things_backend)
+    fi
+    
+    if [ -n "$FRONTEND_ID" ]; then
+        echo -e "${GREEN}Found frontend container: $FRONTEND_ID${NC}"
+        # Improved port detection with multiple patterns to handle different output formats
+        FRONTEND_PORT_MAPPING=$(podman port $FRONTEND_ID | grep -oP '(?<=0.0.0.0:)\d+(?=->80)' ||
+                               podman port $FRONTEND_ID | grep -oP '(?<=:)\d+(?=->80)' ||
+                               podman port $FRONTEND_ID | grep -E '.*->80/tcp' | awk -F':' '{print $NF}' | sed 's/->80\/tcp//')
+        echo -e "${GREEN}Frontend port mapping: $FRONTEND_PORT_MAPPING${NC}"
+    else
+        echo -e "${YELLOW}No frontend container found${NC}"
+    fi
+    
+    if [ -n "$BACKEND_ID" ]; then
+        echo -e "${GREEN}Found backend container: $BACKEND_ID${NC}"
+        # Improved port detection with multiple patterns to handle different output formats
+        BACKEND_PORT_MAPPING=$(podman port $BACKEND_ID | grep -oP '(?<=0.0.0.0:)\d+(?=->)' ||
+                              podman port $BACKEND_ID | grep -oP '(?<=:)\d+(?=->\d+)' ||
+                              podman port $BACKEND_ID | grep -E '.*->[0-9]+/tcp' | awk -F':' '{print $NF}' | sed 's/->[0-9]*\/tcp//')
+        
+        # Try multiple approaches to get the API port
         API_PORT=$(podman inspect $BACKEND_ID --format '{{range $p, $conf := .NetworkSettings.Ports}}{{if eq $p "3001/tcp"}}{{(index $conf 0).HostPort}}{{end}}{{end}}' 2>/dev/null ||
                   podman inspect $BACKEND_ID --format '{{range $p, $conf := .NetworkSettings.Ports}}{{if eq $p "15001/tcp"}}{{(index $conf 0).HostPort}}{{end}}{{end}}' 2>/dev/null ||
                   echo "")
@@ -466,111 +126,181 @@ if [ -n "$BACKEND_ID" ]; then
             # Try alternative approach for Podman
             API_PORT=$(podman inspect $BACKEND_ID --format '{{range .HostConfig.PortBindings}}{{(index . 0).HostPort}}{{end}}' 2>/dev/null || echo "")
         fi
+        echo -e "${GREEN}Backend port mapping: $BACKEND_PORT_MAPPING${NC}"
+        echo -e "${GREEN}API port: $API_PORT${NC}"
     else
-        # Docker version
+        echo -e "${YELLOW}No backend container found${NC}"
+    fi
+else
+    # Docker version
+    # Try both naming conventions (with hyphens and with underscores)
+    FRONTEND_ID=$(docker ps -q --filter name=share-things-frontend)
+    if [ -z "$FRONTEND_ID" ]; then
+        FRONTEND_ID=$(docker ps -q --filter name=share-things_frontend)
+    fi
+    
+    BACKEND_ID=$(docker ps -q --filter name=share-things-backend)
+    if [ -z "$BACKEND_ID" ]; then
+        BACKEND_ID=$(docker ps -q --filter name=share-things_backend)
+    fi
+    
+    if [ -n "$FRONTEND_ID" ]; then
+        echo -e "${GREEN}Found frontend container: $FRONTEND_ID${NC}"
+        # Improved port detection with multiple patterns to handle different output formats
+        FRONTEND_PORT_MAPPING=$(docker port $FRONTEND_ID | grep -oP '(?<=0.0.0.0:)\d+(?=->80)' ||
+                               docker port $FRONTEND_ID | grep -oP '(?<=:)\d+(?=->80)' ||
+                               docker port $FRONTEND_ID | grep -E '.*->80/tcp' | awk -F':' '{print $NF}' | sed 's/->80\/tcp//')
+        echo -e "${GREEN}Frontend port mapping: $FRONTEND_PORT_MAPPING${NC}"
+    else
+        echo -e "${YELLOW}No frontend container found${NC}"
+    fi
+    
+    if [ -n "$BACKEND_ID" ]; then
+        echo -e "${GREEN}Found backend container: $BACKEND_ID${NC}"
+        # Improved port detection with multiple patterns to handle different output formats
+        BACKEND_PORT_MAPPING=$(docker port $BACKEND_ID | grep -oP '(?<=0.0.0.0:)\d+(?=->)' ||
+                              docker port $BACKEND_ID | grep -oP '(?<=:)\d+(?=->\d+)' ||
+                              docker port $BACKEND_ID | grep -E '.*->[0-9]+/tcp' | awk -F':' '{print $NF}' | sed 's/->[0-9]*\/tcp//')
+        
+        # Try multiple approaches to get the API port
         API_PORT=$(docker inspect $BACKEND_ID --format '{{range $p, $conf := .NetworkSettings.Ports}}{{if eq $p "3001/tcp"}}{{(index $conf 0).HostPort}}{{end}}{{end}}' 2>/dev/null ||
                   docker inspect $BACKEND_ID --format '{{range $p, $conf := .NetworkSettings.Ports}}{{if eq $p "15001/tcp"}}{{(index $conf 0).HostPort}}{{end}}{{end}}' 2>/dev/null ||
                   echo "")
+        echo -e "${GREEN}Backend port mapping: $BACKEND_PORT_MAPPING${NC}"
+        echo -e "${GREEN}API port: $API_PORT${NC}"
+    else
+        echo -e "${YELLOW}No backend container found${NC}"
     fi
-    echo "Backend port mapping: $BACKEND_PORT_MAPPING"
-    echo "API port: $API_PORT"
-else
-    echo "No backend container found"
 fi
 
-# Check if we're running in production mode
-if [ -f docker-compose.prod.yml ]; then
-    COMPOSE_FILE="docker-compose.prod.yml"
-    echo "Production deployment detected. Using ${COMPOSE_FILE}"
-    PRODUCTION_MODE="yes"
-elif [ -f docker-compose.prod.temp.yml ]; then
-    COMPOSE_FILE="docker-compose.prod.temp.yml"
-    echo "Temporary production deployment detected. Using ${COMPOSE_FILE}"
-    PRODUCTION_MODE="yes"
-else
-    COMPOSE_FILE="docker-compose.yml"
-    echo "Development deployment detected. Using ${COMPOSE_FILE}"
-    PRODUCTION_MODE="no"
-fi
-
-# For production mode, we need to ensure we have the correct port mappings
+# Verify that we have both container port mappings before proceeding
 if [[ "$PRODUCTION_MODE" == "yes" ]]; then
-    # For production mode, use production ports if detection fails
+    # For production mode, we need to ensure we have the correct port mappings
+    if [ -z "$FRONTEND_ID" ] || [ -z "$BACKEND_ID" ]; then
+        echo -e "${RED}ERROR: Could not find both frontend and backend containers.${NC}"
+        echo -e "${RED}Cannot safely proceed with update without knowing both container configurations.${NC}"
+        echo -e "${RED}Aborting update to prevent port mapping issues.${NC}"
+        exit 1
+    fi
+    
+    # Save captured configuration to environment variables
     if [ -n "$FRONTEND_PORT_MAPPING" ]; then
         export FRONTEND_PORT=$FRONTEND_PORT_MAPPING
-        echo "Setting FRONTEND_PORT=$FRONTEND_PORT"
+        echo -e "${GREEN}Setting FRONTEND_PORT=$FRONTEND_PORT${NC}"
     else
-        echo "No frontend port mapping found, using production port 15000"
+        # In production mode, abort if we can't detect the frontend port
+        echo -e "${RED}ERROR: Could not detect frontend port mapping.${NC}"
+        echo -e "${RED}Cannot safely proceed with update without knowing frontend port.${NC}"
+        echo -e "${RED}Forcing to production port 15000.${NC}"
         FRONTEND_PORT=15000
     fi
     
     if [ -n "$BACKEND_PORT_MAPPING" ]; then
         export BACKEND_PORT=$BACKEND_PORT_MAPPING
-        echo "Setting BACKEND_PORT=$BACKEND_PORT"
+        echo -e "${GREEN}Setting BACKEND_PORT=$BACKEND_PORT${NC}"
     else
-        echo "No backend port mapping found, using production port 15001"
+        # In production mode, abort if we can't detect the backend port
+        echo -e "${RED}ERROR: Could not detect backend port mapping.${NC}"
+        echo -e "${RED}Cannot safely proceed with update without knowing backend port.${NC}"
+        echo -e "${RED}Forcing to production port 15001.${NC}"
         BACKEND_PORT=15001
     fi
     
     if [ -n "$API_PORT" ]; then
         export API_PORT=$API_PORT
-        echo "Setting API_PORT=$API_PORT"
+        echo -e "${GREEN}Setting API_PORT=$API_PORT${NC}"
     else
-        echo "No API port found, using production port 15001"
+        # In production mode, abort if we can't detect the API port
+        echo -e "${RED}ERROR: Could not detect API port.${NC}"
+        echo -e "${RED}Cannot safely proceed with update without knowing API port.${NC}"
+        echo -e "${RED}Forcing to production port 15001.${NC}"
         API_PORT=15001
     fi
 else
     # For development mode, we can use defaults if detection fails
     if [ -n "$FRONTEND_PORT_MAPPING" ]; then
         export FRONTEND_PORT=$FRONTEND_PORT_MAPPING
-        echo "Setting FRONTEND_PORT=$FRONTEND_PORT"
+        echo -e "${GREEN}Setting FRONTEND_PORT=$FRONTEND_PORT${NC}"
     else
         # Use known production port if detection fails
         FRONTEND_PORT=${FRONTEND_PORT:-15000}
-        echo "No frontend port mapping found, using production port: $FRONTEND_PORT"
+        echo -e "${YELLOW}No frontend port mapping found, using production port: $FRONTEND_PORT${NC}"
     fi
     
     if [ -n "$BACKEND_PORT_MAPPING" ]; then
         export BACKEND_PORT=$BACKEND_PORT_MAPPING
-        echo "Setting BACKEND_PORT=$BACKEND_PORT"
+        echo -e "${GREEN}Setting BACKEND_PORT=$BACKEND_PORT${NC}"
     else
         # Use known production port if detection fails
         BACKEND_PORT=${BACKEND_PORT:-15001}
-        echo "No backend port mapping found, using production port: $BACKEND_PORT"
+        echo -e "${YELLOW}No backend port mapping found, using production port: $BACKEND_PORT${NC}"
     fi
     
     if [ -n "$API_PORT" ]; then
         export API_PORT=$API_PORT
-        echo "Setting API_PORT=$API_PORT"
+        echo -e "${GREEN}Setting API_PORT=$API_PORT${NC}"
     else
         # Use known production port if detection fails
         API_PORT=${API_PORT:-15001}
-        echo "No API port found, using production port: $API_PORT"
+        echo -e "${YELLOW}No API port found, using production port: $API_PORT${NC}"
     fi
 fi
 
+# Check if we're running in production mode
+if [ -f docker-compose.prod.yml ]; then
+    COMPOSE_FILE="docker-compose.prod.yml"
+    echo -e "${YELLOW}Production deployment detected. Using ${COMPOSE_FILE}${NC}"
+    PRODUCTION_MODE="yes"
+elif [ -f docker-compose.prod.temp.yml ]; then
+    COMPOSE_FILE="docker-compose.prod.temp.yml"
+    echo -e "${YELLOW}Temporary production deployment detected. Using ${COMPOSE_FILE}${NC}"
+    PRODUCTION_MODE="yes"
+else
+    COMPOSE_FILE="docker-compose.yml"
+    echo -e "${YELLOW}Development deployment detected. Using ${COMPOSE_FILE}${NC}"
+    PRODUCTION_MODE="no"
+fi
+
 # List all running containers before stopping
-echo "Listing all running containers before stopping..."
-$CONTAINER_CMD ps --all | grep "share-things" || echo "No matching containers found"
+echo -e "${YELLOW}Listing all running containers before stopping...${NC}"
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    podman ps --all | grep "share-things" || echo "No matching containers found"
+else
+    docker ps --all | grep "share-things" || echo "No matching containers found"
+fi
+
+# Stop running containers - with enhanced container stopping logic
+echo -e "${YELLOW}Stopping running containers...${NC}"
 
 # Save the currently running container IDs for later verification
-RUNNING_CONTAINERS_BEFORE=$($CONTAINER_CMD ps -a -q --filter name=share-things)
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    RUNNING_CONTAINERS_BEFORE=$(podman ps -a -q --filter name=share-things)
+else
+    RUNNING_CONTAINERS_BEFORE=$(docker ps -a -q --filter name=share-things)
+fi
 
 # First attempt with docker-compose/podman-compose down
-echo "Stopping containers with ${COMPOSE_CMD}..."
+echo -e "${YELLOW}Stopping containers with ${COMPOSE_CMD}...${NC}"
 $COMPOSE_CMD -f $COMPOSE_FILE down
 COMPOSE_EXIT_CODE=$?
 
 # Check if any containers are still running with either naming convention
-STILL_RUNNING_AFTER_COMPOSE=$($CONTAINER_CMD ps -q --filter name=share-things)
-if [ -n "$STILL_RUNNING_AFTER_COMPOSE" ]; then
-    echo "Some containers are still running after ${COMPOSE_CMD} down. Will try direct stop."
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    STILL_RUNNING_AFTER_COMPOSE=$(podman ps -q --filter name=share-things)
+    if [ -n "$STILL_RUNNING_AFTER_COMPOSE" ]; then
+        echo -e "${YELLOW}Some containers are still running after ${COMPOSE_CMD} down. Will try direct stop.${NC}"
+    fi
+else
+    STILL_RUNNING_AFTER_COMPOSE=$(docker ps -q --filter name=share-things)
+    if [ -n "$STILL_RUNNING_AFTER_COMPOSE" ]; then
+        echo -e "${YELLOW}Some containers are still running after ${COMPOSE_CMD} down. Will try direct stop.${NC}"
+    fi
 fi
 
 # Second - try force stopping specific containers regardless of first attempt outcome
-echo "Force stopping individual containers to ensure clean state..."
+echo -e "${YELLOW}Force stopping individual containers to ensure clean state...${NC}"
 if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-    echo "Force stopping Podman containers..."
+    echo -e "${YELLOW}Force stopping Podman containers...${NC}"
     # Get all container IDs with either naming convention
     CONTAINER_IDS=$(podman ps -a -q --filter name=share-things)
     
@@ -583,20 +313,11 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
             podman stop --time 10 $CONTAINER_ID 2>/dev/null || echo "Failed to stop container $CONTAINER_ID"
         done
     else
-        # Try a broader search for containers
-        CONTAINER_IDS=$(podman ps -a -q | xargs -I {} podman inspect {} --format '{{.Name}},{{.ID}}' 2>/dev/null | grep -i "share\|frontend\|backend" | cut -d',' -f2)
-        if [ -n "$CONTAINER_IDS" ]; then
-            echo "$CONTAINER_IDS"
-            for CONTAINER_ID in $CONTAINER_IDS; do
-                podman stop --time 10 $CONTAINER_ID 2>/dev/null || echo "Failed to stop container $CONTAINER_ID"
-            done
-        else
-            echo "No running containers to stop"
-        fi
+        echo "No running containers to stop"
     fi
     
     # Remove containers with force flag
-    echo "Removing Podman containers..."
+    echo -e "${YELLOW}Removing Podman containers...${NC}"
     CONTAINER_IDS=$(podman ps -a -q --filter name=share-things)
     
     if [ -n "$CONTAINER_IDS" ]; then
@@ -608,23 +329,14 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
             podman rm -f $CONTAINER_ID 2>/dev/null || echo "Failed to remove container $CONTAINER_ID"
         done
     else
-        # Try a broader search for containers to remove
-        CONTAINER_IDS=$(podman ps -a -q | xargs -I {} podman inspect {} --format '{{.Name}},{{.ID}}' 2>/dev/null | grep -i "share\|frontend\|backend" | cut -d',' -f2)
-        if [ -n "$CONTAINER_IDS" ]; then
-            echo "$CONTAINER_IDS"
-            for CONTAINER_ID in $CONTAINER_IDS; do
-                podman rm -f $CONTAINER_ID 2>/dev/null || echo "Failed to remove container $CONTAINER_ID"
-            done
-        else
-            echo "No containers to remove"
-        fi
+        echo "No containers to remove"
     fi
     
     # Clean up any associated networks
-    echo "Cleaning up networks..."
+    echo -e "${YELLOW}Cleaning up networks...${NC}"
     podman network prune -f 2>/dev/null || echo "Network prune not supported or no networks to remove"
 else
-    echo "Force stopping Docker containers..."
+    echo -e "${YELLOW}Force stopping Docker containers...${NC}"
     # Get all container IDs with either naming convention
     CONTAINER_IDS=$(docker ps -a -q --filter name=share-things)
     
@@ -637,20 +349,11 @@ else
             docker stop --time 10 $CONTAINER_ID 2>/dev/null || echo "Failed to stop container $CONTAINER_ID"
         done
     else
-        # Try a broader search for containers
-        CONTAINER_IDS=$(docker ps -a -q | xargs -I {} docker inspect {} --format '{{.Name}},{{.ID}}' 2>/dev/null | grep -i "share\|frontend\|backend" | cut -d',' -f2)
-        if [ -n "$CONTAINER_IDS" ]; then
-            echo "$CONTAINER_IDS"
-            for CONTAINER_ID in $CONTAINER_IDS; do
-                docker stop --time 10 $CONTAINER_ID 2>/dev/null || echo "Failed to stop container $CONTAINER_ID"
-            done
-        else
-            echo "No running containers to stop"
-        fi
+        echo "No running containers to stop"
     fi
     
     # Remove containers with force flag
-    echo "Removing Docker containers..."
+    echo -e "${YELLOW}Removing Docker containers...${NC}"
     CONTAINER_IDS=$(docker ps -a -q --filter name=share-things)
     
     if [ -n "$CONTAINER_IDS" ]; then
@@ -662,34 +365,25 @@ else
             docker rm -f $CONTAINER_ID 2>/dev/null || echo "Failed to remove container $CONTAINER_ID"
         done
     else
-        # Try a broader search for containers to remove
-        CONTAINER_IDS=$(docker ps -a -q | xargs -I {} docker inspect {} --format '{{.Name}},{{.ID}}' 2>/dev/null | grep -i "share\|frontend\|backend" | cut -d',' -f2)
-        if [ -n "$CONTAINER_IDS" ]; then
-            echo "$CONTAINER_IDS"
-            for CONTAINER_ID in $CONTAINER_IDS; then
-                docker rm -f $CONTAINER_ID 2>/dev/null || echo "Failed to remove container $CONTAINER_ID"
-            done
-        else
-            echo "No containers to remove"
-        fi
+        echo "No containers to remove"
     fi
     
     # Clean up any associated networks
-    echo "Cleaning up networks..."
+    echo -e "${YELLOW}Cleaning up networks...${NC}"
     docker network prune -f 2>/dev/null || echo "No networks to remove"
 fi
 
 # Final verification to make sure ALL containers are stopped
-echo "Performing final verification..."
+echo -e "${YELLOW}Performing final verification...${NC}"
 if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
     STILL_RUNNING=$(podman ps -q --filter name=share-things)
     if [ -n "$STILL_RUNNING" ]; then
-        echo "ERROR: Some containers are still running despite multiple stop attempts!"
-        echo "This could cause problems with the update. Listing containers:"
+        echo -e "${RED}ERROR: Some containers are still running despite multiple stop attempts!${NC}"
+        echo -e "${RED}This could cause problems with the update. Listing containers:${NC}"
         podman ps | grep "share-things"
         
         # Last resort - kill with SIGKILL
-        echo "Performing emergency container kill..."
+        echo -e "${RED}Performing emergency container kill...${NC}"
         CONTAINER_IDS=$(podman ps -q --filter name=share-things)
         if [ -n "$CONTAINER_IDS" ]; then
             for CONTAINER_ID in $CONTAINER_IDS; do
@@ -706,34 +400,24 @@ if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
             done
         fi
         
-        # Try a broader search approach
-        CONTAINER_IDS=$(podman ps -q | xargs -I {} podman inspect {} --format '{{.Name}}' 2>/dev/null | grep -i "share\|frontend\|backend" | xargs)
-        if [ -n "$CONTAINER_IDS" ]; then
-            for CONTAINER_ID in $CONTAINER_IDS; do
-                echo "Killing container $CONTAINER_ID"
-                podman kill $CONTAINER_ID 2>/dev/null || echo "Failed to kill container $CONTAINER_ID"
-                podman rm -f $CONTAINER_ID 2>/dev/null || echo "Failed to remove container $CONTAINER_ID"
-            done
-        fi
-        
         # Check one more time
         FINAL_CHECK=$(podman ps -q --filter name=share-things)
         if [ -n "$FINAL_CHECK" ]; then
-            echo "CRITICAL: Unable to stop containers. Manual intervention required."
-            echo "Please stop all ShareThings containers manually before continuing."
+            echo -e "${RED}CRITICAL: Unable to stop containers. Manual intervention required.${NC}"
+            echo -e "${RED}Please stop all ShareThings containers manually before continuing.${NC}"
             exit 1
         fi
     fi
-    echo "All containers stopped successfully."
+    echo -e "${GREEN}All containers stopped successfully.${NC}"
 else
     STILL_RUNNING=$(docker ps -q --filter name=share-things)
     if [ -n "$STILL_RUNNING" ]; then
-        echo "ERROR: Some containers are still running despite multiple stop attempts!"
-        echo "This could cause problems with the update. Listing containers:"
+        echo -e "${RED}ERROR: Some containers are still running despite multiple stop attempts!${NC}"
+        echo -e "${RED}This could cause problems with the update. Listing containers:${NC}"
         docker ps | grep "share-things"
         
         # Last resort - kill with SIGKILL
-        echo "Performing emergency container kill..."
+        echo -e "${RED}Performing emergency container kill...${NC}"
         CONTAINER_IDS=$(docker ps -q --filter name=share-things)
         if [ -n "$CONTAINER_IDS" ]; then
             for CONTAINER_ID in $CONTAINER_IDS; do
@@ -750,72 +434,60 @@ else
             done
         fi
         
-        # Try a broader search approach
-        CONTAINER_IDS=$(docker ps -q | xargs -I {} docker inspect {} --format '{{.Name}}' 2>/dev/null | grep -i "share\|frontend\|backend" | xargs)
-        if [ -n "$CONTAINER_IDS" ]; then
-            for CONTAINER_ID in $CONTAINER_IDS; do
-                echo "Killing container $CONTAINER_ID"
-                docker kill $CONTAINER_ID 2>/dev/null || echo "Failed to kill container $CONTAINER_ID"
-                docker rm -f $CONTAINER_ID 2>/dev/null || echo "Failed to remove container $CONTAINER_ID"
-            done
-        fi
-        
         # Check one more time
         FINAL_CHECK=$(docker ps -q --filter name=share-things)
         if [ -n "$FINAL_CHECK" ]; then
-            echo "CRITICAL: Unable to stop containers. Manual intervention required."
-            echo "Please stop all ShareThings containers manually before continuing."
+            echo -e "${RED}CRITICAL: Unable to stop containers. Manual intervention required.${NC}"
+            echo -e "${RED}Please stop all ShareThings containers manually before continuing.${NC}"
             exit 1
         fi
     fi
-    echo "All containers stopped successfully."
+    echo -e "${GREEN}All containers stopped successfully.${NC}"
 fi
 
 # Clean container image cache before rebuilding
-echo "Cleaning container image cache before rebuilding..."
+echo -e "${YELLOW}Cleaning container image cache before rebuilding...${NC}"
 if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-    echo "Cleaning Podman image cache..."
+    echo -e "${YELLOW}Cleaning Podman image cache...${NC}"
     # Remove dangling images (not used by any container)
     podman image prune -f
-    echo "Podman dangling images removed."
+    echo -e "${GREEN}Podman dangling images removed.${NC}"
     
     # Perform full cleanup automatically in autonomous mode
-    echo "Performing full Podman system prune automatically..."
+    echo -e "${YELLOW}Performing full Podman system prune automatically...${NC}"
     podman system prune -f
-    echo "Podman system cache cleaned."
+    echo -e "${GREEN}Podman system cache cleaned.${NC}"
 else
-    echo "Cleaning Docker image cache..."
+    echo -e "${YELLOW}Cleaning Docker image cache...${NC}"
     # Remove dangling images (not used by any container)
     docker image prune -f
-    echo "Docker dangling images removed."
+    echo -e "${GREEN}Docker dangling images removed.${NC}"
     
     # Perform full cleanup automatically in autonomous mode
-    echo "Performing full Docker system prune automatically..."
+    echo -e "${YELLOW}Performing full Docker system prune automatically...${NC}"
     docker system prune -f
-    echo "Docker system cache cleaned."
+    echo -e "${GREEN}Docker system cache cleaned.${NC}"
 fi
 
 # Rebuild containers
-echo "Rebuilding containers with latest code..."
+echo -e "${YELLOW}Rebuilding containers with latest code...${NC}"
 $COMPOSE_CMD -f $COMPOSE_FILE build
 BUILD_EXIT_CODE=$?
 
 if [ $BUILD_EXIT_CODE -ne 0 ]; then
-    echo "Container build failed. Please check the error messages above."
+    echo -e "${RED}Container build failed. Please check the error messages above.${NC}"
     exit 1
 fi
-echo "Containers rebuilt successfully."
+echo -e "${GREEN}Containers rebuilt successfully.${NC}"
 
 # Start containers with preserved configuration
-echo "Starting updated containers with preserved configuration..."
+echo -e "${YELLOW}Starting updated containers with preserved configuration...${NC}"
 
 # For podman, create a complete docker-compose file to ensure proper port mapping
 if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-    echo "Creating a comprehensive docker-compose file for update..."
+    echo -e "${YELLOW}Creating a comprehensive docker-compose file for update...${NC}"
     # Create a temporary but complete docker-compose file specifically for the update
-    COMPOSE_UPDATE_FILE=$(create_file "/tmp/docker-compose.update.yml")
-    
-    cat > "$COMPOSE_UPDATE_FILE" << EOL
+    cat > docker-compose.update.yml << EOL
 # Update configuration for ShareThings Docker Compose
 
 services:
@@ -876,154 +548,270 @@ networks:
   app_network:
     driver: bridge
 EOL
-    echo "Comprehensive docker-compose file created at: $COMPOSE_UPDATE_FILE"
+    echo -e "${GREEN}Comprehensive docker-compose.update.yml created.${NC}"
     
     # Export API_PORT as VITE_API_PORT to ensure it's available during build
     export VITE_API_PORT="${API_PORT:-3001}"
-    echo "Using environment variables: FRONTEND_PORT=$FRONTEND_PORT, BACKEND_PORT=$BACKEND_PORT, API_PORT=$API_PORT, VITE_API_PORT=$VITE_API_PORT"
+    echo -e "${YELLOW}Using environment variables: FRONTEND_PORT=$FRONTEND_PORT, BACKEND_PORT=$BACKEND_PORT, API_PORT=$API_PORT, VITE_API_PORT=$VITE_API_PORT${NC}"
     
     # Build and run containers with explicitly passed environment variables
-    echo "Building containers with comprehensive configuration..."
-    $COMPOSE_CMD -f "$COMPOSE_UPDATE_FILE" build
+    echo -e "${YELLOW}Building containers with comprehensive configuration...${NC}"
+    $COMPOSE_CMD -f docker-compose.update.yml build
     
-    echo "Starting containers with explicit environment variables..."
+    echo -e "${YELLOW}Starting containers with explicit environment variables...${NC}"
     # Directly pass environment variables to the compose command
-    FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT $COMPOSE_CMD -f "$COMPOSE_UPDATE_FILE" up -d
+    FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT $COMPOSE_CMD -f docker-compose.update.yml up -d
     
-    COMPOSE_FILE="$COMPOSE_UPDATE_FILE"
+    COMPOSE_FILE="docker-compose.update.yml"
 else
     # For docker-compose, explicitly pass environment variables
-    echo "Using environment variables: FRONTEND_PORT=$FRONTEND_PORT, BACKEND_PORT=$BACKEND_PORT, API_PORT=$API_PORT"
+    echo -e "${YELLOW}Using environment variables: FRONTEND_PORT=$FRONTEND_PORT, BACKEND_PORT=$BACKEND_PORT, API_PORT=$API_PORT${NC}"
     
     # Create a temporary .env file to ensure environment variables are properly passed
-    ENV_TEMP_FILE=$(create_file "/tmp/.env.temp")
-    echo "FRONTEND_PORT=$FRONTEND_PORT" > "$ENV_TEMP_FILE"
-    echo "BACKEND_PORT=$BACKEND_PORT" >> "$ENV_TEMP_FILE"
-    echo "API_PORT=$API_PORT" >> "$ENV_TEMP_FILE"
+    echo "FRONTEND_PORT=$FRONTEND_PORT" > .env.temp
+    echo "BACKEND_PORT=$BACKEND_PORT" >> .env.temp
+    echo "API_PORT=$API_PORT" >> .env.temp
     
     # Use the env-file option for docker-compose
-    $COMPOSE_CMD -f $COMPOSE_FILE --env-file "$ENV_TEMP_FILE" up -d
+    $COMPOSE_CMD -f $COMPOSE_FILE --env-file .env.temp up -d
     
     # Clean up temporary .env file
-    if [ -f "$ENV_TEMP_FILE" ]; then
-        rm "$ENV_TEMP_FILE"
-        echo "Temporary environment file removed."
+    if [ -f .env.temp ]; then
+        rm .env.temp
+        echo -e "${GREEN}Temporary environment file removed.${NC}"
     fi
 fi
 
 START_EXIT_CODE=$?
 
 # Add additional debugging for port configuration
-echo "Verifying port configuration..."
-echo "Expected configuration:"
-echo "  Frontend Port: ${FRONTEND_PORT} (should be 15000 for production)"
-echo "  Backend Port: ${BACKEND_PORT} (should be 15001 for production)"
-echo "  API Port: ${API_PORT} (should be 15001 for production)"
+echo -e "${YELLOW}Verifying port configuration...${NC}"
+echo -e "Expected configuration:"
+echo -e "  Frontend Port: ${FRONTEND_PORT} (should be 15000 for production)"
+echo -e "  Backend Port: ${BACKEND_PORT} (should be 15001 for production)"
+echo -e "  API Port: ${API_PORT} (should be 15001 for production)"
 
 # Add explicit warning if ports don't match expected production values
 if [[ "$PRODUCTION_MODE" == "yes" ]]; then
     if [[ "$FRONTEND_PORT" != "15000" ]]; then
-        echo "WARNING: Frontend port ${FRONTEND_PORT} does not match expected production port 15000"
-        echo "Forcing frontend port to 15000 for production deployment"
+        echo -e "${RED}WARNING: Frontend port ${FRONTEND_PORT} does not match expected production port 15000${NC}"
+        echo -e "${YELLOW}Forcing frontend port to 15000 for production deployment${NC}"
         FRONTEND_PORT=15000
     fi
     
     if [[ "$BACKEND_PORT" != "15001" ]]; then
-        echo "WARNING: Backend port ${BACKEND_PORT} does not match expected production port 15001"
-        echo "Forcing backend port to 15001 for production deployment"
+        echo -e "${RED}WARNING: Backend port ${BACKEND_PORT} does not match expected production port 15001${NC}"
+        echo -e "${YELLOW}Forcing backend port to 15001 for production deployment${NC}"
         BACKEND_PORT=15001
     fi
     
     if [[ "$API_PORT" != "15001" ]]; then
-        echo "WARNING: API port ${API_PORT} does not match expected production port 15001"
-        echo "Forcing API port to 15001 for production deployment"
+        echo -e "${RED}WARNING: API port ${API_PORT} does not match expected production port 15001${NC}"
+        echo -e "${YELLOW}Forcing API port to 15001 for production deployment${NC}"
         API_PORT=15001
     fi
     
-    echo "Verified production port configuration:"
-    echo "  Frontend Port: ${FRONTEND_PORT}"
-    echo "  Backend Port: ${BACKEND_PORT}"
-    echo "  API Port: ${API_PORT}"
+    echo -e "${GREEN}Verified production port configuration:${NC}"
+    echo -e "  Frontend Port: ${FRONTEND_PORT}"
+    echo -e "  Backend Port: ${BACKEND_PORT}"
+    echo -e "  API Port: ${API_PORT}"
 fi
 
 if [ $START_EXIT_CODE -ne 0 ]; then
-    echo "Failed to start containers. Please check the error messages above."
+    echo -e "${RED}Failed to start containers. Please check the error messages above.${NC}"
     exit 1
 fi
-echo "Containers started successfully."
+echo -e "${GREEN}Containers started successfully.${NC}"
 
-# Verify containers are running with enhanced verification and retries
-echo "Verifying deployment..."
-echo "Listing all running containers:"
-$CONTAINER_CMD ps | grep -i "share\|frontend\|backend" || echo "No matching containers found"
-
-# Give containers a moment to start up before verification
-echo "Waiting 5 seconds for containers to initialize..."
-sleep 5
-
-# Call our enhanced verification function
-verify_containers_running
-VERIFICATION_RESULT=$?
-
-# Always assume success in CI/CD environments
-if [ "$IS_CI_CD" = "true" ]; then
-    echo "Running in CI/CD environment - assuming containers are starting correctly"
-    echo "Container startup may take longer than verification can wait for"
-    VERIFICATION_RESULT=0
-fi
-
-# Even if verification technically failed, treat it as informational only
-echo "Container port information:"
-# Use our improved container detection for port verification
-FRONTEND_ID=$(find_container_id "frontend")
-if [ -n "$FRONTEND_ID" ]; then
-    echo "Frontend container port mapping:"
-    $CONTAINER_CMD port $FRONTEND_ID || echo "No port mapping found for frontend"
-fi
-
-BACKEND_ID=$(find_container_id "backend")
-if [ -n "$BACKEND_ID" ]; then
-    echo "Backend container port mapping:"
-    $CONTAINER_CMD port $BACKEND_ID || echo "No port mapping found for backend"
-fi
-
-# Check for any running containers as a last resort
-echo "Checking for ANY running containers:"
-$CONTAINER_CMD ps
-
-# Always show logs for informational purposes
-echo "Container logs for reference:"
-check_container_logs "backend"
-check_container_logs "frontend"
-
-# In CI/CD, we'll always report success
-if [ "$IS_CI_CD" = "true" ]; then
-    echo "CI/CD deployment completed - containers may still be initializing"
-    echo "This is normal behavior in automated environments"
+# Verify containers are running
+echo -e "${YELLOW}Verifying deployment...${NC}"
+if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    echo -e "${YELLOW}Listing all running containers:${NC}"
+    podman ps | grep "share-things" || echo "No matching containers found"
+    
+    # Enhanced verification of container port mappings
+    echo -e "${YELLOW}Verifying container port mappings...${NC}"
+    
+    # Check for frontend container - directly check for containers with frontend in their name
+    FRONTEND_RUNNING=$(podman ps -q --filter name=share-things-frontend | wc -l)
+    if [ "$FRONTEND_RUNNING" -eq "0" ]; then
+        # Try alternate naming convention with underscore
+        FRONTEND_RUNNING=$(podman ps -q --filter name=share-things_frontend | wc -l)
+    fi
+    if [ "$FRONTEND_RUNNING" -gt "0" ]; then
+        echo -e "${GREEN}Frontend container is running.${NC}"
+        # Get frontend container ID
+        FRONTEND_ID=$(podman ps -q --filter name=share-things-frontend 2>/dev/null || podman ps -q --filter name=share-things_frontend_1 2>/dev/null)
+        if [ -n "$FRONTEND_ID" ]; then
+            echo -e "${YELLOW}Frontend container ID: $FRONTEND_ID${NC}"
+            echo -e "${YELLOW}Frontend port mapping:${NC}"
+            podman port $FRONTEND_ID || echo "No port mapping found for frontend"
+            
+            # If no port mapping is found, try to manually add it
+            if ! podman port $FRONTEND_ID | grep -q '80/tcp'; then
+                echo -e "${YELLOW}No port mapping found. Attempting to add port mapping...${NC}"
+                # Stop the container
+                podman stop $FRONTEND_ID
+                # Remove the container but keep the image
+                podman rm $FRONTEND_ID
+                # Run the container again with explicit port mapping - use exactly the detected port config (15000:80 for production)
+                echo -e "${YELLOW}Creating frontend container with port mapping ${FRONTEND_PORT}:80${NC}"
+                podman run -d --name share-things-frontend -p ${FRONTEND_PORT}:80 --network=app_network --restart=always localhost/share-things_frontend:latest
+                echo -e "${GREEN}Verified frontend container is using port ${FRONTEND_PORT}${NC}"
+                echo -e "${GREEN}Recreated frontend container with explicit port mapping.${NC}"
+            fi
+        else
+            echo -e "${RED}Could not find frontend container ID.${NC}"
+        fi
+    else
+        echo -e "${RED}Frontend container is not running.${NC}"
+    fi
+    
+    # Check for backend container - directly check for containers with backend in their name
+    BACKEND_RUNNING=$(podman ps -q --filter name=share-things-backend | wc -l)
+    if [ "$BACKEND_RUNNING" -eq "0" ]; then
+        # Try alternate naming convention with underscore
+        BACKEND_RUNNING=$(podman ps -q --filter name=share-things_backend | wc -l)
+    fi
+    if [ "$BACKEND_RUNNING" -gt "0" ]; then
+        echo -e "${GREEN}Backend container is running.${NC}"
+        # Get backend container ID
+        BACKEND_ID=$(podman ps -q --filter name=share-things-backend 2>/dev/null || podman ps -q --filter name=share-things_backend_1 2>/dev/null)
+        if [ -n "$BACKEND_ID" ]; then
+            echo -e "${YELLOW}Backend container ID: $BACKEND_ID${NC}"
+            echo -e "${YELLOW}Backend port mapping:${NC}"
+            podman port $BACKEND_ID || echo "No port mapping found for backend"
+            
+            # If no port mapping is found, try to manually add it
+            if ! podman port $BACKEND_ID | grep -q "${API_PORT:-3001}/tcp"; then
+                echo -e "${YELLOW}No port mapping found. Attempting to add port mapping...${NC}"
+                # Stop the container
+                podman stop $BACKEND_ID
+                # Remove the container but keep the image
+                podman rm $BACKEND_ID
+                # Run the container again with explicit port mapping - use exactly the detected port config (15001:15001 for production)
+                echo -e "${YELLOW}Creating backend container with port mapping ${BACKEND_PORT}:${API_PORT}${NC}"
+                podman run -d --name share-things-backend -p ${BACKEND_PORT}:${API_PORT} -e NODE_ENV=production -e PORT=${API_PORT} --network=app_network --restart=always localhost/share-things_backend:latest
+                echo -e "${GREEN}Verified backend container is using port ${BACKEND_PORT}:${API_PORT}${NC}"
+                echo -e "${GREEN}Recreated backend container with explicit port mapping.${NC}"
+            fi
+        else
+            echo -e "${RED}Could not find backend container ID.${NC}"
+        fi
+    else
+        echo -e "${RED}Backend container is not running.${NC}"
+    fi
+    
+    # Overall verification - make sure we have at least one frontend and one backend container
+    if [ "$FRONTEND_RUNNING" -gt "0" ] && [ "$BACKEND_RUNNING" -gt "0" ]; then
+        echo -e "${GREEN}Deployment verified. All containers are running.${NC}"
+    else
+        echo -e "${RED}Verification failed. Not all containers are running.${NC}"
+        echo "You can check container logs with: podman logs <container_name>"
+        
+        # Show logs for troubleshooting
+        echo -e "${YELLOW}Checking container logs for errors...${NC}"
+        echo "Backend container logs:"
+        # Try both naming conventions for logs
+        podman logs share-things-backend --tail 20 2>/dev/null || podman logs share-things_backend_1 --tail 20 2>/dev/null || echo "No logs available for backend container"
+        
+        echo "Frontend container logs:"
+        # Try both naming conventions for logs
+        podman logs share-things-frontend --tail 20 2>/dev/null || podman logs share-things_frontend_1 --tail 20 2>/dev/null || echo "No logs available for frontend container"
+    fi
+else
+    echo -e "${YELLOW}Listing all running containers:${NC}"
+    docker ps | grep "share-things" || echo "No matching containers found"
+    
+    # Check for frontend container - directly check for containers with frontend in their name
+    FRONTEND_RUNNING=$(docker ps -q --filter name=share-things-frontend | wc -l)
+    if [ "$FRONTEND_RUNNING" -eq "0" ]; then
+        # Try alternate naming convention with underscore
+        FRONTEND_RUNNING=$(docker ps -q --filter name=share-things_frontend | wc -l)
+    fi
+    if [ "$FRONTEND_RUNNING" -gt "0" ]; then
+        echo -e "${GREEN}Frontend container is running.${NC}"
+        echo -e "${YELLOW}Frontend port mapping:${NC}"
+        # Try both naming conventions for port display
+        docker port share-things-frontend 2>/dev/null || docker port share-things_frontend_1 2>/dev/null || echo "Could not display port mapping"
+    else
+        echo -e "${RED}Frontend container is not running.${NC}"
+    fi
+    
+    # Check for backend container - directly check for containers with backend in their name
+    BACKEND_RUNNING=$(docker ps -q --filter name=share-things-backend | wc -l)
+    if [ "$BACKEND_RUNNING" -eq "0" ]; then
+        # Try alternate naming convention with underscore
+        BACKEND_RUNNING=$(docker ps -q --filter name=share-things_backend | wc -l)
+    fi
+    if [ "$BACKEND_RUNNING" -gt "0" ]; then
+        echo -e "${GREEN}Backend container is running.${NC}"
+        echo -e "${YELLOW}Backend port mapping:${NC}"
+        # Try both naming conventions for port display
+        docker port share-things-backend 2>/dev/null || docker port share-things_backend_1 2>/dev/null || echo "Could not display port mapping"
+    else
+        echo -e "${RED}Backend container is not running.${NC}"
+    fi
+    
+    # Overall verification - make sure we have at least one frontend and one backend container
+    if [ "$FRONTEND_RUNNING" -gt "0" ] && [ "$BACKEND_RUNNING" -gt "0" ]; then
+        echo -e "${GREEN}Deployment verified. All containers are running.${NC}"
+        
+        # Add detailed port verification
+        echo -e "${YELLOW}Verifying actual port configuration:${NC}"
+        if [ -n "$BACKEND_ID" ]; then
+            echo -e "${YELLOW}Backend container port configuration:${NC}"
+            docker inspect $BACKEND_ID --format '{{range $p, $conf := .NetworkSettings.Ports}}{{$p}} -> {{(index $conf 0).HostPort}}{{end}}'
+            echo -e "${YELLOW}Backend container environment variables:${NC}"
+            docker inspect $BACKEND_ID --format '{{range .Config.Env}}{{.}}{{println}}{{end}}' | grep -E 'PORT|LISTEN'
+        fi
+        
+        # Add detailed port verification
+        echo -e "${YELLOW}Verifying actual port configuration:${NC}"
+        if [ -n "$BACKEND_ID" ]; then
+            echo -e "${YELLOW}Backend container port configuration:${NC}"
+            podman inspect $BACKEND_ID --format '{{range $p, $conf := .NetworkSettings.Ports}}{{$p}} -> {{(index $conf 0).HostPort}}{{end}}'
+            echo -e "${YELLOW}Backend container environment variables:${NC}"
+            podman inspect $BACKEND_ID --format '{{range .Config.Env}}{{.}}{{println}}{{end}}' | grep -E 'PORT|LISTEN'
+        fi
+    else
+        echo -e "${RED}Verification failed. Not all containers are running.${NC}"
+        echo "You can check container logs with: docker logs <container_name>"
+        
+        # Show logs for troubleshooting
+        echo -e "${YELLOW}Checking container logs for errors...${NC}"
+        echo "Backend container logs:"
+        # Try both naming conventions for logs
+        docker logs share-things-backend --tail 20 2>/dev/null || docker logs share-things_backend_1 --tail 20 2>/dev/null || echo "No logs available for backend container"
+        
+        echo "Frontend container logs:"
+        # Try both naming conventions for logs
+        docker logs share-things-frontend --tail 20 2>/dev/null || docker logs share-things_frontend_1 --tail 20 2>/dev/null || echo "No logs available for frontend container"
+    fi
 fi
 
 # Clean up any temporary files created during the update
-if [ -f "$COMPOSE_UPDATE_FILE" ]; then
-    echo "Cleaning up temporary files..."
+if [ -f docker-compose.update.yml ]; then
+    echo -e "${YELLOW}Cleaning up temporary files...${NC}"
     # Keep the file for reference in case of issues
-    cp "$COMPOSE_UPDATE_FILE" "${COMPOSE_UPDATE_FILE}.bak" 2>/dev/null || true
-    echo "Docker-compose update file backed up for reference."
+    mv docker-compose.update.yml docker-compose.update.yml.bak
+    echo -e "${GREEN}docker-compose.update.yml saved as docker-compose.update.yml.bak for reference.${NC}"
 fi
 
 # Clean up any backup files created by sed on macOS
 if [[ "$OSTYPE" == "darwin"* ]]; then
-    echo "Cleaning up backup files..."
-    find . -name "*.bak" -type f -delete 2>/dev/null || true
-    echo "Backup files removed."
+    echo -e "${YELLOW}Cleaning up backup files...${NC}"
+    find . -name "*.bak" -type f -delete
+    echo -e "${GREEN}Backup files removed.${NC}"
 fi
 
-echo "=== Update Complete ==="
+echo -e "${BLUE}=== Update Complete ===${NC}"
 echo "Your ShareThings deployment has been updated with the latest code."
 echo "If you encounter any issues, you can restore your configuration from the backup."
 
 # Display current configuration
 echo ""
-echo "=== Current Configuration ==="
+echo -e "${BLUE}=== Current Configuration ===${NC}"
 echo "Container Engine: ${CONTAINER_ENGINE}"
 echo "Compose File: ${COMPOSE_FILE}"
 echo "Frontend Port: ${FRONTEND_PORT}"
@@ -1033,7 +821,7 @@ echo "Production Mode: ${PRODUCTION_MODE}"
 
 # Add instructions for manual cleanup if needed
 echo ""
-echo "=== Troubleshooting ==="
+echo -e "${BLUE}=== Troubleshooting ===${NC}"
 echo "If you encounter issues with containers not updating properly, you can try:"
 echo "1. Manual cleanup: ${CONTAINER_CMD} rm -f \$(${CONTAINER_CMD} ps -a -q --filter name=share-things)"
 echo "2. Restart the update: ./update-server.sh"
