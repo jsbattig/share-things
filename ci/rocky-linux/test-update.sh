@@ -50,6 +50,22 @@ check_command() {
   return 0
 }
 
+# Function to check if containers are running
+check_running_containers() {
+  log "INFO" "Checking for running containers..."
+  
+  # Check if any share-things containers are running
+  local container_count=$(podman ps | grep -c "share-things" || echo "0")
+  
+  if [ "$container_count" -gt 0 ]; then
+    log "WARNING" "Found $container_count running share-things containers."
+    return 0
+  else
+    log "INFO" "No running share-things containers found."
+    return 1
+  fi
+}
+
 # Function to check if containers are running with timeout
 check_containers() {
   local expected_count=$1
@@ -92,17 +108,35 @@ check_containers() {
 cleanup_containers() {
   log "INFO" "Cleaning up containers..."
   
-  # First, stop all containers to break dependencies
+  # First try to use podman-compose to kill and remove containers
+  if command -v podman-compose &> /dev/null; then
+    log "INFO" "Using podman-compose to kill containers..."
+    podman-compose down -v --remove-orphans || true
+  fi
+  
+  # Stop all containers to break dependencies
+  log "INFO" "Stopping all containers..."
   podman stop -a || true
   
-  # Then remove all containers with force
+  # Remove all containers with force
+  log "INFO" "Removing all containers..."
   podman rm -f -a || true
   
   # Remove volumes
+  log "INFO" "Removing all volumes..."
   podman volume ls --format '{{.Name}}' | xargs -r podman volume rm -f || true
   
   # Remove networks with force
+  log "INFO" "Removing all networks..."
   podman network ls --format '{{.Name}}' | grep -v 'podman' | xargs -r podman network rm -f || true
+  
+  # Clean container cache
+  log "INFO" "Cleaning container cache..."
+  podman system prune -f || true
+  
+  # Clean image cache
+  log "INFO" "Cleaning image cache..."
+  podman image prune -f || true
   
   log "SUCCESS" "Cleanup complete."
 }
@@ -140,7 +174,7 @@ wait_for_service() {
   return 1
 }
 
-# Function to run a command with timeout
+# Function to run a command with timeout and real-time output
 run_with_timeout() {
   local cmd="$1"
   local timeout="$2"
@@ -148,16 +182,10 @@ run_with_timeout() {
   
   log "INFO" "$message (timeout: ${timeout}s)"
   
-  # Create a temporary file for the command output
-  local output_file=$(mktemp)
-  
-  # Run the command with timeout
-  timeout $timeout bash -c "$cmd" > "$output_file" 2>&1
+  # Run the command with timeout and show output in real-time
+  # We use script to capture the output while still displaying it
+  script -q -c "timeout $timeout bash -c \"$cmd\"" /dev/null
   local exit_code=$?
-  
-  # Display the command output
-  cat "$output_file"
-  rm "$output_file"
   
   if [ $exit_code -eq 124 ]; then
     log "ERROR" "Command timed out after ${timeout} seconds"
@@ -184,6 +212,7 @@ check_command "podman" || exit 1
 check_command "curl" || exit 1
 check_command "sed" || exit 1
 check_command "timeout" || exit 1
+check_command "script" || exit 1
 
 # Configure Podman to allow short names
 log "INFO" "Configuring Podman to allow short names..."
@@ -201,6 +230,12 @@ registries = []
 [engine]
 short-name-mode="permissive"
 EOL
+
+# Check if containers are already running and clean them up
+if check_running_containers; then
+  log "WARNING" "Found running containers. Cleaning up before proceeding..."
+  cleanup_containers
+fi
 
 # Clean up any existing containers
 cleanup_containers
