@@ -4,12 +4,17 @@
 
 ShareThings implements a secure session management system that provides authentication, authorization, and session persistence while maintaining end-to-end encryption. This document outlines the session management approach, including authentication, token handling, and session expiration.
 
+The system supports two storage backends:
+1. In-memory storage (default)
+2. PostgreSQL database storage (for persistence across server restarts and multi-server deployments)
+
 ## Session Authentication Flow
 
 ```mermaid
 sequenceDiagram
     participant Client
     participant Server
+    participant DB as PostgreSQL (optional)
     
     Note over Client: User enters session name,<br/>client name, and passphrase
     
@@ -18,10 +23,17 @@ sequenceDiagram
     Client->>Server: Join request (sessionId, clientName, fingerprint)
     
     alt Session exists
+        alt Using PostgreSQL
+            Server->>DB: Check for session
+            DB->>Server: Return session data
+        end
         Server->>Server: Verify fingerprint
         
         alt Fingerprint matches
             Server->>Server: Generate session token
+            alt Using PostgreSQL
+                Server->>DB: Store token
+            end
             Server->>Client: Success response with token
         else Fingerprint doesn't match
             Server->>Client: Error: Invalid passphrase
@@ -30,6 +42,9 @@ sequenceDiagram
         Server->>Server: Create new session
         Server->>Server: Store fingerprint
         Server->>Server: Generate session token
+        alt Using PostgreSQL
+            Server->>DB: Store session and token
+        end
         Server->>Client: Success response with token
     end
     
@@ -174,17 +189,52 @@ private cleanupExpiredSessions(): void {
 
 ## Server-Side Session Management
 
-The server manages sessions using the `SessionManager` class:
+The server manages sessions using a pluggable architecture that supports both in-memory storage and PostgreSQL database storage.
+
+### Session Manager Factory
+
+A factory pattern is used to create the appropriate session manager based on configuration:
+
+```typescript
+// Session manager factory
+class SessionManagerFactory {
+  static createSessionManager(config: SessionManagerFactoryConfig): SessionManager {
+    switch (config.storageType) {
+      case 'memory':
+        return new SessionManager({
+          sessionTimeout: config.sessionTimeout
+        });
+      
+      case 'postgresql':
+        if (!config.postgresConfig) {
+          throw new Error('PostgreSQL configuration is required for postgresql storage type');
+        }
+        
+        return new PostgreSQLSessionManager({
+          sessionTimeout: config.sessionTimeout,
+          postgresConfig: config.postgresConfig
+        });
+      
+      default:
+        throw new Error(`Unsupported storage type: ${config.storageType}`);
+    }
+  }
+}
+```
+
+### In-Memory Session Manager
+
+The base SessionManager class provides in-memory session storage:
 
 ```typescript
 class SessionManager {
   // Session storage
-  private sessions: Map<string, Session> = new Map();
-  private sessionAuth: Map<string, SessionAuth> = new Map();
-  private sessionTokens: Map<string, string> = new Map();
+  protected sessions: Map<string, Session> = new Map();
+  protected sessionAuth: Map<string, SessionAuth> = new Map();
+  protected sessionTokens: Map<string, string> = new Map();
   
   // Configuration
-  private sessionTimeout: number;
+  protected sessionTimeout: number;
   
   constructor(config: { sessionTimeout?: number } = {}) {
     this.sessionTimeout = config.sessionTimeout || 10 * 60 * 1000; // Default 10 minutes
@@ -246,6 +296,237 @@ class SessionManager {
   
   // Other methods...
 }
+```
+
+### PostgreSQL Session Manager
+
+The PostgreSQLSessionManager extends the base SessionManager to provide database-backed session storage:
+
+```typescript
+class PostgreSQLSessionManager extends SessionManager {
+  private pool: Pool;
+  private initialized: boolean = false;
+  
+  constructor(config: { sessionTimeout?: number, postgresConfig: PostgreSQLConfig }) {
+    super(config);
+    
+    // Initialize PostgreSQL connection pool
+    this.pool = new Pool(config.postgresConfig);
+    
+    // Initialize database schema
+    this.initialize().catch(err => {
+      console.error('Failed to initialize PostgreSQL session storage:', err);
+    });
+  }
+  
+  /**
+   * Initializes the database schema and handles migrations
+   */
+  private async initialize(): Promise<void> {
+    if (this.initialized) return;
+    
+    const client = await this.pool.connect();
+    try {
+      // Check if schema_version table exists
+      const schemaVersionExists = await client.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'schema_version'
+        )
+      `);
+      
+      let currentVersion = 0;
+      
+      if (!schemaVersionExists.rows[0].exists) {
+        // Create schema_version table
+        await client.query(`
+          CREATE TABLE schema_version (
+            id SERIAL PRIMARY KEY,
+            version INTEGER NOT NULL,
+            applied_at TIMESTAMP NOT NULL DEFAULT NOW()
+          )
+        `);
+        
+        // Insert initial version
+        await client.query(`
+          INSERT INTO schema_version (version) VALUES (0)
+        `);
+      } else {
+        // Get current schema version
+        const versionResult = await client.query(`
+          SELECT version FROM schema_version ORDER BY id DESC LIMIT 1
+        `);
+        
+        if (versionResult.rows.length > 0) {
+          currentVersion = versionResult.rows[0].version;
+        }
+      }
+      
+      console.log(`[PostgreSQL] Current schema version: ${currentVersion}`);
+      
+      // Apply migrations based on current version
+      if (currentVersion < 1) {
+        console.log('[PostgreSQL] Applying migration to version 1: Creating initial tables');
+        
+        // Create initial tables
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS sessions (
+            session_id VARCHAR(255) PRIMARY KEY,
+            created_at TIMESTAMP NOT NULL,
+            last_activity TIMESTAMP NOT NULL,
+            fingerprint_iv BYTEA NOT NULL,
+            fingerprint_data BYTEA NOT NULL
+          )
+        `);
+        
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS clients (
+            client_id VARCHAR(255) PRIMARY KEY,
+            session_id VARCHAR(255) NOT NULL,
+            client_name VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            last_activity TIMESTAMP NOT NULL,
+            CONSTRAINT fk_session FOREIGN KEY(session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+          )
+        `);
+        
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS session_tokens (
+            client_id VARCHAR(255) PRIMARY KEY,
+            token VARCHAR(255) NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            CONSTRAINT fk_client FOREIGN KEY(client_id) REFERENCES clients(client_id) ON DELETE CASCADE
+          )
+        `);
+        
+        // Update schema version
+        await client.query(`
+          INSERT INTO schema_version (version) VALUES (1)
+        `);
+        
+        currentVersion = 1;
+      }
+      
+      // Future migrations can be added here
+      // if (currentVersion < 2) { ... }
+      
+      this.initialized = true;
+    } finally {
+      client.release();
+    }
+  }
+  
+  /**
+   * Override joinSession to use PostgreSQL
+   */
+  async joinSession(
+    sessionId: string,
+    fingerprint: PassphraseFingerprint,
+    clientId: string,
+    clientName: string,
+    socket: Socket
+  ): Promise<SessionJoinResult> {
+    console.log(`[PostgreSQL] Attempting to join session: ${sessionId}`);
+    
+    // First check in-memory cache
+    const cachedResult = await super.joinSession(sessionId, fingerprint, clientId, clientName, socket);
+    if (cachedResult.success) {
+      // Also save to database for persistence
+      await this.saveSessionToDatabase(sessionId, fingerprint, clientId, clientName, cachedResult.token!);
+      return cachedResult;
+    }
+    
+    // If not in cache, try to load from database
+    try {
+      const client = await this.pool.connect();
+      try {
+        // Check if session exists in database
+        const sessionResult = await client.query(
+          'SELECT fingerprint_iv, fingerprint_data, created_at, last_activity FROM sessions WHERE session_id = $1',
+          [sessionId]
+        );
+        
+        if (sessionResult.rows.length > 0) {
+          // Session exists in database
+          const dbSession = sessionResult.rows[0];
+          const storedFingerprint: PassphraseFingerprint = {
+            iv: Array.from(dbSession.fingerprint_iv),
+            data: Array.from(dbSession.fingerprint_data)
+          };
+          
+          // Verify fingerprint
+          const fingerprintsMatch = this.compareFingerprints(fingerprint, storedFingerprint);
+          if (!fingerprintsMatch) {
+            return { success: false, error: 'Invalid passphrase' };
+          }
+          
+          // Load session into memory
+          await this.loadSessionFromDatabase(sessionId);
+          
+          // Now try joining the session again (it should be in memory now)
+          return super.joinSession(sessionId, fingerprint, clientId, clientName, socket);
+        } else {
+          // Session doesn't exist, create it using the parent method
+          const result = await super.joinSession(sessionId, fingerprint, clientId, clientName, socket);
+          if (result.success) {
+            // Save the new session to the database
+            await this.saveSessionToDatabase(sessionId, fingerprint, clientId, clientName, result.token!);
+          }
+          return result;
+        }
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error(`[PostgreSQL] Error joining session:`, error);
+      // Fall back to in-memory if database fails
+      return super.joinSession(sessionId, fingerprint, clientId, clientName, socket);
+    }
+  }
+  
+  // Other overridden methods...
+}
+```
+
+## Database Schema
+
+The PostgreSQL implementation uses the following database schema:
+
+```sql
+-- Schema version tracking
+CREATE TABLE schema_version (
+  id SERIAL PRIMARY KEY,
+  version INTEGER NOT NULL,
+  applied_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Sessions table
+CREATE TABLE sessions (
+  session_id VARCHAR(255) PRIMARY KEY,
+  created_at TIMESTAMP NOT NULL,
+  last_activity TIMESTAMP NOT NULL,
+  fingerprint_iv BYTEA NOT NULL,
+  fingerprint_data BYTEA NOT NULL
+);
+
+-- Clients table
+CREATE TABLE clients (
+  client_id VARCHAR(255) PRIMARY KEY,
+  session_id VARCHAR(255) NOT NULL,
+  client_name VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  last_activity TIMESTAMP NOT NULL,
+  CONSTRAINT fk_session FOREIGN KEY(session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+);
+
+-- Session tokens table
+CREATE TABLE session_tokens (
+  client_id VARCHAR(255) PRIMARY KEY,
+  token VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  CONSTRAINT fk_client FOREIGN KEY(client_id) REFERENCES clients(client_id) ON DELETE CASCADE
+);
 ```
 
 ## Client-Side Session Handling
@@ -498,10 +779,9 @@ socket.on('session-expired', (data: { sessionId: string, message: string }) => {
           
           // Clear session info and redirect
           localStorage.removeItem('sessionId');
+          localStorage.removeItem('sessionToken');
           localStorage.removeItem('clientName');
           localStorage.removeItem('passphrase');
-          localStorage.removeItem('sessionToken');
-          
           navigate('/');
         });
     }
@@ -511,25 +791,38 @@ socket.on('session-expired', (data: { sessionId: string, message: string }) => {
 
 ## Security Considerations
 
-1. **Passphrase Protection**: The passphrase is never transmitted to the server
+1. **Passphrase Security**: Passphrases are never stored on the server, only fingerprints
 2. **Token Security**: Session tokens are cryptographically secure random strings
-3. **Session Isolation**: Each session is isolated from others
-4. **Expiration**: Inactive sessions are automatically expired and clients are notified
-5. **Validation**: All session operations require valid tokens
-6. **Automatic Reconnection**: Multiple mechanisms ensure clients maintain valid sessions
-7. **Proactive Health Checks**: Regular verification prevents silent session failures
+3. **Database Security**: When using PostgreSQL, ensure the database connection is secure
+4. **Connection Security**: Use HTTPS and WSS in production to secure all communication
 
 ## Configuration
 
-Session timeout is configurable via environment variables:
+The session management system can be configured through environment variables:
 
 ```
-# .env file
-SESSION_TIMEOUT=600000  # 10 minutes in milliseconds
+# Session timeout in milliseconds (default: 600000 = 10 minutes)
+SESSION_TIMEOUT=600000
+
+# Session storage type (memory or postgresql)
+SESSION_STORAGE_TYPE=postgresql
+
+# PostgreSQL configuration (required if SESSION_STORAGE_TYPE=postgresql)
+PG_HOST=localhost
+PG_PORT=5432
+PG_DATABASE=sharethings
+PG_USER=postgres
+PG_PASSWORD=password
+PG_SSL=false
 ```
 
-```typescript
-// Server initialization
-const sessionManager = new SessionManager({
-  sessionTimeout: parseInt(process.env.SESSION_TIMEOUT || '600000')
-});
+## Multi-Server Deployment
+
+When using PostgreSQL for session storage, ShareThings can be deployed across multiple server instances:
+
+1. Each server connects to the same PostgreSQL database
+2. Sessions are shared across all server instances
+3. Load balancing can be used to distribute client connections
+4. Session state is synchronized through the database
+
+This architecture enables horizontal scaling and high availability for the ShareThings application.

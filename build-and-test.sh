@@ -68,6 +68,15 @@ RATE_LIMIT_WINDOW=60000
 RATE_LIMIT_MAX=100
 FRONTEND_PORT=8080
 BACKEND_PORT=3001
+# PostgreSQL Configuration
+SESSION_STORAGE_TYPE=postgresql
+PG_HOST=postgres-test
+PG_PORT=5432
+PG_DATABASE=sharethings_test
+PG_USER=postgres_test
+PG_PASSWORD=postgres_test
+PG_SSL=false
+PG_HOST_PORT=5432
 EOL
 
 # Create client/.env file
@@ -94,77 +103,19 @@ SESSION_EXPIRY=86400000
 LOG_LEVEL=debug
 RATE_LIMIT_WINDOW=60000
 RATE_LIMIT_MAX=100
+# PostgreSQL Configuration
+SESSION_STORAGE_TYPE=postgresql
+PG_HOST=postgres-test
+PG_PORT=5432
+PG_DATABASE=sharethings_test
+PG_USER=postgres_test
+PG_PASSWORD=postgres_test
+PG_SSL=false
+# Enable integration tests
+INTEGRATION_TESTS=true
 EOL
 
 echo -e "${GREEN}Environment files created.${NC}"
-
-# Create docker-compose.test.yml
-cat > docker-compose.test.yml << EOL
-# Test configuration for ShareThings Docker Compose
-
-services:
-  backend:
-    build:
-      context: ./server
-      dockerfile: Dockerfile.test
-    container_name: share-things-backend-test
-    hostname: backend
-    environment:
-      - NODE_ENV=test
-    ports:
-      - "\${BACKEND_PORT}:3001"
-    networks:
-      app_network:
-        aliases:
-          - backend
-
-  # Use a simple Node.js container for the frontend instead of a multi-stage build
-  frontend:
-    image: node:18-alpine
-    container_name: share-things-frontend-test
-    hostname: frontend
-    working_dir: /app
-    volumes:
-      - ./client:/app
-    environment:
-      - VITE_API_URL=http://backend:3001
-      - VITE_SOCKET_URL=http://backend:3001
-      - VITE_ENABLE_ANALYTICS=false
-      - VITE_ENABLE_LOGGING=true
-    ports:
-      - "\${FRONTEND_PORT}:3000"
-    depends_on:
-      - backend
-    networks:
-      app_network:
-        aliases:
-          - frontend
-    command: sh -c "npm install && npm run preview -- --host 0.0.0.0 --port 3000"
-
-  e2e-tests:
-    build:
-      context: ./test/e2e/browser
-      dockerfile: Dockerfile.test
-    container_name: share-things-e2e-tests
-    depends_on:
-      - frontend
-      - backend
-    environment:
-      - FRONTEND_URL=http://frontend:3000
-      - BACKEND_URL=http://backend:3001
-    volumes:
-      - ./test:/app/test
-      - ./test-results:/app/test-results
-    networks:
-      - app_network
-
-# Explicit network configuration
-networks:
-  app_network:
-    driver: bridge
-EOL
-
-echo -e "${GREEN}Docker Compose test configuration created.${NC}"
 
 # Create Dockerfile.test for e2e tests
 mkdir -p test/e2e/browser
@@ -191,6 +142,51 @@ EOL
 
 echo -e "${GREEN}E2E test Dockerfile created.${NC}"
 
+# Create PostgreSQL setup script for testing
+echo -e "${YELLOW}Creating PostgreSQL setup script for testing...${NC}"
+cat > server/src/__tests__/setup-pg-tests.js << EOL
+// This script sets up the PostgreSQL database for tests
+const { Pool } = require('pg');
+
+async function setupTestDatabase() {
+  const pool = new Pool({
+    host: process.env.PG_HOST || 'postgres-test',
+    port: parseInt(process.env.PG_PORT || '5432', 10),
+    database: process.env.PG_DATABASE || 'sharethings_test',
+    user: process.env.PG_USER || 'postgres_test',
+    password: process.env.PG_PASSWORD || 'postgres_test'
+  });
+
+  try {
+    // Connect to database
+    const client = await pool.connect();
+    
+    try {
+      console.log('Connected to PostgreSQL test database');
+      
+      // Clean up existing tables
+      await client.query('DROP TABLE IF EXISTS session_tokens CASCADE');
+      await client.query('DROP TABLE IF EXISTS clients CASCADE');
+      await client.query('DROP TABLE IF EXISTS sessions CASCADE');
+      await client.query('DROP TABLE IF EXISTS schema_version CASCADE');
+      
+      console.log('Test database prepared successfully');
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Error setting up test database:', error);
+    process.exit(1);
+  } finally {
+    await pool.end();
+  }
+}
+
+setupTestDatabase();
+EOL
+
+echo -e "${GREEN}PostgreSQL setup script created.${NC}"
+
 # Clean up any existing containers
 echo -e "${YELLOW}Cleaning up existing containers...${NC}"
 $DOCKER_COMPOSE_CMD -f docker-compose.test.yml down
@@ -211,10 +207,15 @@ echo -e "${GREEN}Build complete.${NC}"
 # Create test results directory
 mkdir -p test-results
 
-# Run server unit tests
-echo -e "${YELLOW}Running server unit tests...${NC}"
+# Run server unit tests with PostgreSQL
+echo -e "${YELLOW}Running server unit tests with PostgreSQL...${NC}"
 $DOCKER_COMPOSE_CMD -f docker-compose.test.yml build backend
-$DOCKER_COMPOSE_CMD -f docker-compose.test.yml run --rm backend npm test
+$DOCKER_COMPOSE_CMD -f docker-compose.test.yml run --rm backend sh -c "
+  echo 'Waiting for PostgreSQL to be ready...' && 
+  sleep 5 &&
+  node src/__tests__/setup-pg-tests.js &&
+  npm test
+"
 SERVER_TEST_EXIT_CODE=$?
 
 # Ensure client has crypto-js installed

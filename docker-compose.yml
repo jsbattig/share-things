@@ -14,11 +14,22 @@ services:
       - PORT=${API_PORT:-3001}
       # Explicitly set the port to ensure it's used
       - LISTEN_PORT=${API_PORT:-3001}
+      # Session storage configuration
+      - SESSION_STORAGE_TYPE=${SESSION_STORAGE_TYPE:-memory}
+      # PostgreSQL configuration (used if SESSION_STORAGE_TYPE=postgresql)
+      - PG_HOST=${PG_HOST:-postgres}
+      - PG_PORT=${PG_PORT:-5432}
+      - PG_DATABASE=${PG_DATABASE:-sharethings}
+      - PG_USER=${PG_USER:-postgres}
+      - PG_PASSWORD=${PG_PASSWORD:-postgres}
+      - PG_SSL=${PG_SSL:-false}
     ports:
       - "${BACKEND_PORT:-3001}:${API_PORT:-3001}"
     volumes:
       - ./server:/app
       - /app/node_modules
+    depends_on:
+      - postgres
     networks:
       app_network:
         aliases:
@@ -47,7 +58,31 @@ services:
         aliases:
           - frontend  # Explicit network alias
 
+  postgres:
+    image: postgres:17-alpine
+    container_name: share-things-postgres
+    environment:
+      - POSTGRES_USER=${PG_USER:-postgres}
+      - POSTGRES_PASSWORD=${PG_PASSWORD:-postgres}
+      - POSTGRES_DB=${PG_DATABASE:-sharethings}
+    ports:
+      - "${PG_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      app_network:
+        aliases:
+          - postgres
+    # Only start PostgreSQL if using postgresql storage
+    profiles:
+      - ${SESSION_STORAGE_TYPE:-memory}
+      - all
+
 # Explicit network configuration
 networks:
   app_network:
     driver: bridge
+
+# Volumes for data persistence
+volumes:
+  postgres-data:

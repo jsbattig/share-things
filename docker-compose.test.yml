@@ -9,8 +9,21 @@ services:
     hostname: backend
     environment:
       - NODE_ENV=test
+      # Session storage configuration
+      - SESSION_STORAGE_TYPE=${SESSION_STORAGE_TYPE:-postgresql}
+      # PostgreSQL configuration for testing
+      - PG_HOST=postgres-test
+      - PG_PORT=5432
+      - PG_DATABASE=sharethings_test
+      - PG_USER=postgres_test
+      - PG_PASSWORD=postgres_test
+      - PG_SSL=false
+      # Enable integration tests
+      - INTEGRATION_TESTS=true
     ports:
       - "${BACKEND_PORT}:3001"
+    depends_on:
+      - postgres-test
     networks:
       app_network:
         aliases:
@@ -38,6 +51,23 @@ services:
         aliases:
           - frontend
     command: sh -c "npm install && npm run preview -- --host 0.0.0.0 --port 3000"
+
+  postgres-test:
+    image: postgres:17-alpine
+    container_name: share-things-postgres-test
+    environment:
+      - POSTGRES_USER=postgres_test
+      - POSTGRES_PASSWORD=postgres_test
+      - POSTGRES_DB=sharethings_test
+    networks:
+      app_network:
+        aliases:
+          - postgres-test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   e2e-tests:
     build:

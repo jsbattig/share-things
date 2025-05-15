@@ -87,6 +87,21 @@ jobs:
     needs: [build]
     runs-on: ubuntu-latest
     
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: sharethings_test
+          POSTGRES_PASSWORD: sharethings_test
+          POSTGRES_DB: sharethings_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
     steps:
     - uses: actions/checkout@v3
     
@@ -118,6 +133,17 @@ jobs:
         echo "Available disk space:"
         df -h
     
+    - name: Set PostgreSQL environment variables
+      run: |
+        echo "SESSION_STORAGE_TYPE=postgresql" >> server/.env
+        echo "PG_HOST=localhost" >> server/.env
+        echo "PG_PORT=5432" >> server/.env
+        echo "PG_DATABASE=sharethings_test" >> server/.env
+        echo "PG_USER=sharethings_test" >> server/.env
+        echo "PG_PASSWORD=sharethings_test" >> server/.env
+        echo "PG_SSL=false" >> server/.env
+        echo "INTEGRATION_TESTS=true" >> server/.env
+    
     - name: Build and run tests with verbose output
       run: bash -x ./build-and-test.sh
       env:
@@ -131,9 +157,51 @@ jobs:
         name: test-results
         path: test-results/
 
+  setup-tests:
+    name: Setup Script Tests
+    needs: [integration]
+    runs-on: [self-hosted, Rocky Linux]
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Make setup scripts executable
+      run: |
+        chmod +x setup.sh
+        mkdir -p setup
+        chmod +x setup/*.sh
+    
+    - name: Run setup tests with in-memory storage
+      run: |
+        # Clean up any existing containers
+        podman ps -a --filter name=share-things | awk 'NR>1 {print $1}' | xargs -r podman rm -f
+        
+        # Run setup in test mode with in-memory storage
+        ./setup.sh --test memory
+        
+        # Verify containers are running
+        podman ps --filter name=share-things
+        
+        # Clean up
+        podman ps -a --filter name=share-things | awk 'NR>1 {print $1}' | xargs -r podman rm -f
+    
+    - name: Run setup tests with PostgreSQL storage
+      run: |
+        # Clean up any existing containers
+        podman ps -a --filter name=share-things | awk 'NR>1 {print $1}' | xargs -r podman rm -f
+        
+        # Run setup in test mode with PostgreSQL storage
+        ./setup.sh --test postgres
+        
+        # Verify containers are running
+        podman ps --filter name=share-things
+        
+        # Clean up
+        podman ps -a --filter name=share-things | awk 'NR>1 {print $1}' | xargs -r podman rm -f
+
   build-production:
     name: Build Production
-    needs: [integration]
+    needs: [setup-tests]
     runs-on: ubuntu-latest
     
     steps:

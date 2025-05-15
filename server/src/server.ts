@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 import { setupSocketHandlers } from './socket';
 import { setupRoutes } from './routes';
 import { SessionManager } from './services/SessionManager';
+import { SessionManagerFactory, SessionStorageType } from './services/SessionManagerFactory';
+import { PostgreSQLConfig } from './services/PostgreSQLSessionManager';
 
 // Load environment variables
 dotenv.config();
@@ -38,10 +40,39 @@ const io = new Server(server, {
   maxHttpBufferSize: 1e8 // 100MB
 });
 
+// Determine session storage type
+const storageType = (process.env.SESSION_STORAGE_TYPE || 'memory') as SessionStorageType;
+console.log(`Using session storage type: ${storageType}`);
+
 // Create session manager
-const sessionManager = new SessionManager({
-  sessionTimeout: parseInt(process.env.SESSION_TIMEOUT || '600000') // Default 10 minutes
-});
+let sessionManager: SessionManager;
+
+if (storageType === 'postgresql') {
+  // Configure PostgreSQL
+  const postgresConfig: PostgreSQLConfig = {
+    host: process.env.PG_HOST || 'localhost',
+    port: parseInt(process.env.PG_PORT || '5432', 10),
+    database: process.env.PG_DATABASE || 'sharethings',
+    user: process.env.PG_USER || 'postgres',
+    password: process.env.PG_PASSWORD || 'postgres',
+    ssl: process.env.PG_SSL === 'true'
+  };
+  
+  console.log(`PostgreSQL configuration: ${postgresConfig.host}:${postgresConfig.port}/${postgresConfig.database}`);
+  
+  // Create session manager with PostgreSQL
+  sessionManager = SessionManagerFactory.createSessionManager({
+    sessionTimeout: parseInt(process.env.SESSION_TIMEOUT || '600000'), // Default 10 minutes
+    storageType: 'postgresql',
+    postgresConfig
+  });
+} else {
+  // Create session manager with in-memory storage
+  sessionManager = SessionManagerFactory.createSessionManager({
+    sessionTimeout: parseInt(process.env.SESSION_TIMEOUT || '600000'), // Default 10 minutes
+    storageType: 'memory'
+  });
+}
 
 // Set up routes
 setupRoutes(app);

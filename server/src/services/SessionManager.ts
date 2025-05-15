@@ -4,9 +4,6 @@ import { Socket } from 'socket.io';
 import crypto from 'crypto';
 
 /**
- * Session authentication information
- */
-/**
  * Passphrase fingerprint structure
  */
 export interface PassphraseFingerprint {
@@ -14,7 +11,10 @@ export interface PassphraseFingerprint {
   data: number[];
 }
 
-interface SessionAuth {
+/**
+ * Session authentication information
+ */
+export interface SessionAuth {
   /**
    * Passphrase fingerprint (self-encrypted passphrase)
    */
@@ -34,7 +34,7 @@ interface SessionAuth {
 /**
  * Session manager configuration
  */
-interface SessionManagerConfig {
+export interface SessionManagerConfig {
   /**
    * Session timeout in milliseconds
    * Default: 10 minutes
@@ -45,7 +45,7 @@ interface SessionManagerConfig {
 /**
  * Session join result
  */
-interface SessionJoinResult {
+export interface SessionJoinResult {
   /**
    * Whether the join was successful
    */
@@ -69,22 +69,22 @@ export class SessionManager {
   /**
    * Map of session ID to Session
    */
-  private sessions: Map<string, Session> = new Map();
+  protected sessions: Map<string, Session> = new Map();
   
   /**
    * Map of session ID to SessionAuth
    */
-  private sessionAuth: Map<string, SessionAuth> = new Map();
+  protected sessionAuth: Map<string, SessionAuth> = new Map();
   
   /**
    * Map of client ID to session token
    */
-  private sessionTokens: Map<string, string> = new Map();
+  protected sessionTokens: Map<string, string> = new Map();
   
   /**
    * Session timeout in milliseconds
    */
-  private sessionTimeout: number;
+  protected sessionTimeout: number;
   
   /**
    * Cleanup interval ID
@@ -247,7 +247,7 @@ export class SessionManager {
    * @param b Second fingerprint
    * @returns Whether the fingerprints match
    */
-  private compareFingerprints(a: PassphraseFingerprint, b: PassphraseFingerprint): boolean {
+  protected compareFingerprints(a: PassphraseFingerprint, b: PassphraseFingerprint): boolean {
     // Compare IVs
     if (a.iv.length !== b.iv.length) return false;
     for (let i = 0; i < a.iv.length; i++) {
@@ -267,7 +267,7 @@ export class SessionManager {
    * Generates a session token
    * @returns Session token
    */
-  private generateSessionToken(): string {
+  protected generateSessionToken(): string {
     // Generate a random token
     const array = Buffer.alloc(32);
     crypto.randomFillSync(array);
@@ -277,7 +277,7 @@ export class SessionManager {
   /**
    * Cleans up expired sessions
    */
-  private cleanupExpiredSessions(): void {
+  protected cleanupExpiredSessions(): void {
     const now = new Date();
     console.log(`[SessionManager] Running cleanup check at ${now.toISOString()}`);
     
