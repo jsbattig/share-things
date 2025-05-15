@@ -76,16 +76,12 @@ log "INFO" "Checking required commands..."
 check_command "podman" || exit 1
 check_command "curl" || exit 1
 
-# Install expect if not already installed
+# Check if expect is installed
 log "INFO" "Checking if expect is installed..."
 if ! check_command "expect"; then
-  log "INFO" "Installing expect..."
-  sudo dnf install -y expect
-  if ! check_command "expect"; then
-    log "ERROR" "Failed to install expect."
-    exit 1
-  fi
-  log "SUCCESS" "Expect installed successfully."
+  log "ERROR" "The 'expect' command is not installed."
+  log "ERROR" "Please install it using: sudo dnf install -y expect"
+  exit 1
 fi
 
 # Configure Podman to allow short names
