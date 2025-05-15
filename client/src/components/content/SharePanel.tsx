@@ -575,7 +575,7 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
                   isDisabled={!text.trim()}
                   flex={1}
                 >
-                  Share Text
+                  Share
                 </Button>
               </HStack>
             </VStack>
