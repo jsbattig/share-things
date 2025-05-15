@@ -74,12 +74,6 @@ jobs:
           echo "Working directory: ${WORK_DIR}"
           echo ""
           
-          # Clean up any existing containers on the remote machine
-          echo -e "${YELLOW}Cleaning up any existing containers on the remote machine...${NC}"
-          run_remote_command "podman ps -a --format '{{.ID}}' | xargs -r podman rm -f"
-          run_remote_command "podman volume ls --format '{{.Name}}' | xargs -r podman volume rm -f"
-          run_remote_command "podman network ls --format '{{.Name}}' | grep -v 'podman' | xargs -r podman network rm"
-          
           # Create working directory if it doesn't exist
           echo -e "${YELLOW}Creating working directory...${NC}"
           run_remote_command "mkdir -p ${WORK_DIR}"
