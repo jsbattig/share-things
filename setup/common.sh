@@ -129,113 +129,6 @@ cleanup_backups() {
   fi
 }
 
-# Configure container engine
-configure_container_engine() {
-  echo -e "${BLUE}=== Container Engine Configuration ===${NC}"
-  
-  if [ "$TEST_MODE" = false ]; then
-    read -p "Which container engine do you want to use? (docker/podman) [${DEFAULT_ENGINE}]: " CONTAINER_ENGINE
-    CONTAINER_ENGINE=${CONTAINER_ENGINE:-$DEFAULT_ENGINE}
-  else
-    # In test mode, use the default engine
-    CONTAINER_ENGINE=$DEFAULT_ENGINE
-    echo -e "${YELLOW}Test mode: Using ${CONTAINER_ENGINE} as container engine.${NC}"
-  fi
-  
-  # Set compose command based on container engine
-  if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-    COMPOSE_CMD="podman-compose"
-    CONTAINER_CMD="podman"
-  else
-    COMPOSE_CMD="docker-compose"
-    CONTAINER_CMD="docker"
-  fi
-  
-  echo -e "${GREEN}Using ${CONTAINER_ENGINE} for container operations${NC}"
-  
-  # Check if the selected container engine is installed
-  if ! command -v $CONTAINER_CMD &> /dev/null; then
-    echo -e "${RED}Error: ${CONTAINER_ENGINE} is not installed.${NC}"
-    echo "Please install ${CONTAINER_ENGINE} before running this script."
-    exit 1
-  fi
-  
-  # Check if the appropriate compose tool is installed
-  if ! command -v $COMPOSE_CMD &> /dev/null; then
-    echo -e "${RED}Error: ${COMPOSE_CMD} is not installed.${NC}"
-    echo "Please install ${COMPOSE_CMD} before running this script."
-    exit 1
-  fi
-  
-  # Apply Podman-specific configuration if needed
-  if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-    echo -e "${YELLOW}Detected Podman. Applying Podman-specific configuration...${NC}"
-    
-    # Make the docker-entrypoint.sh script executable
-    if [ -f "client/docker-entrypoint.sh" ]; then
-      chmod +x client/docker-entrypoint.sh
-      echo -e "${GREEN}Made client/docker-entrypoint.sh executable.${NC}"
-    else
-      echo -e "${YELLOW}Warning: client/docker-entrypoint.sh not found. Container networking might have issues.${NC}"
-    fi
-    
-    echo -e "${GREEN}Podman-specific configuration applied.${NC}"
-    echo ""
-  fi
-}
-
-# Build and start containers
-build_and_start_containers() {
-  echo -e "${BLUE}=== Building and Starting Containers ===${NC}"
-  
-  # Check if running in production mode
-  if [ "$TEST_MODE" = false ]; then
-    read -p "Do you want to run in production mode (no volume mounts)? (y/n): " PRODUCTION_MODE_INPUT
-    if [[ $PRODUCTION_MODE_INPUT =~ ^[Yy]$ ]]; then
-      PRODUCTION_MODE=true
-    else
-      PRODUCTION_MODE=false
-    fi
-  else
-    # In test mode, always use production mode
-    PRODUCTION_MODE=true
-    echo -e "${YELLOW}Test mode: Using production mode (no volume mounts).${NC}"
-  fi
-  
-  if [ "$PRODUCTION_MODE" = true ]; then
-    echo -e "${YELLOW}Creating temporary production docker-compose file...${NC}"
-    
-    # Create a temporary docker-compose file for production
-    create_production_compose_file
-    
-    echo -e "${YELLOW}Building containers in production mode...${NC}"
-    $COMPOSE_CMD -f docker-compose.prod.temp.yml build --no-cache
-    
-    echo -e "${YELLOW}Starting containers in production mode...${NC}"
-    $COMPOSE_CMD -f docker-compose.prod.temp.yml up -d
-    
-    # Store the compose file name for later use
-    COMPOSE_FILE="docker-compose.prod.temp.yml"
-  else
-    echo -e "${YELLOW}Building containers in development mode...${NC}"
-    $COMPOSE_CMD build --no-cache
-    
-    echo -e "${YELLOW}Starting containers in development mode...${NC}"
-    $COMPOSE_CMD up -d
-    
-    # Store the compose file name for later use
-    COMPOSE_FILE="docker-compose.yml"
-  fi
-  
-  # Check if containers are running
-  echo -e "${YELLOW}Checking container status...${NC}"
-  if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-    podman ps --filter label=io.podman.compose.project=share-things
-  else
-    docker ps --filter label=com.docker.compose.project=share-things
-  fi
-}
-
 # Create production compose file
 create_production_compose_file() {
   cat > docker-compose.prod.temp.yml << EOL
@@ -305,7 +198,7 @@ services:
         max-file: "3"
 
   postgres:
-    image: postgres:17-alpine
+    image: docker.io/library/postgres:17-alpine
     container_name: share-things-postgres
     environment:
       - POSTGRES_USER=${PG_USER:-postgres}
