@@ -74,9 +74,19 @@ check_containers() {
 # Function to clean up containers
 cleanup_containers() {
   log "INFO" "Cleaning up containers..."
-  podman ps -a --format '{{.ID}}' | xargs -r podman rm -f
-  podman volume ls --format '{{.Name}}' | xargs -r podman volume rm -f
-  podman network ls --format '{{.Name}}' | grep -v 'podman' | xargs -r podman network rm
+  
+  # First, stop all containers to break dependencies
+  podman stop -a || true
+  
+  # Then remove all containers with force
+  podman rm -f -a || true
+  
+  # Remove volumes
+  podman volume ls --format '{{.Name}}' | xargs -r podman volume rm -f || true
+  
+  # Remove networks with force
+  podman network ls --format '{{.Name}}' | grep -v 'podman' | xargs -r podman network rm -f || true
+  
   log "SUCCESS" "Cleanup complete."
 }
 

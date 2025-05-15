@@ -62,12 +62,10 @@ configure_container_engine() {
       
       # Create or update the registries.conf file
       if [ "$TEST_MODE" = false ]; then
-        # In normal mode, ask for sudo permission
-        echo "Podman on Rocky Linux requires configuration to allow short image names."
-        echo "This requires sudo access to create/modify /etc/containers/registries.conf"
-        
-        sudo mkdir -p /etc/containers
-        sudo bash -c 'cat > /etc/containers/registries.conf << EOL
+        # In normal mode, create the file in the user's home directory instead of using sudo
+        echo "Creating registries.conf in user's home directory..."
+        mkdir -p ~/.config/containers
+        cat > ~/.config/containers/registries.conf << EOL
 [registries.search]
 registries = ["docker.io", "quay.io"]
 
@@ -79,13 +77,14 @@ registries = []
 
 [engine]
 short-name-mode="permissive"
-EOL'
+EOL
+        echo -e "${GREEN}Created ~/.config/containers/registries.conf${NC}"
       else
         # In test mode, just show a warning
         echo -e "${YELLOW}Warning: Podman on Rocky Linux may require configuration to allow short image names.${NC}"
         echo -e "${YELLOW}If you encounter 'short-name resolution enforced' errors, run the following commands:${NC}"
-        echo "sudo mkdir -p /etc/containers"
-        echo "sudo bash -c 'cat > /etc/containers/registries.conf << EOL"
+        echo "mkdir -p ~/.config/containers"
+        echo "cat > ~/.config/containers/registries.conf << EOL"
         echo "[registries.search]"
         echo "registries = [\"docker.io\", \"quay.io\"]"
         echo ""
@@ -97,7 +96,7 @@ EOL'
         echo ""
         echo "[engine]"
         echo "short-name-mode=\"permissive\""
-        echo "EOL'"
+        echo "EOL"
       fi
     fi
     
