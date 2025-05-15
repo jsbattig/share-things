@@ -278,18 +278,19 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    * @returns Promise that resolves with session data
    */
   const joinSession = async (sessionId: string, clientName: string, passphrase: string): Promise<JoinResponse> => {
-    return new Promise(async (resolve, reject) => {
-      if (!socket) {
-        reject(new Error('Socket not initialized'));
-        return;
-      }
+    if (!socket) {
+      throw new Error('Socket not initialized');
+    }
 
-      try {
-        // Create passphrase fingerprint
-        const fingerprint = await generateFingerprint(passphrase);
+    try {
+      // Create passphrase fingerprint
+      const fingerprint = await generateFingerprint(passphrase);
 
-        // Join session
-        socket.emit('join', { sessionId, clientName, fingerprint }, (response: JoinResponse) => {
+      // Join session
+      // We already checked that socket is not null above
+      const socketInstance = socket;
+      return new Promise<JoinResponse>((resolve, reject) => {
+        socketInstance.emit('join', { sessionId, clientName, fingerprint }, (response: JoinResponse) => {
           if (response.success && response.token) {
             // Store session token
             localStorage.setItem('sessionToken', response.token);
@@ -298,11 +299,11 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             reject(new Error(response.error || 'Failed to join session'));
           }
         });
-      } catch (error) {
-        console.error('Error creating passphrase fingerprint:', error);
-        reject(new Error('Failed to create passphrase fingerprint'));
-      }
-    });
+      });
+    } catch (error) {
+      console.error('Error creating passphrase fingerprint:', error);
+      throw new Error('Failed to create passphrase fingerprint');
+    }
   };
 
   /**

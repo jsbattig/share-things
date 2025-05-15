@@ -16,20 +16,14 @@ import {
   useToast,
   Spinner
 } from '@chakra-ui/react';
-import { 
-  FaSort, 
-  FaSortAmountDown, 
-  FaSortAmountUp, 
+import {
+  FaSortAmountDown,
+  FaSortAmountUp,
   FaEllipsisV,
   FaTrash,
-  FaDownload,
-  FaCopy,
-  FaFile,
-  FaFileAlt,
-  FaFileImage,
-  FaUser
+  FaFileAlt
 } from 'react-icons/fa';
-import { useContentStore, SharedContent, ContentType } from '../../contexts/ContentStoreContext';
+import { useContentStore } from '../../contexts/ContentStoreContext';
 import ContentItem from './ContentItem';
 
 /**
@@ -38,7 +32,6 @@ import ContentItem from './ContentItem';
 const ContentList: React.FC = () => {
   // State
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [isLoading, setIsLoading] = useState<boolean>(false);
   
   // Context
   const { getContentList } = useContentStore();

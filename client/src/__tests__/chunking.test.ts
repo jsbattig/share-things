@@ -14,7 +14,7 @@ describe('Chunking Utilities', () => {
     // Use a smaller chunk size for testing
     const { chunks, contentId } = await chunkAndEncryptBlob(testBlob, testPassphrase, {
       chunkSize: 16 * 1024, // 16KB chunks
-      onProgress: (_progress: number): void => { /* Progress callback not needed in test */ }
+      onProgress: (): void => { /* Progress callback not needed in test */ }
     });
     
     // Should have the right number of chunks

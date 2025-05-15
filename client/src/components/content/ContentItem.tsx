@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import {
   Box,
   Flex,
@@ -14,11 +14,9 @@ import {
   Badge,
   useToast,
   useClipboard,
-  Image,
-  Link,
-  Divider
+  Image
 } from '@chakra-ui/react';
-import { 
+import {
   FaEllipsisV,
   FaTrash,
   FaDownload,
@@ -27,13 +25,11 @@ import {
   FaFileAlt,
   FaFileImage,
   FaUser,
-  FaCheck,
-  FaExternalLinkAlt
+  FaCheck
 } from 'react-icons/fa';
-import { useContentStore, ContentType, ChunkStore } from '../../contexts/ContentStoreContext';
+import { useContentStore, ContentType } from '../../contexts/ContentStoreContext';
 import { useServices } from '../../contexts/ServiceContext';
 import { formatFileSize, formatDate } from '../../utils/formatters';
-import { deriveKeyFromPassphrase, decryptData } from '../../utils/encryption';
 
 interface ContentItemProps {
   contentId: string;
@@ -43,11 +39,10 @@ interface ContentItemProps {
  * Content item component
  */
 const ContentItem: React.FC<ContentItemProps> = ({ contentId }) => {
-  // State
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  // No state needed
   
   // Context
-  const { getContent, updateContentLastAccessed, removeContent, getChunkStore } = useContentStore();
+  const { getContent, updateContentLastAccessed, removeContent } = useContentStore();
   const { urlRegistry, chunkTrackingService } = useServices();
   
   // Toast
@@ -195,8 +190,6 @@ const ContentItem: React.FC<ContentItemProps> = ({ contentId }) => {
    * Deletes content
    */
   const deleteContent = () => {
-    setIsLoading(true);
-    
     try {
       // Mark content as being deleted in tracking service
       chunkTrackingService.cleanupChunks(contentId);
@@ -219,8 +212,6 @@ const ContentItem: React.FC<ContentItemProps> = ({ contentId }) => {
         duration: 3000,
         isClosable: true
       });
-    } finally {
-      setIsLoading(false);
     }
   };
   

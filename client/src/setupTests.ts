@@ -95,7 +95,8 @@ if (typeof window === 'undefined' || !window.crypto || !window.crypto.subtle) {
     decrypt: async (
       algorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams,
       key: CryptoKey,
-      _data: ArrayBuffer | ArrayBufferView // Data parameter is required by interface but not used in this mock
+      /* eslint-disable-next-line @typescript-eslint/no-unused-vars */
+      data: ArrayBuffer | ArrayBufferView
     ) => {
       console.log('Mock decrypt called');
       const mockKey = key as MockCryptoKey;

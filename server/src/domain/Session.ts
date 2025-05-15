@@ -1,6 +1,19 @@
 import { Client } from './Client';
 
 /**
+ * Interface for content being broadcast
+ */
+export interface BroadcastContent {
+  contentId: string;
+  senderId: string;
+  senderName: string;
+  contentType: string;
+  timestamp: number;
+  metadata: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+/**
  * Represents a sharing session
  */
 export class Session {
@@ -58,7 +71,7 @@ export class Session {
    * @param content Content to broadcast
    * @param excludeClientId Client to exclude from broadcast
    */
-  public broadcastContent(content: any, excludeClientId?: string): void {
+  public broadcastContent(content: BroadcastContent, excludeClientId?: string): void {
     for (const [clientId, client] of this.clients.entries()) {
       if (excludeClientId && clientId === excludeClientId) {
         continue;

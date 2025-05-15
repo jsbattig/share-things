@@ -17,17 +17,25 @@ import {
   TabPanels,
   TabPanel,
   Progress,
-  Flex,
   Divider
 } from '@chakra-ui/react';
-import { 
-  FaClipboard, 
-  FaUpload, 
-  FaPaste, 
-  FaFileUpload,
-  FaSpinner
+import {
+  FaClipboard,
+  FaPaste,
+  FaFileUpload
 } from 'react-icons/fa';
 import { v4 as uuidv4 } from 'uuid';
+
+/**
+ * Extended File interface with image information
+ */
+interface ExtendedFile extends File {
+  imageInfo?: {
+    width?: number;
+    height?: number;
+    format?: string;
+  };
+}
 import { useSocket, ChunkData } from '../../contexts/SocketContext';
 import { useContentStore, ContentType } from '../../contexts/ContentStoreContext';
 import { formatFileSize } from '../../utils/formatters';
@@ -193,7 +201,7 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
   /**
    * Shares a file
    */
-  const shareFile = async (file: File) => {
+  const shareFile = async (file: ExtendedFile) => {
     setIsSharing(true);
     setUploadProgress(0);
     
@@ -216,9 +224,9 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
             extension: file.name.split('.').pop() || ''
           } : undefined,
           imageInfo: isImage ? {
-            width: (file as any).imageInfo?.width || 0,
-            height: (file as any).imageInfo?.height || 0,
-            format: (file as any).imageInfo?.format || file.name.split('.').pop() || '',
+            width: file.imageInfo?.width || 0,
+            height: file.imageInfo?.height || 0,
+            format: file.imageInfo?.format || file.name.split('.').pop() || '',
           } : undefined
         },
         isChunked: file.size > 64 * 1024, // Chunk if larger than 64KB

@@ -1,4 +1,16 @@
 import { Socket } from 'socket.io';
+import { BroadcastContent } from './Session';
+
+/**
+ * Interface for content chunk
+ */
+export interface ContentChunk {
+  contentId: string;
+  chunkIndex: number;
+  totalChunks: number;
+  data: Uint8Array | string;
+  [key: string]: unknown;
+}
 
 /**
  * Represents a client connected to a session
@@ -47,7 +59,7 @@ export class Client {
    * Sends content to the client
    * @param content Content to send
    */
-  public sendContent(content: any): void {
+  public sendContent(content: BroadcastContent): void {
     this.socket.emit('content', content);
     this.updateActivity();
   }
@@ -56,7 +68,7 @@ export class Client {
    * Sends a chunk to the client
    * @param chunk Chunk to send
    */
-  public sendChunk(chunk: any): void {
+  public sendChunk(chunk: ContentChunk): void {
     this.socket.emit('chunk', chunk);
     this.updateActivity();
   }
@@ -66,7 +78,7 @@ export class Client {
    * @param type Notification type
    * @param data Notification data
    */
-  public sendNotification(type: string, data: any): void {
+  public sendNotification(type: string, data: Record<string, unknown>): void {
     this.socket.emit(type, data);
     this.updateActivity();
   }

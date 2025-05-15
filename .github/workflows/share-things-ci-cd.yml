@@ -30,10 +30,14 @@ jobs:
       run: cd server && npm ci
     
     - name: Lint server
-      run: cd server && npm run lint
+      run: |
+        echo "Running server lint with detailed output..."
+        cd server && npm run lint -- --format stylish
     
     - name: Lint client
-      run: cd client && npm run lint
+      run: |
+        echo "Running client lint with detailed output..."
+        cd client && npm run lint -- --format stylish
 
   build:
     name: Build and Test

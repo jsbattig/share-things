@@ -1,4 +1,4 @@
-import { Express, Request, Response, NextFunction, Router } from 'express';
+import { Express, Request, Response, Router } from 'express';
 
 /**
  * Sets up Express routes
@@ -19,7 +19,7 @@ export function setupRoutes(app: Express): void {
   });
   
   // Error handler
-  app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: Error, req: Request, res: Response) => {
     console.error('Unhandled error:', err);
     res.status(500).json({ error: 'Internal server error' });
   });

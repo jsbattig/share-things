@@ -36,7 +36,7 @@ export interface ChunkingOptions {
  */
 const DEFAULT_OPTIONS: ChunkingOptions = {
   chunkSize: 64 * 1024, // 64KB
-  onProgress: (_progress: number): void => { /* No-op progress handler */ }
+  onProgress: (): void => { /* No-op progress handler */ }
 };
 
 /**
@@ -54,7 +54,7 @@ export async function chunkAndEncryptBlob(
   // Merge options with defaults
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const chunkSize = opts.chunkSize || DEFAULT_OPTIONS.chunkSize || 64 * 1024;
-  const onProgress = opts.onProgress || DEFAULT_OPTIONS.onProgress || ((_progress: number): void => { /* Fallback progress handler */ });
+  const onProgress = opts.onProgress || DEFAULT_OPTIONS.onProgress || ((): void => { /* Fallback progress handler */ });
   
   // Generate content ID
   const contentId = uuidv4();

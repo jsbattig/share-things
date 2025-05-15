@@ -44,9 +44,8 @@ const backendUrl = loadBackendUrl();
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  // Load env variables
   // Load env variables but don't use them directly in this config
-  const _env = loadEnv(mode, process.cwd(), '');
+  loadEnv(mode, process.cwd(), '');
   
   return {
     plugins: [
