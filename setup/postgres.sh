@@ -36,7 +36,7 @@ EOL
     fi
   fi
 
-  # Check if PostgreSQL configuration already exists
+  # Check if PostgreSQL configuration already exists and is active
   PG_CONFIGURED=false
   if [ -f server/.env ] && grep -q "SESSION_STORAGE_TYPE=postgresql" server/.env; then
     PG_CONFIGURED=true
@@ -81,6 +81,33 @@ EOL
       # In test mode or when session storage type is provided, keep existing configuration
       echo -e "${GREEN}Keeping existing PostgreSQL configuration.${NC}"
       USE_POSTGRES="y"
+    fi
+  else
+    # Check if PostgreSQL configuration exists but is not active
+    if [ -f server/.env ] && grep -q "PG_HOST=" server/.env; then
+      # If memory storage is explicitly requested, no need to show the inactive PostgreSQL configuration
+      if [ "$USE_POSTGRES" = false ] || [ "$SESSION_STORAGE_TYPE_ARG" = "memory" ]; then
+        echo -e "${YELLOW}Using in-memory session storage...${NC}"
+        
+        # Update server/.env file with in-memory configuration
+        if grep -q "SESSION_STORAGE_TYPE=" server/.env 2>/dev/null; then
+          # Replace existing configuration
+          $SED_CMD "s/SESSION_STORAGE_TYPE=.*/SESSION_STORAGE_TYPE=memory/" server/.env
+        else
+          # Add new configuration
+          cat >> server/.env << EOL
+
+# Session Storage Configuration
+SESSION_STORAGE_TYPE=memory
+EOL
+        fi
+
+        # Set environment variable for Docker Compose
+        export SESSION_STORAGE_TYPE="memory"
+
+        echo -e "${GREEN}In-memory storage configuration added to server/.env${NC}"
+        return 0
+      fi
     fi
   fi
 
