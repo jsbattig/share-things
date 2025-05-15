@@ -3,10 +3,14 @@
 # Docker/Podman setup functions for ShareThings
 
 # Configure Docker/Podman
-configure_docker() {
+configure_container_engine() {
   echo -e "${BLUE}=== Container Engine Configuration ===${NC}"
   
-  if [ "$TEST_MODE" = false ]; then
+  # Check if container engine is provided as an argument
+  if [ -n "$CONTAINER_ENGINE_ARG" ]; then
+    CONTAINER_ENGINE="$CONTAINER_ENGINE_ARG"
+    echo -e "${GREEN}Using container engine from argument: ${CONTAINER_ENGINE}${NC}"
+  elif [ "$TEST_MODE" = false ]; then
     read -p "Which container engine do you want to use? (docker/podman) [${DEFAULT_ENGINE}]: " CONTAINER_ENGINE
     CONTAINER_ENGINE=${CONTAINER_ENGINE:-$DEFAULT_ENGINE}
   else

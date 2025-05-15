@@ -34,6 +34,7 @@ TEST_MODE=false
 TEST_CASE=""
 START_CONTAINERS=false
 CONTAINER_ENGINE=""
+CONTAINER_ENGINE_ARG=""
 COMPOSE_CMD=""
 USE_POSTGRES=false
 HOSTNAME=""
@@ -71,6 +72,78 @@ parse_args() {
         USE_POSTGRES=false
         shift
         ;;
+      --container-engine)
+        CONTAINER_ENGINE_ARG="$2"
+        shift 2
+        ;;
+      --hostname)
+        HOSTNAME_ARG="$2"
+        shift 2
+        ;;
+      --use-custom-ports)
+        USE_CUSTOM_PORTS_ARG="$2"
+        shift 2
+        ;;
+      --client-port)
+        CLIENT_PORT_ARG="$2"
+        shift 2
+        ;;
+      --api-port)
+        API_PORT_ARG="$2"
+        shift 2
+        ;;
+      --use-https)
+        USE_HTTPS_ARG="$2"
+        shift 2
+        ;;
+      --expose-ports)
+        EXPOSE_PORTS_ARG="$2"
+        shift 2
+        ;;
+      --frontend-port)
+        FRONTEND_PORT_ARG="$2"
+        shift 2
+        ;;
+      --backend-port)
+        BACKEND_PORT_ARG="$2"
+        shift 2
+        ;;
+      --session-storage-type)
+        SESSION_STORAGE_TYPE_ARG="$2"
+        shift 2
+        ;;
+      --pg-location)
+        PG_LOCATION_ARG="$2"
+        shift 2
+        ;;
+      --pg-host)
+        PG_HOST_ARG="$2"
+        shift 2
+        ;;
+      --pg-port)
+        PG_PORT_ARG="$2"
+        shift 2
+        ;;
+      --pg-database)
+        PG_DATABASE_ARG="$2"
+        shift 2
+        ;;
+      --pg-user)
+        PG_USER_ARG="$2"
+        shift 2
+        ;;
+      --pg-password)
+        PG_PASSWORD_ARG="$2"
+        shift 2
+        ;;
+      --pg-ssl)
+        PG_SSL_ARG="$2"
+        shift 2
+        ;;
+      --pg-docker)
+        PG_DOCKER_ARG="$2"
+        shift 2
+        ;;
       --help)
         show_help
         exit 0
@@ -89,12 +162,30 @@ show_help() {
   echo "Usage: ./setup.sh [options]"
   echo ""
   echo "Options:"
-  echo "  --test [case]    Run in test mode, optionally specifying a test case"
-  echo "                   Available cases: memory, postgres, all"
-  echo "  --start          Build and start containers after setup"
-  echo "  --postgres       Use PostgreSQL for session storage"
-  echo "  --memory         Use in-memory session storage (default)"
-  echo "  --help           Show this help message"
+  echo "  --test [case]              Run in test mode, optionally specifying a test case"
+  echo "                             Available cases: memory, postgres, all"
+  echo "  --start                    Build and start containers after setup"
+  echo "  --postgres                 Use PostgreSQL for session storage"
+  echo "  --memory                   Use in-memory session storage (default)"
+  echo "  --container-engine ENGINE  Specify container engine (docker or podman)"
+  echo "  --hostname HOSTNAME        Specify hostname (or 'auto' for auto-detection)"
+  echo "  --use-custom-ports y/n     Use custom ports for HAProxy"
+  echo "  --client-port PORT         Specify client port for HAProxy"
+  echo "  --api-port PORT            Specify API port for HAProxy"
+  echo "  --use-https y/n            Use HTTPS"
+  echo "  --expose-ports y/n         Expose container ports to host"
+  echo "  --frontend-port PORT       Specify frontend port to expose"
+  echo "  --backend-port PORT        Specify backend port to expose"
+  echo "  --session-storage-type TYPE Specify session storage type (memory or postgresql)"
+  echo "  --pg-location e/l          Use external (e) or local (l) PostgreSQL"
+  echo "  --pg-host HOST             Specify PostgreSQL host"
+  echo "  --pg-port PORT             Specify PostgreSQL port"
+  echo "  --pg-database DB           Specify PostgreSQL database name"
+  echo "  --pg-user USER             Specify PostgreSQL username"
+  echo "  --pg-password PASS         Specify PostgreSQL password"
+  echo "  --pg-ssl y/n               Use SSL for PostgreSQL connection"
+  echo "  --pg-docker y/n            Run PostgreSQL in Docker"
+  echo "  --help                     Show this help message"
 }
 
 # Show welcome message

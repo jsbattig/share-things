@@ -99,15 +99,6 @@ log "INFO" "Checking required commands..."
 check_command "podman" || exit 1
 check_command "curl" || exit 1
 
-# Check if expect is installed
-log "INFO" "Checking if expect is installed..."
-if ! check_command "expect"; then
-  log "ERROR" "The 'expect' command is not installed."
-  log "ERROR" "Please install it using: sudo dnf install -y expect"
-  exit 1
-fi
-log "SUCCESS" "Expect is installed at: $(which expect)"
-
 # Configure Podman to allow short names
 log "INFO" "Configuring Podman to allow short names..."
 mkdir -p ~/.config/containers
@@ -137,53 +128,12 @@ sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpin
 sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpine/g' docker-compose.test.yml
 sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpine/g' docker-compose.prod.yml
 
-# Create expect script for memory setup
-log "INFO" "Creating expect script for memory setup..."
-cat > memory-setup.exp << 'EOL'
-#!/usr/bin/expect -f
-
-# Expect script for memory setup
-set timeout 300
-spawn ./setup.sh
-
-# Handle hostname prompt
-expect "Enter hostname (or leave blank for auto-detection):"
-send "\r"
-
-# Handle session storage type prompt
-expect "Select session storage type:"
-send "1\r"
-
-# Handle container engine prompt
-expect "Select container engine:"
-send "2\r"
-
-# Handle start containers prompt
-expect "Do you want to start the containers now?"
-send "y\r"
-
-# Handle any other prompts
-expect {
-    "Enter" { send "\r"; exp_continue }
-    "Select" { send "1\r"; exp_continue }
-    "Do you" { send "y\r"; exp_continue }
-    eof
-}
-
-# Check exit status
-set wait_result [wait]
-set exit_code [lindex $wait_result 3]
-exit $exit_code
-EOL
-chmod +x memory-setup.exp
-log "SUCCESS" "Created expect script at: $(pwd)/memory-setup.exp"
-
 # Test setup.sh with memory option
 log "INFO" "Testing setup.sh with memory option..."
-log "INFO" "Running: $(pwd)/memory-setup.exp"
-./memory-setup.exp
+log "INFO" "Running: ./setup.sh with memory storage"
+./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports n --use-https n --expose-ports y --frontend-port 8080 --backend-port 3001 --start
 RESULT=$?
-log "INFO" "Expect script exited with code: $RESULT"
+log "INFO" "Setup script exited with code: $RESULT"
 if [ $RESULT -ne 0 ]; then
   log "ERROR" "Memory setup failed."
   cleanup_containers
@@ -207,85 +157,12 @@ curl -s http://localhost:3001/health || echo "Health check failed, but continuin
 cleanup_containers
 cleanup_env_files
 
-# Create expect script for PostgreSQL setup
-log "INFO" "Creating expect script for PostgreSQL setup..."
-cat > postgres-setup.exp << 'EOL'
-#!/usr/bin/expect -f
-
-# Expect script for PostgreSQL setup
-set timeout 300
-spawn ./setup.sh
-
-# Handle hostname prompt
-expect "Enter hostname (or leave blank for auto-detection):"
-send "\r"
-
-# Handle session storage type prompt
-expect "Select session storage type:"
-send "2\r"
-
-# Handle PostgreSQL host prompt
-expect "Enter PostgreSQL host:"
-send "postgres\r"
-
-# Handle PostgreSQL port prompt
-expect "Enter PostgreSQL port:"
-send "5432\r"
-
-# Handle PostgreSQL database prompt
-expect "Enter PostgreSQL database name:"
-send "sharethings\r"
-
-# Handle PostgreSQL user prompt
-expect "Enter PostgreSQL username:"
-send "postgres\r"
-
-# Handle PostgreSQL password prompt
-expect "Enter PostgreSQL password:"
-send "postgres\r"
-
-# Handle PostgreSQL SSL prompt
-expect "Use SSL for PostgreSQL connection?"
-send "n\r"
-
-# Handle PostgreSQL Docker prompt
-expect "Run PostgreSQL in Docker?"
-send "y\r"
-
-# Handle PostgreSQL host port prompt
-expect "Enter host port for PostgreSQL:"
-send "5432\r"
-
-# Handle container engine prompt
-expect "Select container engine:"
-send "2\r"
-
-# Handle start containers prompt
-expect "Do you want to start the containers now?"
-send "y\r"
-
-# Handle any other prompts
-expect {
-    "Enter" { send "\r"; exp_continue }
-    "Select" { send "1\r"; exp_continue }
-    "Do you" { send "y\r"; exp_continue }
-    eof
-}
-
-# Check exit status
-set wait_result [wait]
-set exit_code [lindex $wait_result 3]
-exit $exit_code
-EOL
-chmod +x postgres-setup.exp
-log "SUCCESS" "Created expect script at: $(pwd)/postgres-setup.exp"
-
 # Test setup.sh with PostgreSQL option
 log "INFO" "Testing setup.sh with PostgreSQL option..."
-log "INFO" "Running: $(pwd)/postgres-setup.exp"
-./postgres-setup.exp
+log "INFO" "Running: ./setup.sh with PostgreSQL storage"
+./setup.sh --postgres --container-engine podman --hostname auto --use-custom-ports n --use-https n --expose-ports y --frontend-port 8080 --backend-port 3001 --pg-location l --pg-database sharethings --pg-user postgres --pg-password postgres --pg-ssl n --start
 RESULT=$?
-log "INFO" "Expect script exited with code: $RESULT"
+log "INFO" "Setup script exited with code: $RESULT"
 if [ $RESULT -ne 0 ]; then
   log "ERROR" "PostgreSQL setup failed."
   cleanup_containers
@@ -308,10 +185,6 @@ curl -s http://localhost:3001/health || echo "Health check failed, but continuin
 # Clean up after PostgreSQL setup
 cleanup_containers
 cleanup_env_files
-
-# Clean up expect scripts
-log "INFO" "Cleaning up expect scripts..."
-rm -f memory-setup.exp postgres-setup.exp
 
 log "SUCCESS" "Setup tests completed successfully!"
 log "INFO" "The setup.sh script has been tested on a Rocky Linux machine with both memory and PostgreSQL options."

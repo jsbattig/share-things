@@ -126,15 +126,6 @@ check_command "podman" || exit 1
 check_command "curl" || exit 1
 check_command "sed" || exit 1
 
-# Check if expect is installed
-log "INFO" "Checking if expect is installed..."
-if ! check_command "expect"; then
-  log "ERROR" "The 'expect' command is not installed."
-  log "ERROR" "Please install it using: sudo dnf install -y expect"
-  exit 1
-fi
-log "SUCCESS" "Expect is installed at: $(which expect)"
-
 # Configure Podman to allow short names
 log "INFO" "Configuring Podman to allow short names..."
 mkdir -p ~/.config/containers
@@ -164,53 +155,12 @@ sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpin
 sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpine/g' docker-compose.test.yml
 sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpine/g' docker-compose.prod.yml
 
-# Create expect script for memory setup
-log "INFO" "Creating expect script for memory setup..."
-cat > memory-setup.exp << 'EOL'
-#!/usr/bin/expect -f
-
-# Expect script for memory setup
-set timeout 300
-spawn ./setup.sh
-
-# Handle hostname prompt
-expect "Enter hostname (or leave blank for auto-detection):"
-send "\r"
-
-# Handle session storage type prompt
-expect "Select session storage type:"
-send "1\r"
-
-# Handle container engine prompt
-expect "Select container engine:"
-send "2\r"
-
-# Handle start containers prompt
-expect "Do you want to start the containers now?"
-send "y\r"
-
-# Handle any other prompts
-expect {
-    "Enter" { send "\r"; exp_continue }
-    "Select" { send "1\r"; exp_continue }
-    "Do you" { send "y\r"; exp_continue }
-    eof
-}
-
-# Check exit status
-set wait_result [wait]
-set exit_code [lindex $wait_result 3]
-exit $exit_code
-EOL
-chmod +x memory-setup.exp
-log "SUCCESS" "Created expect script at: $(pwd)/memory-setup.exp"
-
 # Start the application with memory storage
 log "INFO" "Starting the application with memory storage..."
-log "INFO" "Running: $(pwd)/memory-setup.exp"
-./memory-setup.exp
+log "INFO" "Running: ./setup.sh with memory storage"
+./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports n --use-https n --expose-ports y --frontend-port $TEST_PORT --backend-port 3001 --start
 RESULT=$?
-log "INFO" "Expect script exited with code: $RESULT"
+log "INFO" "Setup script exited with code: $RESULT"
 if [ $RESULT -ne 0 ]; then
   log "ERROR" "Failed to start the application."
   cleanup_containers
@@ -277,10 +227,6 @@ fi
 # Clean up
 cleanup_containers
 cleanup_env_files
-
-# Clean up expect scripts
-log "INFO" "Cleaning up expect scripts..."
-rm -f memory-setup.exp
 
 log "SUCCESS" "Update test completed successfully!"
 log "INFO" "The update-server.sh script has been tested on a Rocky Linux machine."

@@ -25,7 +25,7 @@ configure_session_storage() {
     echo -e "  User: ${PG_USER}"
     echo -e "  Docker managed: ${PG_DOCKER}"
     
-    if [ "$TEST_MODE" = false ]; then
+    if [ "$TEST_MODE" = false ] && [ -z "$SESSION_STORAGE_TYPE_ARG" ]; then
       read -p "Do you want to keep this configuration? (y/n): " KEEP_PG_CONFIG
       if [[ $KEEP_PG_CONFIG =~ ^[Yy]$ ]]; then
         echo -e "${GREEN}Keeping existing PostgreSQL configuration.${NC}"
@@ -35,14 +35,23 @@ configure_session_storage() {
         echo -e "${YELLOW}Reconfiguring PostgreSQL settings...${NC}"
       fi
     else
-      # In test mode, keep existing configuration
-      echo -e "${GREEN}Keeping existing PostgreSQL configuration for test.${NC}"
+      # In test mode or when session storage type is provided, keep existing configuration
+      echo -e "${GREEN}Keeping existing PostgreSQL configuration.${NC}"
       USE_POSTGRES="y"
     fi
   fi
 
   if [ "$PG_CONFIGURED" = false ]; then
-    if [ "$TEST_MODE" = false ]; then
+    # Check if session storage type is provided as an argument
+    if [ -n "$SESSION_STORAGE_TYPE_ARG" ]; then
+      if [ "$SESSION_STORAGE_TYPE_ARG" = "postgresql" ]; then
+        USE_POSTGRES="y"
+        echo -e "${YELLOW}Using PostgreSQL for session storage (from argument).${NC}"
+      else
+        USE_POSTGRES="n"
+        echo -e "${YELLOW}Using in-memory session storage (from argument).${NC}"
+      fi
+    elif [ "$TEST_MODE" = false ]; then
       if [ "$USE_POSTGRES" = true ]; then
         USE_POSTGRES="y"
       else
@@ -62,7 +71,10 @@ configure_session_storage() {
     if [[ $USE_POSTGRES =~ ^[Yy]$ ]]; then
       echo -e "${YELLOW}Configuring PostgreSQL session storage...${NC}"
       
-      if [ "$TEST_MODE" = false ]; then
+      # Check if PostgreSQL location is provided as an argument
+      if [ -n "$PG_LOCATION_ARG" ]; then
+        PG_LOCATION="$PG_LOCATION_ARG"
+      elif [ "$TEST_MODE" = false ]; then
         # Ask if using external or local PostgreSQL
         read -p "Do you want to use an external PostgreSQL server (e) or spin up a local one in Docker (l)? (e/l): " PG_LOCATION
       else
@@ -75,31 +87,67 @@ configure_session_storage() {
         # External PostgreSQL configuration
         echo -e "${YELLOW}Configuring external PostgreSQL connection...${NC}"
         
-        if [ "$TEST_MODE" = false ]; then
+        if [ -n "$PG_HOST_ARG" ]; then
+          PG_HOST="$PG_HOST_ARG"
+        elif [ "$TEST_MODE" = false ]; then
           read -p "Enter PostgreSQL host: " PG_HOST
-          
+        else
+          # Test mode values for external PostgreSQL
+          PG_HOST="localhost"
+        fi
+        
+        if [ -n "$PG_PORT_ARG" ]; then
+          PG_PORT="$PG_PORT_ARG"
+        elif [ "$TEST_MODE" = false ]; then
           read -p "Enter PostgreSQL port (default: 5432): " PG_PORT
           PG_PORT=${PG_PORT:-5432}
-          
+        else
+          # Test mode values for external PostgreSQL
+          PG_PORT="5432"
+        fi
+        
+        if [ -n "$PG_DATABASE_ARG" ]; then
+          PG_DATABASE="$PG_DATABASE_ARG"
+        elif [ "$TEST_MODE" = false ]; then
           read -p "Enter PostgreSQL database name: " PG_DATABASE
-          
+        else
+          # Test mode values for external PostgreSQL
+          PG_DATABASE="sharethings_test"
+        fi
+        
+        if [ -n "$PG_USER_ARG" ]; then
+          PG_USER="$PG_USER_ARG"
+        elif [ "$TEST_MODE" = false ]; then
           read -p "Enter PostgreSQL username: " PG_USER
-          
+        else
+          # Test mode values for external PostgreSQL
+          PG_USER="sharethings_test"
+        fi
+        
+        if [ -n "$PG_PASSWORD_ARG" ]; then
+          PG_PASSWORD="$PG_PASSWORD_ARG"
+        elif [ "$TEST_MODE" = false ]; then
           read -p "Enter PostgreSQL password: " PG_PASSWORD
-          
-          read -p "Use SSL connection? (y/n, default: n): " PG_SSL
-          if [[ $PG_SSL =~ ^[Yy]$ ]]; then
+        else
+          # Test mode values for external PostgreSQL
+          PG_PASSWORD="sharethings_test"
+        fi
+        
+        if [ -n "$PG_SSL_ARG" ]; then
+          if [ "$PG_SSL_ARG" = true ] || [ "$PG_SSL_ARG" = "y" ]; then
+            PG_SSL="true"
+          else
+            PG_SSL="false"
+          fi
+        elif [ "$TEST_MODE" = false ]; then
+          read -p "Use SSL connection? (y/n, default: n): " PG_SSL_INPUT
+          if [[ $PG_SSL_INPUT =~ ^[Yy]$ ]]; then
             PG_SSL="true"
           else
             PG_SSL="false"
           fi
         else
           # Test mode values for external PostgreSQL
-          PG_HOST="localhost"
-          PG_PORT="5432"
-          PG_DATABASE="sharethings_test"
-          PG_USER="sharethings_test"
-          PG_PASSWORD="sharethings_test"
           PG_SSL="false"
         fi
         
@@ -113,19 +161,33 @@ configure_session_storage() {
         PG_HOST="postgres"  # Use the service name as host
         PG_PORT="5432"
         
-        if [ "$TEST_MODE" = false ]; then
+        if [ -n "$PG_DATABASE_ARG" ]; then
+          PG_DATABASE="$PG_DATABASE_ARG"
+        elif [ "$TEST_MODE" = false ]; then
           read -p "Enter PostgreSQL database name (default: sharethings): " PG_DATABASE
           PG_DATABASE=${PG_DATABASE:-sharethings}
-          
+        else
+          # Test mode values for local PostgreSQL
+          PG_DATABASE="sharethings_test"
+        fi
+        
+        if [ -n "$PG_USER_ARG" ]; then
+          PG_USER="$PG_USER_ARG"
+        elif [ "$TEST_MODE" = false ]; then
           read -p "Enter PostgreSQL username (default: sharethings): " PG_USER
           PG_USER=${PG_USER:-sharethings}
-          
+        else
+          # Test mode values for local PostgreSQL
+          PG_USER="sharethings_test"
+        fi
+        
+        if [ -n "$PG_PASSWORD_ARG" ]; then
+          PG_PASSWORD="$PG_PASSWORD_ARG"
+        elif [ "$TEST_MODE" = false ]; then
           read -p "Enter PostgreSQL password (default: sharethings): " PG_PASSWORD
           PG_PASSWORD=${PG_PASSWORD:-sharethings}
         else
           # Test mode values for local PostgreSQL
-          PG_DATABASE="sharethings_test"
-          PG_USER="sharethings_test"
           PG_PASSWORD="sharethings_test"
         fi
         

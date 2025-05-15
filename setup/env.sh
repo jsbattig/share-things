@@ -50,38 +50,67 @@ configure_hostname_and_ports() {
     
     echo -e "${YELLOW}Test mode: Using default hostname and port configuration.${NC}"
   else
-    # Hostname Configuration with explanation
-    echo -e "${BLUE}=== Hostname Configuration ===${NC}"
-    echo "The hostname can be provided manually or automatically determined at runtime."
-    echo ""
-    echo "1. If you provide a hostname, it will be used for all configurations"
-    echo "2. If you leave it blank, the application will auto-detect the hostname"
-    echo ""
-    echo "Use cases for different hostname values:"
-    echo "- 'localhost': For local development only"
-    echo "- IP address: For accessing from other machines on your network"
-    echo "- Domain name: For production deployments with a real domain"
-    echo "- Leave blank: For automatic detection (recommended)"
-    echo ""
-    read -p "Enter your hostname (or leave blank for auto-detection): " HOSTNAME
-    
-    if [ -z "$HOSTNAME" ]; then
-      echo -e "${GREEN}Using automatic hostname detection${NC}"
-      HOSTNAME="auto"
+    # Check if hostname is provided as an argument
+    if [ -n "$HOSTNAME_ARG" ]; then
+      HOSTNAME="$HOSTNAME_ARG"
+      echo -e "${GREEN}Using hostname from argument: ${HOSTNAME}${NC}"
     else
-      echo -e "${GREEN}Using hostname: ${HOSTNAME}${NC}"
+      # Hostname Configuration with explanation
+      echo -e "${BLUE}=== Hostname Configuration ===${NC}"
+      echo "The hostname can be provided manually or automatically determined at runtime."
+      echo ""
+      echo "1. If you provide a hostname, it will be used for all configurations"
+      echo "2. If you leave it blank, the application will auto-detect the hostname"
+      echo ""
+      echo "Use cases for different hostname values:"
+      echo "- 'localhost': For local development only"
+      echo "- IP address: For accessing from other machines on your network"
+      echo "- Domain name: For production deployments with a real domain"
+      echo "- Leave blank: For automatic detection (recommended)"
+      echo ""
+      read -p "Enter your hostname (or leave blank for auto-detection): " HOSTNAME
+      
+      if [ -z "$HOSTNAME" ]; then
+        echo -e "${GREEN}Using automatic hostname detection${NC}"
+        HOSTNAME="auto"
+      else
+        echo -e "${GREEN}Using hostname: ${HOSTNAME}${NC}"
+      fi
     fi
     
-    # Ask if using custom ports
-    read -p "Are you using custom ports for HAProxy? (y/n): " USE_CUSTOM_PORTS_INPUT
-    if [[ $USE_CUSTOM_PORTS_INPUT =~ ^[Yy]$ ]]; then
-      USE_CUSTOM_PORTS=true
-      read -p "Enter the client app port (default: 15000): " CLIENT_PORT
-      CLIENT_PORT=${CLIENT_PORT:-15000}
-      
-      read -p "Enter the API port (default: 15001): " API_PORT
-      API_PORT=${API_PORT:-15001}
-      
+    # Check if custom ports are provided as arguments
+    if [ -n "$USE_CUSTOM_PORTS_ARG" ]; then
+      USE_CUSTOM_PORTS="$USE_CUSTOM_PORTS_ARG"
+      if [ "$USE_CUSTOM_PORTS" = true ] || [ "$USE_CUSTOM_PORTS" = "y" ]; then
+        USE_CUSTOM_PORTS=true
+        CLIENT_PORT="${CLIENT_PORT_ARG:-15000}"
+        API_PORT="${API_PORT_ARG:-15001}"
+      else
+        USE_CUSTOM_PORTS=false
+      fi
+    else
+      # Ask if using custom ports
+      read -p "Are you using custom ports for HAProxy? (y/n): " USE_CUSTOM_PORTS_INPUT
+      if [[ $USE_CUSTOM_PORTS_INPUT =~ ^[Yy]$ ]]; then
+        USE_CUSTOM_PORTS=true
+        read -p "Enter the client app port (default: 15000): " CLIENT_PORT
+        CLIENT_PORT=${CLIENT_PORT:-15000}
+        
+        read -p "Enter the API port (default: 15001): " API_PORT
+        API_PORT=${API_PORT:-15001}
+      else
+        USE_CUSTOM_PORTS=false
+      fi
+    fi
+    
+    # Check if HTTPS is provided as an argument
+    if [ -n "$USE_HTTPS_ARG" ]; then
+      if [ "$USE_HTTPS_ARG" = true ] || [ "$USE_HTTPS_ARG" = "y" ]; then
+        PROTOCOL="https"
+      else
+        PROTOCOL="http"
+      fi
+    else
       # Ask if using HTTPS
       read -p "Are you using HTTPS? (y/n): " USE_HTTPS
       if [[ $USE_HTTPS =~ ^[Yy]$ ]]; then
@@ -89,41 +118,51 @@ configure_hostname_and_ports() {
       else
         PROTOCOL="http"
       fi
-    else
-      USE_CUSTOM_PORTS=false
-      
-      # Ask if using HTTPS
-      read -p "Are you using HTTPS? (y/n): " USE_HTTPS
-      if [[ $USE_HTTPS =~ ^[Yy]$ ]]; then
-        PROTOCOL="https"
-      else
-        PROTOCOL="http"
-      fi
     fi
     
-    # Ask if want to expose ports to host
-    read -p "Do you want to expose container ports to the host? (y/n): " EXPOSE_PORTS_INPUT
-    if [[ $EXPOSE_PORTS_INPUT =~ ^[Yy]$ ]]; then
-      EXPOSE_PORTS=true
-      
-      # If custom HAProxy ports were configured, use those directly
-      if [ "$USE_CUSTOM_PORTS" = true ]; then
-        FRONTEND_PORT=${CLIENT_PORT:-15000}
-        BACKEND_PORT=${API_PORT:-15001}
-        echo -e "${GREEN}Using custom ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}${NC}"
+    # Check if expose ports is provided as an argument
+    if [ -n "$EXPOSE_PORTS_ARG" ]; then
+      if [ "$EXPOSE_PORTS_ARG" = true ] || [ "$EXPOSE_PORTS_ARG" = "y" ]; then
+        EXPOSE_PORTS=true
+        
+        # If custom HAProxy ports were configured, use those directly
+        if [ "$USE_CUSTOM_PORTS" = true ]; then
+          FRONTEND_PORT=${CLIENT_PORT:-15000}
+          BACKEND_PORT=${API_PORT:-15001}
+          echo -e "${GREEN}Using custom ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}${NC}"
+        else
+          # Use provided port arguments if available
+          FRONTEND_PORT="${FRONTEND_PORT_ARG:-8080}"
+          BACKEND_PORT="${BACKEND_PORT_ARG:-3001}"
+        fi
       else
-        # Only ask for port configuration if custom ports weren't already specified
-        DEFAULT_FRONTEND_PORT=8080
-        DEFAULT_BACKEND_PORT=3001
-        
-        read -p "Enter the frontend port to expose (default: ${DEFAULT_FRONTEND_PORT}): " FRONTEND_PORT
-        FRONTEND_PORT=${FRONTEND_PORT:-$DEFAULT_FRONTEND_PORT}
-        
-        read -p "Enter the backend port to expose (default: ${DEFAULT_BACKEND_PORT}): " BACKEND_PORT
-        BACKEND_PORT=${BACKEND_PORT:-$DEFAULT_BACKEND_PORT}
+        EXPOSE_PORTS=false
       fi
     else
-      EXPOSE_PORTS=false
+      # Ask if want to expose ports to host
+      read -p "Do you want to expose container ports to the host? (y/n): " EXPOSE_PORTS_INPUT
+      if [[ $EXPOSE_PORTS_INPUT =~ ^[Yy]$ ]]; then
+        EXPOSE_PORTS=true
+        
+        # If custom HAProxy ports were configured, use those directly
+        if [ "$USE_CUSTOM_PORTS" = true ]; then
+          FRONTEND_PORT=${CLIENT_PORT:-15000}
+          BACKEND_PORT=${API_PORT:-15001}
+          echo -e "${GREEN}Using custom ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}${NC}"
+        else
+          # Only ask for port configuration if custom ports weren't already specified
+          DEFAULT_FRONTEND_PORT=8080
+          DEFAULT_BACKEND_PORT=3001
+          
+          read -p "Enter the frontend port to expose (default: ${DEFAULT_FRONTEND_PORT}): " FRONTEND_PORT
+          FRONTEND_PORT=${FRONTEND_PORT:-$DEFAULT_FRONTEND_PORT}
+          
+          read -p "Enter the backend port to expose (default: ${DEFAULT_BACKEND_PORT}): " BACKEND_PORT
+          BACKEND_PORT=${BACKEND_PORT:-$DEFAULT_BACKEND_PORT}
+        fi
+      else
+        EXPOSE_PORTS=false
+      fi
     fi
   fi
   
