@@ -32,6 +32,7 @@ import ContentItem from './ContentItem';
 const ContentList: React.FC = () => {
   // State
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   
   // Context
   const { getContentList } = useContentStore();
@@ -62,6 +63,9 @@ const ContentList: React.FC = () => {
    * Clears all content
    */
   const clearAllContent = () => {
+    // Show loading state while clearing content
+    setIsLoading(true);
+    
     // This would typically clear all content
     toast({
       title: 'Not implemented',
@@ -70,6 +74,9 @@ const ContentList: React.FC = () => {
       duration: 3000,
       isClosable: true
     });
+    
+    // Reset loading state
+    setIsLoading(false);
   };
   
   // Show loading state
