@@ -36,27 +36,33 @@ EOL
     fi
   fi
 
-  # Check if PostgreSQL configuration already exists and is active
+  # Check if PostgreSQL configuration exists in server/.env
   PG_CONFIGURED=false
-  if [ -f server/.env ] && grep -q "SESSION_STORAGE_TYPE=postgresql" server/.env; then
-    PG_CONFIGURED=true
-    PG_HOST=$(grep "PG_HOST=" server/.env | cut -d= -f2)
-    PG_PORT=$(grep "PG_PORT=" server/.env | cut -d= -f2)
-    PG_DATABASE=$(grep "PG_DATABASE=" server/.env | cut -d= -f2)
-    PG_USER=$(grep "PG_USER=" server/.env | cut -d= -f2)
-    PG_PASSWORD=$(grep "PG_PASSWORD=" server/.env | cut -d= -f2)
-    PG_SSL=$(grep "PG_SSL=" server/.env | cut -d= -f2)
-    PG_DOCKER=$(grep "PG_DOCKER=" server/.env | cut -d= -f2)
-    
-    echo -e "${YELLOW}Existing PostgreSQL configuration detected:${NC}"
-    echo -e "  Host: ${PG_HOST}"
-    echo -e "  Port: ${PG_PORT}"
-    echo -e "  Database: ${PG_DATABASE}"
-    echo -e "  User: ${PG_USER}"
-    echo -e "  Docker managed: ${PG_DOCKER}"
+  if [ -f server/.env ] && grep -q "PG_HOST=" server/.env 2>/dev/null; then
+    # Only consider it configured if SESSION_STORAGE_TYPE is set to postgresql
+    if grep -q "SESSION_STORAGE_TYPE=postgresql" server/.env 2>/dev/null; then
+      PG_CONFIGURED=true
+      PG_HOST=$(grep "PG_HOST=" server/.env | cut -d= -f2)
+      PG_PORT=$(grep "PG_PORT=" server/.env | cut -d= -f2)
+      PG_DATABASE=$(grep "PG_DATABASE=" server/.env | cut -d= -f2)
+      PG_USER=$(grep "PG_USER=" server/.env | cut -d= -f2)
+      PG_PASSWORD=$(grep "PG_PASSWORD=" server/.env | cut -d= -f2)
+      PG_SSL=$(grep "PG_SSL=" server/.env | cut -d= -f2)
+      PG_DOCKER=$(grep "PG_DOCKER=" server/.env | cut -d= -f2)
+      
+      echo -e "${YELLOW}Existing PostgreSQL configuration detected:${NC}"
+      echo -e "  Host: ${PG_HOST}"
+      echo -e "  Port: ${PG_PORT}"
+      echo -e "  Database: ${PG_DATABASE}"
+      echo -e "  User: ${PG_USER}"
+      echo -e "  Docker managed: ${PG_DOCKER}"
+    else
+      # PostgreSQL settings exist but not active
+      echo -e "${YELLOW}Inactive PostgreSQL configuration found.${NC}"
+    fi
     
     # If memory storage is explicitly requested, override the existing PostgreSQL configuration
-    if [ "$USE_POSTGRES" = false ]; then
+    if [ "$SESSION_STORAGE_TYPE_ARG" = "memory" ]; then
       PG_CONFIGURED=false
       echo -e "${YELLOW}Overriding existing PostgreSQL configuration with memory storage...${NC}"
       
@@ -68,7 +74,7 @@ EOL
       
       echo -e "${GREEN}In-memory storage configuration added to server/.env${NC}"
       return 0
-    elif [ "$TEST_MODE" = false ] && [ -z "$SESSION_STORAGE_TYPE_ARG" ]; then
+    elif [ "$TEST_MODE" = false ] && [ -z "$SESSION_STORAGE_TYPE_ARG" ] && [ "$PG_CONFIGURED" = true ]; then
       read -p "Do you want to keep this configuration? (y/n): " KEEP_PG_CONFIG
       if [[ $KEEP_PG_CONFIG =~ ^[Yy]$ ]]; then
         echo -e "${GREEN}Keeping existing PostgreSQL configuration.${NC}"
@@ -76,37 +82,6 @@ EOL
       else
         PG_CONFIGURED=false
         echo -e "${YELLOW}Reconfiguring PostgreSQL settings...${NC}"
-      fi
-    else
-      # In test mode or when session storage type is provided, keep existing configuration
-      echo -e "${GREEN}Keeping existing PostgreSQL configuration.${NC}"
-      USE_POSTGRES="y"
-    fi
-  else
-    # Check if PostgreSQL configuration exists but is not active
-    if [ -f server/.env ] && grep -q "PG_HOST=" server/.env; then
-      # If memory storage is explicitly requested, no need to show the inactive PostgreSQL configuration
-      if [ "$USE_POSTGRES" = false ] || [ "$SESSION_STORAGE_TYPE_ARG" = "memory" ]; then
-        echo -e "${YELLOW}Using in-memory session storage...${NC}"
-        
-        # Update server/.env file with in-memory configuration
-        if grep -q "SESSION_STORAGE_TYPE=" server/.env 2>/dev/null; then
-          # Replace existing configuration
-          $SED_CMD "s/SESSION_STORAGE_TYPE=.*/SESSION_STORAGE_TYPE=memory/" server/.env
-        else
-          # Add new configuration
-          cat >> server/.env << EOL
-
-# Session Storage Configuration
-SESSION_STORAGE_TYPE=memory
-EOL
-        fi
-
-        # Set environment variable for Docker Compose
-        export SESSION_STORAGE_TYPE="memory"
-
-        echo -e "${GREEN}In-memory storage configuration added to server/.env${NC}"
-        return 0
       fi
     fi
   fi
