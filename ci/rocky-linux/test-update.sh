@@ -89,6 +89,18 @@ check_command "podman" || exit 1
 check_command "curl" || exit 1
 check_command "sed" || exit 1
 
+# Install expect if not already installed
+log "INFO" "Checking if expect is installed..."
+if ! check_command "expect"; then
+  log "INFO" "Installing expect..."
+  sudo dnf install -y expect
+  if ! check_command "expect"; then
+    log "ERROR" "Failed to install expect."
+    exit 1
+  fi
+  log "SUCCESS" "Expect installed successfully."
+fi
+
 # Configure Podman to allow short names
 log "INFO" "Configuring Podman to allow short names..."
 mkdir -p ~/.config/containers
@@ -115,9 +127,35 @@ sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpin
 sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpine/g' docker-compose.test.yml
 sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpine/g' docker-compose.prod.yml
 
+# Create expect script for memory start
+log "INFO" "Creating expect script for memory start..."
+cat > memory-start.exp << 'EOL'
+#!/usr/bin/expect -f
+
+# Expect script for memory start
+set timeout 300
+spawn ./setup.sh --memory --start
+
+# Handle hostname prompt
+expect "Enter hostname (or leave blank for auto-detection):"
+send "\r"
+
+# Handle any other prompts
+expect {
+    "Enter" { send "\r"; exp_continue }
+    eof
+}
+
+# Check exit status
+set wait_result [wait]
+set exit_code [lindex $wait_result 3]
+exit $exit_code
+EOL
+chmod +x memory-start.exp
+
 # Start the application with memory storage
 log "INFO" "Starting the application with memory storage..."
-./setup.sh --memory --start
+./memory-start.exp
 if [ $? -ne 0 ]; then
   log "ERROR" "Failed to start the application."
   cleanup_containers
@@ -177,6 +215,10 @@ fi
 
 # Clean up
 cleanup_containers
+
+# Clean up expect scripts
+log "INFO" "Cleaning up expect scripts..."
+rm -f memory-start.exp
 
 log "SUCCESS" "Update test completed successfully!"
 log "INFO" "The update-server.sh script has been tested on a Rocky Linux machine."
