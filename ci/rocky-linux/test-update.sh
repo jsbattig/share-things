@@ -56,8 +56,11 @@ check_running_containers() {
   
   # Check if any share-things containers are running
   local container_count
-  container_count=$(podman ps | grep -c "share-things" 2>/dev/null || echo "0")
-  container_count=${container_count:-0}
+  container_count=$(podman ps | grep -c "share-things" 2>/dev/null || true)
+  # Make sure container_count is a number
+  if ! [[ "$container_count" =~ ^[0-9]+$ ]]; then
+    container_count=0
+  fi
   
   if [ "$container_count" -gt 0 ]; then
     log "WARNING" "Found $container_count running share-things containers."
@@ -83,8 +86,11 @@ check_containers() {
     
     # Count all containers (running or not)
     local container_count
-    container_count=$(podman ps -a | grep -c "share-things" 2>/dev/null || echo "0")
-    container_count=${container_count:-0}
+    container_count=$(podman ps -a | grep -c "share-things" 2>/dev/null || true)
+    # Make sure container_count is a number
+    if ! [[ "$container_count" =~ ^[0-9]+$ ]]; then
+      container_count=0
+    fi
     
     if [ "$container_count" -ge "$expected_count" ]; then
       log "SUCCESS" "Containers exist! ($container_count/$expected_count)"
