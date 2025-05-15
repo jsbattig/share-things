@@ -82,6 +82,13 @@ cleanup_containers() {
   log "SUCCESS" "Cleanup complete."
 }
 
+# Function to clean up environment files
+cleanup_env_files() {
+  log "INFO" "Cleaning up environment files..."
+  rm -f .env client/.env server/.env
+  log "SUCCESS" "Environment files cleaned up."
+}
+
 # Function to wait for a service to be available
 wait_for_service() {
   local url=$1
@@ -126,6 +133,7 @@ if ! check_command "expect"; then
   log "ERROR" "Please install it using: sudo dnf install -y expect"
   exit 1
 fi
+log "SUCCESS" "Expect is installed at: $(which expect)"
 
 # Configure Podman to allow short names
 log "INFO" "Configuring Podman to allow short names..."
@@ -146,6 +154,9 @@ EOL
 
 # Clean up any existing containers
 cleanup_containers
+
+# Clean up any existing environment files
+cleanup_env_files
 
 # Update docker-compose files to use fully qualified image names
 log "INFO" "Updating docker-compose files to use fully qualified image names..."
@@ -192,11 +203,15 @@ set exit_code [lindex $wait_result 3]
 exit $exit_code
 EOL
 chmod +x memory-setup.exp
+log "SUCCESS" "Created expect script at: $(pwd)/memory-setup.exp"
 
 # Start the application with memory storage
 log "INFO" "Starting the application with memory storage..."
+log "INFO" "Running: $(pwd)/memory-setup.exp"
 ./memory-setup.exp
-if [ $? -ne 0 ]; then
+RESULT=$?
+log "INFO" "Expect script exited with code: $RESULT"
+if [ $RESULT -ne 0 ]; then
   log "ERROR" "Failed to start the application."
   cleanup_containers
   exit 1
@@ -261,6 +276,7 @@ fi
 
 # Clean up
 cleanup_containers
+cleanup_env_files
 
 # Clean up expect scripts
 log "INFO" "Cleaning up expect scripts..."

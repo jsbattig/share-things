@@ -80,6 +80,13 @@ cleanup_containers() {
   log "SUCCESS" "Cleanup complete."
 }
 
+# Function to clean up environment files
+cleanup_env_files() {
+  log "INFO" "Cleaning up environment files..."
+  rm -f .env client/.env server/.env
+  log "SUCCESS" "Environment files cleaned up."
+}
+
 # Main script
 log "INFO" "=== ShareThings Setup Test on Rocky Linux ==="
 log "INFO" "This script will test the setup.sh script with both memory and PostgreSQL options."
@@ -120,6 +127,9 @@ EOL
 
 # Clean up any existing containers
 cleanup_containers
+
+# Clean up any existing environment files
+cleanup_env_files
 
 # Update docker-compose files to use fully qualified image names
 log "INFO" "Updating docker-compose files to use fully qualified image names..."
@@ -195,6 +205,7 @@ curl -s http://localhost:3001/health || echo "Health check failed, but continuin
 
 # Clean up after memory setup
 cleanup_containers
+cleanup_env_files
 
 # Create expect script for PostgreSQL setup
 log "INFO" "Creating expect script for PostgreSQL setup..."
@@ -296,6 +307,7 @@ curl -s http://localhost:3001/health || echo "Health check failed, but continuin
 
 # Clean up after PostgreSQL setup
 cleanup_containers
+cleanup_env_files
 
 # Clean up expect scripts
 log "INFO" "Cleaning up expect scripts..."
