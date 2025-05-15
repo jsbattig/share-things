@@ -99,6 +99,7 @@ if ! check_command "expect"; then
   log "ERROR" "Please install it using: sudo dnf install -y expect"
   exit 1
 fi
+log "SUCCESS" "Expect is installed at: $(which expect)"
 
 # Configure Podman to allow short names
 log "INFO" "Configuring Podman to allow short names..."
@@ -165,11 +166,15 @@ set exit_code [lindex $wait_result 3]
 exit $exit_code
 EOL
 chmod +x memory-setup.exp
+log "SUCCESS" "Created expect script at: $(pwd)/memory-setup.exp"
 
 # Test setup.sh with memory option
 log "INFO" "Testing setup.sh with memory option..."
+log "INFO" "Running: $(pwd)/memory-setup.exp"
 ./memory-setup.exp
-if [ $? -ne 0 ]; then
+RESULT=$?
+log "INFO" "Expect script exited with code: $RESULT"
+if [ $RESULT -ne 0 ]; then
   log "ERROR" "Memory setup failed."
   cleanup_containers
   exit 1
@@ -262,11 +267,15 @@ set exit_code [lindex $wait_result 3]
 exit $exit_code
 EOL
 chmod +x postgres-setup.exp
+log "SUCCESS" "Created expect script at: $(pwd)/postgres-setup.exp"
 
 # Test setup.sh with PostgreSQL option
 log "INFO" "Testing setup.sh with PostgreSQL option..."
+log "INFO" "Running: $(pwd)/postgres-setup.exp"
 ./postgres-setup.exp
-if [ $? -ne 0 ]; then
+RESULT=$?
+log "INFO" "Expect script exited with code: $RESULT"
+if [ $RESULT -ne 0 ]; then
   log "ERROR" "PostgreSQL setup failed."
   cleanup_containers
   exit 1
