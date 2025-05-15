@@ -19,6 +19,7 @@ show_welcome
 source setup/env.sh
 source setup/postgres.sh
 source setup/docker.sh
+source setup/container.sh
 
 # If running in test mode, source test module
 if [ "$TEST_MODE" = true ]; then
