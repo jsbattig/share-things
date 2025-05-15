@@ -97,22 +97,6 @@ cleanup_env_files() {
   # Remove environment files
   rm -f .env client/.env server/.env
   
-  # Create clean server/.env file without PostgreSQL configuration
-  if [ -f server/.env.example ]; then
-    cp server/.env.example server/.env
-    # Make sure there's no PostgreSQL configuration
-    sed -i '/SESSION_STORAGE_TYPE=/d' server/.env 2>/dev/null || true
-    sed -i '/PG_HOST=/d' server/.env 2>/dev/null || true
-    sed -i '/PG_PORT=/d' server/.env 2>/dev/null || true
-    sed -i '/PG_DATABASE=/d' server/.env 2>/dev/null || true
-    sed -i '/PG_USER=/d' server/.env 2>/dev/null || true
-    sed -i '/PG_PASSWORD=/d' server/.env 2>/dev/null || true
-    sed -i '/PG_SSL=/d' server/.env 2>/dev/null || true
-    sed -i '/PG_DOCKER=/d' server/.env 2>/dev/null || true
-    # Add memory storage type
-    echo "SESSION_STORAGE_TYPE=memory" >> server/.env
-  fi
-  
   log "SUCCESS" "Environment files cleaned up."
 }
 

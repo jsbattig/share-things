@@ -24,14 +24,10 @@ setup_env_files() {
     echo -e "${YELLOW}client/.env file already exists. Skipping...${NC}"
   fi
   
-  # Create server/.env file from template if it doesn't exist
-  if [ ! -f server/.env ]; then
-    echo -e "${YELLOW}Creating server/.env file from template...${NC}"
-    cp server/.env.example server/.env
-    echo -e "${GREEN}Created server/.env file.${NC}"
-  else
-    echo -e "${YELLOW}server/.env file already exists. Skipping...${NC}"
-  fi
+  # Always create server/.env file from template to ensure clean state
+  echo -e "${YELLOW}Creating server/.env file from template...${NC}"
+  cp server/.env.example server/.env
+  echo -e "${GREEN}Created server/.env file.${NC}"
   
   # Configure hostname and ports
   configure_hostname_and_ports
