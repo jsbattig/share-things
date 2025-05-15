@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
   Button,
@@ -17,7 +17,9 @@ import {
   TabPanels,
   TabPanel,
   Progress,
-  Divider
+  Divider,
+  Alert,
+  AlertIcon
 } from '@chakra-ui/react';
 import {
   FaClipboard,
@@ -61,9 +63,21 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
   const [text, setText] = useState<string>('');
   const [isSharing, setIsSharing] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [isIOS, setIsIOS] = useState<boolean>(false);
   
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Detect iOS platform on component mount
+  useEffect(() => {
+    const detectIOS = () => {
+      const userAgent = window.navigator.userAgent.toLowerCase();
+      return /iphone|ipad|ipod/.test(userAgent) ||
+             (userAgent.includes('mac') && 'ontouchend' in document);
+    };
+    
+    setIsIOS(detectIOS());
+  }, []);
   
   // Context
   const { socket, sendContent, sendChunk, ensureConnected } = useSocket();
@@ -419,6 +433,19 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
    * Handles paste from clipboard
    */
   const handlePaste = async () => {
+    // If on iOS, show a helpful message instead of attempting to access clipboard
+    if (isIOS) {
+      console.log('[Paste] Paste button clicked on iOS device');
+      toast({
+        title: 'Clipboard access restricted',
+        description: 'On iOS, please paste text directly into the text area or use the file upload for images.',
+        status: 'info',
+        duration: 5000,
+        isClosable: true
+      });
+      return;
+    }
+    
     try {
       // First ensure we have a valid connection before attempting paste
       const isConnected = await ensureConnected(sessionId);
@@ -438,8 +465,8 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
       
       for (const clipboardItem of clipboardItems) {
         // Check for image
-        if (clipboardItem.types.includes('image/png') || 
-            clipboardItem.types.includes('image/jpeg') || 
+        if (clipboardItem.types.includes('image/png') ||
+            clipboardItem.types.includes('image/jpeg') ||
             clipboardItem.types.includes('image/gif')) {
           const imageType = clipboardItem.types.find(type => type.startsWith('image/')) || 'image/png';
           const blob = await clipboardItem.getType(imageType);
@@ -501,11 +528,17 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
       });
     } catch (error) {
       console.error('Error pasting from clipboard:', error);
+      
+      // Provide a more helpful error message
+      const errorMessage = isIOS
+        ? 'iOS restricts clipboard access in browsers. Please paste text directly into the text area or use the file upload for images.'
+        : 'Failed to access clipboard. Make sure you have granted clipboard permission to this site.';
+      
       toast({
         title: 'Clipboard error',
-        description: 'Failed to access clipboard',
+        description: errorMessage,
         status: 'error',
-        duration: 3000,
+        duration: 5000,
         isClosable: true
       });
     }
@@ -544,14 +577,33 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
           {/* Text sharing panel */}
           <TabPanel p={0}>
             <VStack spacing={4} align="stretch">
+              {isIOS && (
+                <Alert status="info" borderRadius="md" fontSize="sm">
+                  <AlertIcon />
+                  On iOS, paste text directly into the text area below. For images, use the File tab.
+                </Alert>
+              )}
               <FormControl>
                 <FormLabel>Share Text</FormLabel>
                 <Textarea
                   value={text}
                   onChange={(e) => setText(e.target.value)}
-                  placeholder="Type or paste text to share..."
+                  placeholder={isIOS ? "Paste text here to share..." : "Type or paste text to share..."}
                   rows={5}
                   resize="vertical"
+                  onPaste={async (e) => {
+                    // For iOS users, automatically share text when pasted directly
+                    if (isIOS) {
+                      const pastedText = e.clipboardData?.getData('text');
+                      if (pastedText && pastedText.trim()) {
+                        // Let the default paste happen first to update the textarea
+                        setTimeout(async () => {
+                          // Then share the text
+                          await shareText(pastedText);
+                        }, 100);
+                      }
+                    }
+                  }}
                 />
               </FormControl>
               
@@ -561,6 +613,8 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
                   onClick={handlePaste}
                   size="sm"
                   variant="outline"
+                  isDisabled={isIOS}
+                  title={isIOS ? "Paste functionality is not available on iOS. Please paste directly into the text area." : "Paste from clipboard"}
                 >
                   Paste
                 </Button>
@@ -629,6 +683,13 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
       <Text fontSize="xs" color="gray.500" textAlign="center">
         All content is end-to-end encrypted with your session passphrase
       </Text>
+      
+      {isIOS && (
+        <Text fontSize="xs" color="orange.500" textAlign="center" mt={2}>
+          Note: On iOS devices, use system paste (long-press) to paste text directly into the text area.
+          For images, save them to your device and use the file upload option.
+        </Text>
+      )}
     </Box>
   );
 };
