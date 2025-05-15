@@ -17,6 +17,13 @@ BRANCH=${1:-"feature/postgresql-session-management"}
 WORK_DIR=${2:-"$(pwd)"}
 TEST_PORT=${3:-8080}
 
+# Timeout settings
+SETUP_TIMEOUT=300  # 5 minutes timeout for setup.sh
+UPDATE_TIMEOUT=300  # 5 minutes timeout for update-server.sh
+HEALTH_CHECK_TIMEOUT=60  # 1 minute timeout for health check
+CONTAINER_CHECK_TIMEOUT=60  # 1 minute timeout for container check
+SERVICE_WAIT_TIMEOUT=120  # 2 minutes timeout for service availability
+
 # Function to log messages
 log() {
   local level=$1
@@ -43,34 +50,42 @@ check_command() {
   return 0
 }
 
-# Function to check if containers are running
+# Function to check if containers are running with timeout
 check_containers() {
   local expected_count=$1
+  local timeout=$CONTAINER_CHECK_TIMEOUT
+  local start_time=$(date +%s)
+  local end_time=$((start_time + timeout))
   
-  # Just use podman ps without filters for now
-  log "INFO" "Checking container status..."
-  echo "Running: podman ps -a"
-  podman ps -a
+  log "INFO" "Checking container status (timeout: ${timeout}s)..."
   
-  # Count all containers (running or not)
-  local container_count=$(podman ps -a | grep -c "share-things" || echo "0")
+  while [ $(date +%s) -lt $end_time ]; do
+    echo "Running: podman ps -a"
+    podman ps -a
+    
+    # Count all containers (running or not)
+    local container_count=$(podman ps -a | grep -c "share-things" || echo "0")
+    
+    if [ "$container_count" -ge "$expected_count" ]; then
+      log "SUCCESS" "Containers exist! ($container_count/$expected_count)"
+      
+      # Show logs for troubleshooting
+      log "INFO" "Checking container logs..."
+      log "INFO" "Backend container logs:"
+      podman logs $(podman ps -a | grep backend | awk '{print $1}') --tail 20 2>/dev/null || echo "No logs available for backend container"
+      
+      log "INFO" "Frontend container logs:"
+      podman logs $(podman ps -a | grep frontend | awk '{print $1}') --tail 20 2>/dev/null || echo "No logs available for frontend container"
+      
+      return 0
+    fi
+    
+    log "INFO" "Not all containers are ready yet. Waiting 5 seconds... ($(( end_time - $(date +%s) ))s remaining)"
+    sleep 5
+  done
   
-  if [ "$container_count" -ge "$expected_count" ]; then
-    log "SUCCESS" "Containers exist! ($container_count/$expected_count)"
-    
-    # Show logs for troubleshooting
-    log "INFO" "Checking container logs..."
-    log "INFO" "Backend container logs:"
-    podman logs $(podman ps -a | grep backend | awk '{print $1}') --tail 20 2>/dev/null || echo "No logs available for backend container"
-    
-    log "INFO" "Frontend container logs:"
-    podman logs $(podman ps -a | grep frontend | awk '{print $1}') --tail 20 2>/dev/null || echo "No logs available for frontend container"
-    
-    return 0
-  else
-    log "ERROR" "Not all containers exist. Expected $expected_count, but found $container_count."
-    return 1
-  fi
+  log "ERROR" "Container check timed out after ${timeout} seconds. Expected $expected_count containers, but found $container_count."
+  return 1
 }
 
 # Function to clean up containers
@@ -102,27 +117,57 @@ cleanup_env_files() {
   log "SUCCESS" "Environment files cleaned up."
 }
 
-# Function to wait for a service to be available
+# Function to wait for a service to be available with improved timeout
 wait_for_service() {
   local url=$1
-  local max_attempts=${2:-30}
-  local attempt=1
+  local timeout=${2:-$SERVICE_WAIT_TIMEOUT}
+  local start_time=$(date +%s)
+  local end_time=$((start_time + timeout))
   
-  log "INFO" "Waiting for service at $url..."
+  log "INFO" "Waiting for service at $url (timeout: ${timeout}s)..."
   
-  while [ $attempt -le $max_attempts ]; do
+  while [ $(date +%s) -lt $end_time ]; do
     if curl -s -f "$url" > /dev/null 2>&1; then
       log "SUCCESS" "Service is available at $url"
       return 0
     fi
     
-    log "INFO" "Attempt $attempt/$max_attempts: Service not available yet, waiting..."
-    sleep 2
-    attempt=$((attempt + 1))
+    log "INFO" "Service not available yet, retrying in 5 seconds... ($(( end_time - $(date +%s) ))s remaining)"
+    sleep 5
   done
   
-  log "ERROR" "Service did not become available at $url after $max_attempts attempts"
+  log "ERROR" "Service did not become available at $url after ${timeout} seconds"
   return 1
+}
+
+# Function to run a command with timeout
+run_with_timeout() {
+  local cmd="$1"
+  local timeout="$2"
+  local message="$3"
+  
+  log "INFO" "$message (timeout: ${timeout}s)"
+  
+  # Create a temporary file for the command output
+  local output_file=$(mktemp)
+  
+  # Run the command with timeout
+  timeout $timeout bash -c "$cmd" > "$output_file" 2>&1
+  local exit_code=$?
+  
+  # Display the command output
+  cat "$output_file"
+  rm "$output_file"
+  
+  if [ $exit_code -eq 124 ]; then
+    log "ERROR" "Command timed out after ${timeout} seconds"
+    return 124
+  elif [ $exit_code -ne 0 ]; then
+    log "ERROR" "Command failed with exit code $exit_code"
+    return $exit_code
+  fi
+  
+  return 0
 }
 
 # Main script
@@ -138,6 +183,7 @@ log "INFO" "Checking required commands..."
 check_command "podman" || exit 1
 check_command "curl" || exit 1
 check_command "sed" || exit 1
+check_command "timeout" || exit 1
 
 # Configure Podman to allow short names
 log "INFO" "Configuring Podman to allow short names..."
@@ -170,8 +216,7 @@ sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpin
 
 # Start the application with memory storage
 log "INFO" "Starting the application with memory storage..."
-log "INFO" "Running: ./setup.sh with memory storage"
-./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports n --use-https n --expose-ports y --frontend-port $TEST_PORT --backend-port 3001 --start
+run_with_timeout "./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports n --use-https n --expose-ports y --frontend-port $TEST_PORT --backend-port 3001 --start" $SETUP_TIMEOUT "Running: ./setup.sh with memory storage"
 RESULT=$?
 log "INFO" "Setup script exited with code: $RESULT"
 if [ $RESULT -ne 0 ]; then
@@ -190,7 +235,9 @@ if [ $? -ne 0 ]; then
 fi
 
 # Wait for the application to be available
-wait_for_service "http://localhost:$TEST_PORT" || log "WARNING" "Application did not become available, but continuing anyway"
+wait_for_service "http://localhost:$TEST_PORT" $SERVICE_WAIT_TIMEOUT || {
+  log "WARNING" "Application did not become available, but continuing anyway"
+}
 
 # Make a minimal change to the login screen
 log "INFO" "Making a minimal change to the login screen..."
@@ -209,8 +256,9 @@ fi
 
 # Run the update-server script
 log "INFO" "Running the update-server script..."
-./update-server.sh
-if [ $? -ne 0 ]; then
+run_with_timeout "./update-server.sh" $UPDATE_TIMEOUT "Running: ./update-server.sh"
+RESULT=$?
+if [ $RESULT -ne 0 ]; then
   log "ERROR" "Failed to update the server."
   cleanup_containers
   exit 1
@@ -226,11 +274,13 @@ if [ $? -ne 0 ]; then
 fi
 
 # Wait for the application to be available again
-wait_for_service "http://localhost:$TEST_PORT" || log "WARNING" "Application did not become available after update, but continuing anyway"
+wait_for_service "http://localhost:$TEST_PORT" $SERVICE_WAIT_TIMEOUT || {
+  log "WARNING" "Application did not become available after update, but continuing anyway"
+}
 
 # Verify that the change is present
 log "INFO" "Verifying that the change is present..."
-RESPONSE=$(curl -s "http://localhost:$TEST_PORT" || echo "Failed to get response")
+RESPONSE=$(curl -s --max-time 30 "http://localhost:$TEST_PORT" || echo "Failed to get response")
 if echo "$RESPONSE" | grep -q "$TEST_MESSAGE"; then
   log "SUCCESS" "Change is present in the response!"
 else

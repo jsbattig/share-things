@@ -15,6 +15,11 @@ NC='\033[0m' # No Color
 BRANCH=${1:-"feature/postgresql-session-management"}
 WORK_DIR=${2:-"$(pwd)"}
 
+# Timeout settings
+SETUP_TIMEOUT=300  # 5 minutes timeout for setup.sh
+HEALTH_CHECK_TIMEOUT=60  # 1 minute timeout for health check
+CONTAINER_CHECK_TIMEOUT=60  # 1 minute timeout for container check
+
 # Function to log messages
 log() {
   local level=$1
@@ -41,34 +46,42 @@ check_command() {
   return 0
 }
 
-# Function to check if containers are running
+# Function to check if containers are running with timeout
 check_containers() {
   local expected_count=$1
+  local timeout=$CONTAINER_CHECK_TIMEOUT
+  local start_time=$(date +%s)
+  local end_time=$((start_time + timeout))
   
-  # Just use podman ps without filters for now
-  log "INFO" "Checking container status..."
-  echo "Running: podman ps -a"
-  podman ps -a
+  log "INFO" "Checking container status (timeout: ${timeout}s)..."
   
-  # Count all containers (running or not)
-  local container_count=$(podman ps -a | grep -c "share-things" || echo "0")
+  while [ $(date +%s) -lt $end_time ]; do
+    echo "Running: podman ps -a"
+    podman ps -a
+    
+    # Count all containers (running or not)
+    local container_count=$(podman ps -a | grep -c "share-things" || echo "0")
+    
+    if [ "$container_count" -ge "$expected_count" ]; then
+      log "SUCCESS" "Containers exist! ($container_count/$expected_count)"
+      
+      # Show logs for troubleshooting
+      log "INFO" "Checking container logs..."
+      log "INFO" "Backend container logs:"
+      podman logs $(podman ps -a | grep backend | awk '{print $1}') --tail 20 2>/dev/null || echo "No logs available for backend container"
+      
+      log "INFO" "Frontend container logs:"
+      podman logs $(podman ps -a | grep frontend | awk '{print $1}') --tail 20 2>/dev/null || echo "No logs available for frontend container"
+      
+      return 0
+    fi
+    
+    log "INFO" "Not all containers are ready yet. Waiting 5 seconds... ($(( end_time - $(date +%s) ))s remaining)"
+    sleep 5
+  done
   
-  if [ "$container_count" -ge "$expected_count" ]; then
-    log "SUCCESS" "Containers exist! ($container_count/$expected_count)"
-    
-    # Show logs for troubleshooting
-    log "INFO" "Checking container logs..."
-    log "INFO" "Backend container logs:"
-    podman logs $(podman ps -a | grep backend | awk '{print $1}') --tail 20 2>/dev/null || echo "No logs available for backend container"
-    
-    log "INFO" "Frontend container logs:"
-    podman logs $(podman ps -a | grep frontend | awk '{print $1}') --tail 20 2>/dev/null || echo "No logs available for frontend container"
-    
-    return 0
-  else
-    log "ERROR" "Not all containers exist. Expected $expected_count, but found $container_count."
-    return 1
-  fi
+  log "ERROR" "Container check timed out after ${timeout} seconds. Expected $expected_count containers, but found $container_count."
+  return 1
 }
 
 # Function to clean up containers
@@ -100,6 +113,59 @@ cleanup_env_files() {
   log "SUCCESS" "Environment files cleaned up."
 }
 
+# Function to run a command with timeout
+run_with_timeout() {
+  local cmd="$1"
+  local timeout="$2"
+  local message="$3"
+  
+  log "INFO" "$message (timeout: ${timeout}s)"
+  
+  # Create a temporary file for the command output
+  local output_file=$(mktemp)
+  
+  # Run the command with timeout
+  timeout $timeout bash -c "$cmd" > "$output_file" 2>&1
+  local exit_code=$?
+  
+  # Display the command output
+  cat "$output_file"
+  rm "$output_file"
+  
+  if [ $exit_code -eq 124 ]; then
+    log "ERROR" "Command timed out after ${timeout} seconds"
+    return 124
+  elif [ $exit_code -ne 0 ]; then
+    log "ERROR" "Command failed with exit code $exit_code"
+    return $exit_code
+  fi
+  
+  return 0
+}
+
+# Function to perform health check with timeout
+health_check() {
+  local url="$1"
+  local timeout="$2"
+  local start_time=$(date +%s)
+  local end_time=$((start_time + timeout))
+  
+  log "INFO" "Performing health check on $url (timeout: ${timeout}s)..."
+  
+  while [ $(date +%s) -lt $end_time ]; do
+    if curl -s -f "$url" > /dev/null 2>&1; then
+      log "SUCCESS" "Health check passed for $url"
+      return 0
+    fi
+    
+    log "INFO" "Health check failed, retrying in 5 seconds... ($(( end_time - $(date +%s) ))s remaining)"
+    sleep 5
+  done
+  
+  log "ERROR" "Health check timed out after ${timeout} seconds"
+  return 1
+}
+
 # Main script
 log "INFO" "=== ShareThings Setup Test on Rocky Linux ==="
 log "INFO" "This script will test the setup.sh script with both memory and PostgreSQL options."
@@ -111,6 +177,7 @@ echo ""
 log "INFO" "Checking required commands..."
 check_command "podman" || exit 1
 check_command "curl" || exit 1
+check_command "timeout" || exit 1
 
 # Configure Podman to allow short names
 log "INFO" "Configuring Podman to allow short names..."
@@ -143,8 +210,7 @@ sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpin
 
 # Test setup.sh with memory option
 log "INFO" "Testing setup.sh with memory option..."
-log "INFO" "Running: ./setup.sh with memory storage"
-./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports n --use-https n --expose-ports y --frontend-port 8080 --backend-port 3001 --start
+run_with_timeout "./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports n --use-https n --expose-ports y --frontend-port 8080 --backend-port 3001 --start" $SETUP_TIMEOUT "Running: ./setup.sh with memory storage"
 RESULT=$?
 log "INFO" "Setup script exited with code: $RESULT"
 if [ $RESULT -ne 0 ]; then
@@ -164,7 +230,7 @@ fi
 
 # Test the application
 log "INFO" "Testing the application..."
-curl -s http://localhost:3001/health || echo "Health check failed, but continuing anyway"
+health_check "http://localhost:3001/health" $HEALTH_CHECK_TIMEOUT || log "WARNING" "Health check failed, but continuing anyway"
 
 # Clean up after memory setup
 cleanup_containers
@@ -172,8 +238,7 @@ cleanup_env_files
 
 # Test setup.sh with PostgreSQL option
 log "INFO" "Testing setup.sh with PostgreSQL option..."
-log "INFO" "Running: ./setup.sh with PostgreSQL storage"
-./setup.sh --postgres --container-engine podman --hostname auto --use-custom-ports n --use-https n --expose-ports y --frontend-port 8080 --backend-port 3001 --pg-location l --pg-database sharethings --pg-user postgres --pg-password postgres --pg-ssl n --start
+run_with_timeout "./setup.sh --postgres --container-engine podman --hostname auto --use-custom-ports n --use-https n --expose-ports y --frontend-port 8080 --backend-port 3001 --pg-location l --pg-database sharethings --pg-user postgres --pg-password postgres --pg-ssl n --start" $SETUP_TIMEOUT "Running: ./setup.sh with PostgreSQL storage"
 RESULT=$?
 log "INFO" "Setup script exited with code: $RESULT"
 if [ $RESULT -ne 0 ]; then
@@ -193,7 +258,7 @@ fi
 
 # Test the application
 log "INFO" "Testing the application..."
-curl -s http://localhost:3001/health || echo "Health check failed, but continuing anyway"
+health_check "http://localhost:3001/health" $HEALTH_CHECK_TIMEOUT || log "WARNING" "Health check failed, but continuing anyway"
 
 # Clean up after PostgreSQL setup
 cleanup_containers
