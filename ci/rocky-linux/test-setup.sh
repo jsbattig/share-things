@@ -258,6 +258,30 @@ log "INFO" "Testing setup.sh with memory option..."
 run_with_timeout "./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports n --use-https n --expose-ports y --frontend-port 8080 --backend-port 3001 --start" $SETUP_TIMEOUT "Running: ./setup.sh with memory storage"
 RESULT=$?
 log "INFO" "Setup script exited with code: $RESULT"
+
+# Check if the docker-compose.yml file exists
+log "INFO" "Checking if docker-compose.yml file exists..."
+if [ -f "docker-compose.yml" ]; then
+  log "SUCCESS" "docker-compose.yml file exists."
+  log "INFO" "Contents of docker-compose.yml:"
+  cat docker-compose.yml
+else
+  log "ERROR" "docker-compose.yml file does not exist."
+fi
+
+# Check if podman-compose is installed
+log "INFO" "Checking if podman-compose is installed..."
+if command -v podman-compose &> /dev/null; then
+  log "SUCCESS" "podman-compose is installed."
+  log "INFO" "podman-compose version: $(podman-compose --version)"
+else
+  log "ERROR" "podman-compose is not installed."
+fi
+
+# Try to run podman-compose directly
+log "INFO" "Trying to run podman-compose directly..."
+podman-compose -f docker-compose.yml build || log "ERROR" "podman-compose build failed."
+podman-compose -f docker-compose.yml up -d || log "ERROR" "podman-compose up failed."
 if [ $RESULT -ne 0 ]; then
   log "ERROR" "Memory setup failed."
   cleanup_containers
