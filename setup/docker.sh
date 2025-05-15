@@ -2,209 +2,102 @@
 
 # Docker/Podman setup functions for ShareThings
 
-# Update Docker Compose configuration
-update_docker_compose() {
-  echo -e "${YELLOW}Updating Docker Compose configuration...${NC}"
+# Configure Docker/Podman
+configure_docker() {
+  echo -e "${BLUE}=== Container Engine Configuration ===${NC}"
   
-  # Check if PostgreSQL is enabled
-  if [[ $USE_POSTGRES =~ ^[Yy]$ ]] || [ "$SESSION_STORAGE_TYPE" = "postgresql" ]; then
-    # Get PostgreSQL configuration
-    if [ -f server/.env ]; then
-      PG_DATABASE=$(grep "PG_DATABASE=" server/.env | cut -d= -f2)
-      PG_USER=$(grep "PG_USER=" server/.env | cut -d= -f2)
-      PG_PASSWORD=$(grep "PG_PASSWORD=" server/.env | cut -d= -f2)
+  if [ "$TEST_MODE" = false ]; then
+    read -p "Which container engine do you want to use? (docker/podman) [${DEFAULT_ENGINE}]: " CONTAINER_ENGINE
+    CONTAINER_ENGINE=${CONTAINER_ENGINE:-$DEFAULT_ENGINE}
+  else
+    # In test mode, use the default engine
+    CONTAINER_ENGINE=$DEFAULT_ENGINE
+    echo -e "${YELLOW}Test mode: Using ${CONTAINER_ENGINE} as container engine.${NC}"
+  fi
+  
+  # Set compose command based on container engine
+  if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    COMPOSE_CMD="podman-compose"
+    CONTAINER_CMD="podman"
+  else
+    COMPOSE_CMD="docker-compose"
+    CONTAINER_CMD="docker"
+  fi
+  
+  echo -e "${GREEN}Using ${CONTAINER_ENGINE} for container operations${NC}"
+  
+  # Check if the selected container engine is installed
+  if ! command -v $CONTAINER_CMD &> /dev/null; then
+    echo -e "${RED}Error: ${CONTAINER_ENGINE} is not installed.${NC}"
+    echo "Please install ${CONTAINER_ENGINE} before running this script."
+    exit 1
+  fi
+  
+  # Check if the appropriate compose tool is installed
+  if ! command -v $COMPOSE_CMD &> /dev/null; then
+    echo -e "${RED}Error: ${COMPOSE_CMD} is not installed.${NC}"
+    echo "Please install ${COMPOSE_CMD} before running this script."
+    exit 1
+  fi
+  
+  # Apply Podman-specific configuration if needed
+  if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
+    echo -e "${YELLOW}Detected Podman. Applying Podman-specific configuration...${NC}"
+    
+    # Make the docker-entrypoint.sh script executable
+    if [ -f "client/docker-entrypoint.sh" ]; then
+      chmod +x client/docker-entrypoint.sh
+      echo -e "${GREEN}Made client/docker-entrypoint.sh executable.${NC}"
     else
-      PG_DATABASE=${PG_DATABASE:-sharethings}
-      PG_USER=${PG_USER:-postgres}
-      PG_PASSWORD=${PG_PASSWORD:-postgres}
+      echo -e "${YELLOW}Warning: client/docker-entrypoint.sh not found. Container networking might have issues.${NC}"
     fi
     
-    # Update docker-compose.yml to include PostgreSQL
-    if [ -f docker-compose.yml ]; then
-      # Check if postgres service already exists in the file
-      if ! grep -q "postgres:" docker-compose.yml; then
-        # Append postgres service to docker-compose.yml
-        cat >> docker-compose.yml << EOL
+    # Configure Podman to allow short names on Rocky Linux
+    if [ -f "/etc/redhat-release" ] && grep -q "Rocky Linux" /etc/redhat-release; then
+      echo -e "${YELLOW}Detected Rocky Linux. Configuring Podman to allow short names...${NC}"
+      
+      # Create or update the registries.conf file
+      if [ "$TEST_MODE" = false ]; then
+        # In normal mode, ask for sudo permission
+        echo "Podman on Rocky Linux requires configuration to allow short image names."
+        echo "This requires sudo access to create/modify /etc/containers/registries.conf"
+        
+        sudo mkdir -p /etc/containers
+        sudo bash -c 'cat > /etc/containers/registries.conf << EOL
+[registries.search]
+registries = ["docker.io", "quay.io"]
 
-  postgres:
-    image: postgres:17-alpine
-    container_name: share-things-postgres
-    environment:
-      - POSTGRES_USER=${PG_USER}
-      - POSTGRES_PASSWORD=${PG_PASSWORD}
-      - POSTGRES_DB=${PG_DATABASE}
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks:
-      app_network:
-        aliases:
-          - postgres
+[registries.insecure]
+registries = []
 
-volumes:
-  postgres-data:
-EOL
-        echo -e "${GREEN}Added PostgreSQL service to docker-compose.yml${NC}"
+[registries.block]
+registries = []
+
+[engine]
+short-name-mode="permissive"
+EOL'
+      else
+        # In test mode, just show a warning
+        echo -e "${YELLOW}Warning: Podman on Rocky Linux may require configuration to allow short image names.${NC}"
+        echo -e "${YELLOW}If you encounter 'short-name resolution enforced' errors, run the following commands:${NC}"
+        echo "sudo mkdir -p /etc/containers"
+        echo "sudo bash -c 'cat > /etc/containers/registries.conf << EOL"
+        echo "[registries.search]"
+        echo "registries = [\"docker.io\", \"quay.io\"]"
+        echo ""
+        echo "[registries.insecure]"
+        echo "registries = []"
+        echo ""
+        echo "[registries.block]"
+        echo "registries = []"
+        echo ""
+        echo "[engine]"
+        echo "short-name-mode=\"permissive\""
+        echo "EOL'"
       fi
-      
-      # Update backend service to depend on postgres
-      $SED_CMD '/backend:/,/networks:/s/depends_on:/depends_on:\n      - postgres/' docker-compose.yml
-      
-      # Add PostgreSQL environment variables to backend service
-      $SED_CMD '/backend:/,/networks:/s/environment:/environment:\n      - SESSION_STORAGE_TYPE=postgresql\n      - PG_HOST=postgres\n      - PG_PORT=5432\n      - PG_DATABASE='${PG_DATABASE}'\n      - PG_USER='${PG_USER}'\n      - PG_PASSWORD='${PG_PASSWORD}'\n      - PG_SSL=false/' docker-compose.yml
     fi
+    
+    echo -e "${GREEN}Podman-specific configuration applied.${NC}"
+    echo ""
   fi
-}
-
-# Create production compose file
-create_production_compose_file() {
-  cat > docker-compose.prod.temp.yml << EOL
-# Temporary production configuration for ShareThings Docker Compose
-
-services:
-  backend:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
-      args:
-        - PORT=${API_PORT:-3001}
-    container_name: share-things-backend
-    hostname: backend
-    environment:
-      - NODE_ENV=production
-      - PORT=${API_PORT:-3001}
-      # Session storage configuration
-      - SESSION_STORAGE_TYPE=${SESSION_STORAGE_TYPE:-memory}
-EOL
-
-  # Add PostgreSQL environment variables if using PostgreSQL
-  if [[ $USE_POSTGRES =~ ^[Yy]$ ]] || [ "$SESSION_STORAGE_TYPE" = "postgresql" ]; then
-    cat >> docker-compose.prod.temp.yml << EOL
-      # PostgreSQL configuration
-      - PG_HOST=${PG_HOST:-postgres}
-      - PG_PORT=${PG_PORT:-5432}
-      - PG_DATABASE=${PG_DATABASE:-sharethings}
-      - PG_USER=${PG_USER:-postgres}
-      - PG_PASSWORD=${PG_PASSWORD:-postgres}
-      - PG_SSL=${PG_SSL:-false}
-EOL
-  fi
-
-  # Continue with the rest of the file
-  cat >> docker-compose.prod.temp.yml << EOL
-    ports:
-      - "\${BACKEND_PORT:-3001}:${API_PORT:-3001}"
-    restart: always
-    networks:
-      app_network:
-        aliases:
-          - backend
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-EOL
-
-  # Add depends_on if using PostgreSQL
-  if [[ $USE_POSTGRES =~ ^[Yy]$ ]] || [ "$SESSION_STORAGE_TYPE" = "postgresql" ]; then
-    cat >> docker-compose.prod.temp.yml << EOL
-    depends_on:
-      - postgres
-EOL
-  fi
-
-  # Continue with frontend service
-  cat >> docker-compose.prod.temp.yml << EOL
-
-  frontend:
-    build:
-      context: ./client
-      dockerfile: Dockerfile
-      args:
-        - API_URL=auto
-        - SOCKET_URL=auto
-        - API_PORT=${API_PORT:-3001}
-        - VITE_API_PORT=${API_PORT:-3001}
-    container_name: share-things-frontend
-    environment:
-      - API_PORT=${API_PORT:-3001}
-    ports:
-      - "\${FRONTEND_PORT:-8080}:80"
-    restart: always
-    depends_on:
-      - backend
-    networks:
-      app_network:
-        aliases:
-          - frontend
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-EOL
-
-  # Add PostgreSQL service if using PostgreSQL
-  if [[ $USE_POSTGRES =~ ^[Yy]$ ]] || [ "$SESSION_STORAGE_TYPE" = "postgresql" ]; then
-    cat >> docker-compose.prod.temp.yml << EOL
-
-  postgres:
-    image: postgres:17-alpine
-    container_name: share-things-postgres
-    environment:
-      - POSTGRES_USER=${PG_USER:-postgres}
-      - POSTGRES_PASSWORD=${PG_PASSWORD:-postgres}
-      - POSTGRES_DB=${PG_DATABASE:-sharethings}
-    ports:
-      - "\${PG_HOST_PORT:-5432}:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    networks:
-      app_network:
-        aliases:
-          - postgres
-    restart: always
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-EOL
-  fi
-
-  # Add network and volume configuration
-  cat >> docker-compose.prod.temp.yml << EOL
-
-# Explicit network configuration
-networks:
-  app_network:
-    driver: bridge
-EOL
-
-  # Add volumes if using PostgreSQL
-  if [[ $USE_POSTGRES =~ ^[Yy]$ ]] || [ "$SESSION_STORAGE_TYPE" = "postgresql" ]; then
-    cat >> docker-compose.prod.temp.yml << EOL
-
-# Volumes for data persistence
-volumes:
-  postgres-data:
-EOL
-  fi
-}
-
-# Make scripts executable
-make_scripts_executable() {
-  echo -e "${YELLOW}Making scripts executable...${NC}"
-  
-  # Make setup scripts executable
-  chmod +x setup/*.sh
-  
-  # Make docker-entrypoint.sh executable if it exists
-  if [ -f client/docker-entrypoint.sh ]; then
-    chmod +x client/docker-entrypoint.sh
-  fi
-  
-  echo -e "${GREEN}Scripts are now executable.${NC}"
 }

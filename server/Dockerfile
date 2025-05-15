@@ -1,38 +1,20 @@
-# Build stage
-FROM node:18-alpine as builder
-
+FROM docker.io/library/node:18-alpine AS builder
 WORKDIR /app
-
-# Copy package files and install dependencies
 COPY package*.json ./
 RUN npm install
-
-# Copy source code
 COPY . .
-
-# Build the application
 RUN npm run build
 
-# Production stage
-FROM node:18-alpine
-
+FROM docker.io/library/node:18-alpine
 WORKDIR /app
-
-# Copy package files and install production dependencies only
 COPY package*.json ./
 RUN npm install --only=production
-
-# Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
 
-# Set default port
 ARG PORT=3001
 ENV PORT=${PORT}
-
-# Make sure the port is explicitly set and used
 ENV LISTEN_PORT=${PORT}
 
-# Create health check endpoint
 RUN echo 'const http = require("http"); \
     const server = http.createServer((req, res) => { \
       if (req.url === "/health") { \
@@ -47,8 +29,6 @@ RUN echo 'const http = require("http"); \
     server.listen(port); \
     console.log(`Health check server listening on port ${port}`);' > /app/health.js
 
-# Expose the port
 EXPOSE ${PORT}
 
-# Start the server
 CMD ["node", "dist/index.js"]
