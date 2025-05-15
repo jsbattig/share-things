@@ -395,7 +395,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
         
         // Session is valid, proceed with sending content
-        socket.emit('content', { sessionId, content, data }, (response: ContentResponse) => {
+        socket!.emit('content', { sessionId, content, data }, (response: ContentResponse) => {
           if (response && !response.success) {
             console.error('[Socket] Failed to send content:', response.error);
             
@@ -461,7 +461,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
         
         // Session is valid, proceed with sending chunk
-        socket.emit('chunk', { sessionId, chunk }, (response: ContentResponse) => {
+        socket!.emit('chunk', { sessionId, chunk }, (response: ContentResponse) => {
           if (response && !response.success) {
             console.error('[Socket] Failed to send chunk:', response.error);
             
@@ -485,6 +485,38 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return false;
     }
     return true;
+  };
+
+  /**
+   * Ensures the socket is connected and session is valid
+   * @param sessionId Session ID
+   * @returns Promise that resolves to true if connected and session is valid
+   */
+  const ensureConnected = async (sessionId: string): Promise<boolean> => {
+    if (!socket) {
+      console.log('[Socket] Socket not initialized, attempting to connect');
+      connect();
+      return false;
+    }
+
+    if (!socket.connected) {
+      console.log('[Socket] Socket not connected, attempting to connect');
+      socket.connect();
+      return false;
+    }
+
+    // Verify session is valid
+    return new Promise<boolean>((resolve) => {
+      socket!.emit('ping', { sessionId }, (response: { valid: boolean }) => {
+        if (!response || !response.valid) {
+          console.log('[Socket] Session invalid during connection check');
+          resolve(false);
+        } else {
+          console.log('[Socket] Connection check: Session valid');
+          resolve(true);
+        }
+      });
+    });
   };
 
   // Context value
