@@ -51,10 +51,11 @@ check_running_containers() {
   log "INFO" "Checking for running containers..."
   
   # Check if any share-things containers are running
-  local container_count=$(podman ps | grep -c "share-things" || echo "0")
+  local container_count
+  container_count=$(podman ps | grep -c "share-things" || echo "0")
   
-  if [ "$container_count" -gt 0 ]; then
-    log "WARNING" "Found $container_count running share-things containers."
+  if [ "${container_count}" -gt 0 ]; then
+    log "WARNING" "Found ${container_count} running share-things containers."
     return 0
   else
     log "INFO" "No running share-things containers found."
@@ -76,10 +77,11 @@ check_containers() {
     podman ps -a
     
     # Count all containers (running or not)
-    local container_count=$(podman ps -a | grep -c "share-things" || echo "0")
+    local container_count
+    container_count=$(podman ps -a | grep -c "share-things" || echo "0")
     
-    if [ "$container_count" -ge "$expected_count" ]; then
-      log "SUCCESS" "Containers exist! ($container_count/$expected_count)"
+    if [ "${container_count}" -ge "${expected_count}" ]; then
+      log "SUCCESS" "Containers exist! (${container_count}/${expected_count})"
       
       # Show logs for troubleshooting
       log "INFO" "Checking container logs..."
@@ -96,7 +98,7 @@ check_containers() {
     sleep 5
   done
   
-  log "ERROR" "Container check timed out after ${timeout} seconds. Expected $expected_count containers, but found $container_count."
+  log "ERROR" "Container check timed out after ${timeout} seconds. Expected ${expected_count} containers, but found ${container_count}."
   return 1
 }
 
