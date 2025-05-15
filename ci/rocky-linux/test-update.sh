@@ -43,6 +43,36 @@ check_command() {
   return 0
 }
 
+# Function to check if containers are running
+check_containers() {
+  local expected_count=$1
+  
+  # Just use podman ps without filters for now
+  log "INFO" "Checking container status..."
+  echo "Running: podman ps"
+  podman ps
+  
+  # Count running containers
+  local running_count=$(podman ps | grep -c "share-things" || echo "0")
+  
+  if [ "$running_count" -ge "$expected_count" ]; then
+    log "SUCCESS" "Containers are running successfully! ($running_count/$expected_count)"
+    return 0
+  else
+    log "ERROR" "Not all containers are running. Expected $expected_count, but found $running_count."
+    
+    # Show logs for troubleshooting
+    log "INFO" "Checking container logs for errors..."
+    log "INFO" "Backend container logs:"
+    podman logs $(podman ps -a | grep backend | awk '{print $1}') --tail 20 2>/dev/null || echo "No logs available for backend container"
+    
+    log "INFO" "Frontend container logs:"
+    podman logs $(podman ps -a | grep frontend | awk '{print $1}') --tail 20 2>/dev/null || echo "No logs available for frontend container"
+    
+    return 1
+  fi
+}
+
 # Function to clean up containers
 cleanup_containers() {
   log "INFO" "Cleaning up containers..."
@@ -158,6 +188,15 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+# Check if containers are running
+log "INFO" "Checking if containers are running..."
+check_containers 2
+if [ $? -ne 0 ]; then
+  log "ERROR" "Container check failed."
+  cleanup_containers
+  exit 1
+fi
+
 # Wait for the application to be available
 wait_for_service "http://localhost:$TEST_PORT"
 if [ $? -ne 0 ]; then
@@ -186,6 +225,15 @@ log "INFO" "Running the update-server script..."
 ./update-server.sh
 if [ $? -ne 0 ]; then
   log "ERROR" "Failed to update the server."
+  cleanup_containers
+  exit 1
+fi
+
+# Check if containers are running after update
+log "INFO" "Checking if containers are running after update..."
+check_containers 2
+if [ $? -ne 0 ]; then
+  log "ERROR" "Container check failed after update."
   cleanup_containers
   exit 1
 fi

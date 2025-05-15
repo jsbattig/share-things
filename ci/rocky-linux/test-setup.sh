@@ -44,13 +44,29 @@ check_command() {
 # Function to check if containers are running
 check_containers() {
   local expected_count=$1
-  local actual_count=$(podman ps --filter label=io.podman.compose.project=share-things | grep -c "share-things" || echo "0")
   
-  if [ "$actual_count" -ge "$expected_count" ]; then
-    log "SUCCESS" "Containers are running successfully! ($actual_count/$expected_count)"
+  # Just use podman ps without filters for now
+  log "INFO" "Checking container status..."
+  echo "Running: podman ps"
+  podman ps
+  
+  # Count running containers
+  local running_count=$(podman ps | grep -c "share-things" || echo "0")
+  
+  if [ "$running_count" -ge "$expected_count" ]; then
+    log "SUCCESS" "Containers are running successfully! ($running_count/$expected_count)"
     return 0
   else
-    log "ERROR" "Not all containers are running. Expected $expected_count, but found $actual_count."
+    log "ERROR" "Not all containers are running. Expected $expected_count, but found $running_count."
+    
+    # Show logs for troubleshooting
+    log "INFO" "Checking container logs for errors..."
+    log "INFO" "Backend container logs:"
+    podman logs $(podman ps -a | grep backend | awk '{print $1}') --tail 20 2>/dev/null || echo "No logs available for backend container"
+    
+    log "INFO" "Frontend container logs:"
+    podman logs $(podman ps -a | grep frontend | awk '{print $1}') --tail 20 2>/dev/null || echo "No logs available for frontend container"
+    
     return 1
   fi
 }
