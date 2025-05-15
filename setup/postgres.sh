@@ -6,6 +6,36 @@
 configure_session_storage() {
   echo -e "${BLUE}=== Session Storage Configuration ===${NC}"
 
+  # Check if session storage type is provided as an argument
+  if [ -n "$SESSION_STORAGE_TYPE_ARG" ]; then
+    if [ "$SESSION_STORAGE_TYPE_ARG" = "postgresql" ]; then
+      USE_POSTGRES="y"
+      echo -e "${YELLOW}Using PostgreSQL for session storage (from argument).${NC}"
+    else
+      USE_POSTGRES="n"
+      echo -e "${YELLOW}Using in-memory session storage (from argument).${NC}"
+      
+      # Update server/.env file with in-memory configuration
+      if grep -q "SESSION_STORAGE_TYPE=" server/.env 2>/dev/null; then
+        # Replace existing configuration
+        $SED_CMD "s/SESSION_STORAGE_TYPE=.*/SESSION_STORAGE_TYPE=memory/" server/.env
+      else
+        # Add new configuration
+        cat >> server/.env << EOL
+
+# Session Storage Configuration
+SESSION_STORAGE_TYPE=memory
+EOL
+      fi
+
+      # Set environment variable for Docker Compose
+      export SESSION_STORAGE_TYPE="memory"
+
+      echo -e "${GREEN}In-memory storage configuration added to server/.env${NC}"
+      return 0
+    fi
+  fi
+
   # Check if PostgreSQL configuration already exists
   PG_CONFIGURED=false
   if [ -f server/.env ] && grep -q "SESSION_STORAGE_TYPE=postgresql" server/.env; then
@@ -25,7 +55,20 @@ configure_session_storage() {
     echo -e "  User: ${PG_USER}"
     echo -e "  Docker managed: ${PG_DOCKER}"
     
-    if [ "$TEST_MODE" = false ] && [ -z "$SESSION_STORAGE_TYPE_ARG" ]; then
+    # If memory storage is explicitly requested, override the existing PostgreSQL configuration
+    if [ "$USE_POSTGRES" = false ]; then
+      PG_CONFIGURED=false
+      echo -e "${YELLOW}Overriding existing PostgreSQL configuration with memory storage...${NC}"
+      
+      # Update server/.env file with in-memory configuration
+      $SED_CMD "s/SESSION_STORAGE_TYPE=.*/SESSION_STORAGE_TYPE=memory/" server/.env
+      
+      # Set environment variable for Docker Compose
+      export SESSION_STORAGE_TYPE="memory"
+      
+      echo -e "${GREEN}In-memory storage configuration added to server/.env${NC}"
+      return 0
+    elif [ "$TEST_MODE" = false ] && [ -z "$SESSION_STORAGE_TYPE_ARG" ]; then
       read -p "Do you want to keep this configuration? (y/n): " KEEP_PG_CONFIG
       if [[ $KEEP_PG_CONFIG =~ ^[Yy]$ ]]; then
         echo -e "${GREEN}Keeping existing PostgreSQL configuration.${NC}"
