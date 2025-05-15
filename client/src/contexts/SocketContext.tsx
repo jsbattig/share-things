@@ -395,7 +395,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
         
         // Session is valid, proceed with sending content
-        socket!.emit('content', { sessionId, content, data }, (response: ContentResponse) => {
+        if (socket) {
+          socket.emit('content', { sessionId, content, data }, (response: ContentResponse) => {
           if (response && !response.success) {
             console.error('[Socket] Failed to send content:', response.error);
             
@@ -412,7 +413,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           } else {
             console.log('[Socket] Content sent successfully for:', content.contentId);
           }
-        });
+          });
+        }
       });
     } else {
       console.error('[Socket] Cannot send content: Socket is null');
@@ -461,7 +463,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
         
         // Session is valid, proceed with sending chunk
-        socket!.emit('chunk', { sessionId, chunk }, (response: ContentResponse) => {
+        if (socket) {
+          socket.emit('chunk', { sessionId, chunk }, (response: ContentResponse) => {
           if (response && !response.success) {
             console.error('[Socket] Failed to send chunk:', response.error);
             
@@ -478,7 +481,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           } else {
             console.log(`[Socket] Chunk sent successfully for chunk ${chunk.chunkIndex}`);
           }
-        });
+          });
+        }
       });
     } else {
       console.error('[Socket] Cannot send chunk: Socket is null');
@@ -507,7 +511,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // Verify session is valid
     return new Promise<boolean>((resolve) => {
-      socket!.emit('ping', { sessionId }, (response: { valid: boolean }) => {
+      if (socket) {
+        socket.emit('ping', { sessionId }, (response: { valid: boolean }) => {
         if (!response || !response.valid) {
           console.log('[Socket] Session invalid during connection check');
           resolve(false);
@@ -515,7 +520,10 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           console.log('[Socket] Connection check: Session valid');
           resolve(true);
         }
-      });
+        });
+      } else {
+        resolve(false);
+      }
     });
   };
 
