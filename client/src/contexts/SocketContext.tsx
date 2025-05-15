@@ -44,6 +44,7 @@ interface SocketContextType {
   sendContent: (sessionId: string, content: ContentMetadata, data?: string) => void;
   sendChunk: (sessionId: string, chunk: ChunkData) => void;
   rejoinSession: (sessionId: string, clientName: string, passphrase: string) => Promise<void>;
+  ensureConnected: (sessionId: string) => Promise<boolean>;
 }
 
 // Create context
@@ -63,6 +64,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [isRejoining, setIsRejoining] = useState<boolean>(false);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'reconnecting'>('disconnected');
+  const [pingInterval, setPingInterval] = useState<NodeJS.Timeout | null>(null);
 
   // Initialize socket
   useEffect(() => {
@@ -163,6 +165,35 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     if (socket && !socket.connected) {
       socket.connect();
     }
+    
+    // Setup periodic health check
+    if (!pingInterval) {
+      const interval = setInterval(() => {
+        if (socket && socket.connected) {
+          const sessionId = localStorage.getItem('sessionId');
+          if (sessionId) {
+            console.log('[Socket] Sending health check ping');
+            socket.emit('ping', { sessionId }, (response: { valid: boolean, error?: string }) => {
+              if (response && !response.valid) {
+                console.warn('[Socket] Session invalid during health check:', response.error);
+                
+                // Try to rejoin if possible
+                const clientName = localStorage.getItem('clientName');
+                const passphrase = localStorage.getItem('passphrase');
+                if (clientName && passphrase) {
+                  console.log('[Socket] Auto-rejoining after failed health check');
+                  rejoinSession(sessionId, clientName, passphrase);
+                }
+              } else {
+                console.log('[Socket] Health check: Session valid');
+              }
+            });
+          }
+        }
+      }, 30000); // Check every 30 seconds
+      
+      setPingInterval(interval);
+    }
 
     // Handle visibility change events
     const handleVisibilityChange = () => {
@@ -208,6 +239,12 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       socket?.off('reconnect_error');
       socket?.off('reconnect_failed');
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      
+      // Clear ping interval
+      if (pingInterval) {
+        clearInterval(pingInterval);
+        setPingInterval(null);
+      }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -334,23 +371,48 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return false;
       }
       
-      socket.emit('content', { sessionId, content, data }, (response: ContentResponse) => {
-        if (response && !response.success) {
-          console.error('[Socket] Failed to send content:', response.error);
+      // First verify session is still valid
+      socket.emit('ping', { sessionId }, (pingResponse: { valid: boolean, error?: string }) => {
+        if (!pingResponse || !pingResponse.valid) {
+          console.warn('[Socket] Session invalid before sending content:', pingResponse?.error);
           
-          // If token is invalid, try to rejoin the session
-          if (response.error === 'Invalid session' || response.error === 'Invalid token') {
-            const clientName = localStorage.getItem('clientName');
-            const passphrase = localStorage.getItem('passphrase');
-            
-            if (clientName && passphrase) {
-              console.log('[Socket] Session token invalid, attempting to rejoin');
-              rejoinSession(sessionId, clientName, passphrase);
-            }
+          // Try to rejoin if possible
+          const clientName = localStorage.getItem('clientName');
+          const passphrase = localStorage.getItem('passphrase');
+          if (clientName && passphrase) {
+            console.log('[Socket] Attempting to rejoin before sending content');
+            rejoinSession(sessionId, clientName, passphrase)
+              .then(() => {
+                // Try sending content again after rejoining
+                console.log('[Socket] Retrying content send after rejoining');
+                sendContent(sessionId, content, data);
+              })
+              .catch(err => {
+                console.error('[Socket] Failed to rejoin session:', err);
+              });
           }
-        } else {
-          console.log('[Socket] Content sent successfully for:', content.contentId);
+          return;
         }
+        
+        // Session is valid, proceed with sending content
+        socket.emit('content', { sessionId, content, data }, (response: ContentResponse) => {
+          if (response && !response.success) {
+            console.error('[Socket] Failed to send content:', response.error);
+            
+            // If token is invalid, try to rejoin the session
+            if (response.error === 'Invalid session' || response.error === 'Invalid token' || response.error === 'Session not found') {
+              const clientName = localStorage.getItem('clientName');
+              const passphrase = localStorage.getItem('passphrase');
+              
+              if (clientName && passphrase) {
+                console.log('[Socket] Session token invalid, attempting to rejoin');
+                rejoinSession(sessionId, clientName, passphrase);
+              }
+            }
+          } else {
+            console.log('[Socket] Content sent successfully for:', content.contentId);
+          }
+        });
       });
     } else {
       console.error('[Socket] Cannot send content: Socket is null');
@@ -375,23 +437,48 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         return false;
       }
       
-      socket.emit('chunk', { sessionId, chunk }, (response: ContentResponse) => {
-        if (response && !response.success) {
-          console.error('[Socket] Failed to send chunk:', response.error);
+      // First verify session is still valid
+      socket.emit('ping', { sessionId }, (pingResponse: { valid: boolean, error?: string }) => {
+        if (!pingResponse || !pingResponse.valid) {
+          console.warn('[Socket] Session invalid before sending chunk:', pingResponse?.error);
           
-          // If token is invalid, try to rejoin the session
-          if (response.error === 'Invalid session' || response.error === 'Invalid token') {
-            const clientName = localStorage.getItem('clientName');
-            const passphrase = localStorage.getItem('passphrase');
-            
-            if (clientName && passphrase) {
-              console.log('[Socket] Session token invalid, attempting to rejoin');
-              rejoinSession(sessionId, clientName, passphrase);
-            }
+          // Try to rejoin if possible
+          const clientName = localStorage.getItem('clientName');
+          const passphrase = localStorage.getItem('passphrase');
+          if (clientName && passphrase) {
+            console.log('[Socket] Attempting to rejoin before sending chunk');
+            rejoinSession(sessionId, clientName, passphrase)
+              .then(() => {
+                // Try sending chunk again after rejoining
+                console.log('[Socket] Retrying chunk send after rejoining');
+                sendChunk(sessionId, chunk);
+              })
+              .catch(err => {
+                console.error('[Socket] Failed to rejoin session:', err);
+              });
           }
-        } else {
-          console.log(`[Socket] Chunk sent successfully for chunk ${chunk.chunkIndex}`);
+          return;
         }
+        
+        // Session is valid, proceed with sending chunk
+        socket.emit('chunk', { sessionId, chunk }, (response: ContentResponse) => {
+          if (response && !response.success) {
+            console.error('[Socket] Failed to send chunk:', response.error);
+            
+            // If token is invalid, try to rejoin the session
+            if (response.error === 'Invalid session' || response.error === 'Invalid token' || response.error === 'Session not found') {
+              const clientName = localStorage.getItem('clientName');
+              const passphrase = localStorage.getItem('passphrase');
+              
+              if (clientName && passphrase) {
+                console.log('[Socket] Session token invalid, attempting to rejoin');
+                rejoinSession(sessionId, clientName, passphrase);
+              }
+            }
+          } else {
+            console.log(`[Socket] Chunk sent successfully for chunk ${chunk.chunkIndex}`);
+          }
+        });
       });
     } else {
       console.error('[Socket] Cannot send chunk: Socket is null');
@@ -411,7 +498,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     leaveSession,
     sendContent,
     sendChunk,
-    rejoinSession
+    rejoinSession,
+    ensureConnected
   };
 
   return (

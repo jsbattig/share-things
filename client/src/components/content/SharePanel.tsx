@@ -66,7 +66,7 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Context
-  const { socket, sendContent, sendChunk } = useSocket();
+  const { socket, sendContent, sendChunk, ensureConnected } = useSocket();
   const { addContent } = useContentStore();
   
   // Toast
@@ -92,6 +92,21 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
     }
     
     setIsSharing(true);
+    
+    // Ensure connection is valid before proceeding
+    const isConnected = await ensureConnected(sessionId);
+    if (!isConnected) {
+      console.error('[ShareText] Failed to ensure connection before sharing');
+      toast({
+        title: 'Connection error',
+        description: 'Could not verify connection to server. Please try again.',
+        status: 'error',
+        duration: 3000,
+        isClosable: true
+      });
+      setIsSharing(false);
+      return;
+    }
     
     try {
       console.log('[ShareText] Starting text sharing process');
@@ -204,6 +219,21 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
   const shareFile = async (file: ExtendedFile) => {
     setIsSharing(true);
     setUploadProgress(0);
+    
+    // Ensure connection is valid before proceeding
+    const isConnected = await ensureConnected(sessionId);
+    if (!isConnected) {
+      console.error('[ShareFile] Failed to ensure connection before sharing');
+      toast({
+        title: 'Connection error',
+        description: 'Could not verify connection to server. Please try again.',
+        status: 'error',
+        duration: 3000,
+        isClosable: true
+      });
+      setIsSharing(false);
+      return;
+    }
     
     try {
       // Create content metadata
@@ -390,6 +420,20 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
    */
   const handlePaste = async () => {
     try {
+      // First ensure we have a valid connection before attempting paste
+      const isConnected = await ensureConnected(sessionId);
+      if (!isConnected) {
+        console.error('[Paste] Failed to ensure connection before pasting');
+        toast({
+          title: 'Connection error',
+          description: 'Could not verify connection to server. Please try again.',
+          status: 'error',
+          duration: 3000,
+          isClosable: true
+        });
+        return;
+      }
+      
       const clipboardItems = await navigator.clipboard.read();
       
       for (const clipboardItem of clipboardItems) {

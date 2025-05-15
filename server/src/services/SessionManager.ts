@@ -279,29 +279,47 @@ export class SessionManager {
    */
   private cleanupExpiredSessions(): void {
     const now = new Date();
+    console.log(`[SessionManager] Running cleanup check at ${now.toISOString()}`);
     
     for (const [sessionId, auth] of this.sessionAuth.entries()) {
       const elapsed = now.getTime() - auth.lastActivity.getTime();
+      const elapsedSeconds = Math.floor(elapsed / 1000);
+      
+      // Log sessions that are getting close to timeout
+      if (elapsed > (this.sessionTimeout * 0.8) && elapsed <= this.sessionTimeout) {
+        console.log(`[SessionManager] Session ${sessionId} approaching timeout (inactive for ${elapsedSeconds}s, timeout at ${this.sessionTimeout / 1000}s)`);
+      }
       
       if (elapsed > this.sessionTimeout) {
         // Get session
         const session = this.sessions.get(sessionId);
         
-        // If session has no clients or timeout exceeded, remove it
-        if (!session || session.clients.size === 0) {
-          console.log(`Session ${sessionId} expired (inactive for ${elapsed / 1000}s)`);
+        console.log(`[SessionManager] Session ${sessionId} expired (inactive for ${elapsedSeconds}s)`);
+        
+        // If session exists, disconnect all clients
+        if (session) {
+          const clientCount = session.clients.size;
+          console.log(`[SessionManager] Disconnecting ${clientCount} clients from expired session ${sessionId}`);
           
-          // Remove session
-          this.sessions.delete(sessionId);
-          this.sessionAuth.delete(sessionId);
-          
-          // Remove associated tokens
-          for (const [clientId] of this.sessionTokens.entries()) {
-            if (session?.clients.has(clientId)) {
-              this.sessionTokens.delete(clientId);
-            }
+          // Disconnect all clients
+          for (const [clientId, client] of session.clients.entries()) {
+            console.log(`[SessionManager] Disconnecting client ${clientId} from expired session ${sessionId}`);
+            client.sendNotification('session-expired', {
+              sessionId,
+              message: 'Session expired due to inactivity'
+            });
+            
+            // Remove client token
+            this.sessionTokens.delete(clientId);
           }
         }
+        
+        // Remove session
+        this.sessions.delete(sessionId);
+        this.sessionAuth.delete(sessionId);
+        
+        // Log successful cleanup
+        console.log(`[SessionManager] Successfully removed expired session ${sessionId}`);
       }
     }
   }

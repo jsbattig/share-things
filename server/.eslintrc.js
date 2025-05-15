@@ -12,14 +12,16 @@ module.exports = {
   },
   parserOptions: {
     ecmaVersion: 2020,
-    sourceType: 'module'
+    sourceType: 'module',
+    warnOnUnsupportedTypeScriptVersion: false
   },
   rules: {
-    '@typescript-eslint/ban-types': 'warn',
-    '@typescript-eslint/no-var-requires': 'warn',
-    '@typescript-eslint/no-explicit-any': 'warn',
-    '@typescript-eslint/no-unused-vars': 'warn',
-    '@typescript-eslint/no-non-null-assertion': 'warn'
+    '@typescript-eslint/ban-types': 'error',
+    '@typescript-eslint/no-var-requires': 'error',
+    '@typescript-eslint/no-explicit-any': 'error',
+    '@typescript-eslint/no-unused-vars': 'error',
+    '@typescript-eslint/no-non-null-assertion': 'error',
+    '@typescript-eslint/ban-ts-comment': 'error'
   },
   ignorePatterns: ['dist/**/*']
 };

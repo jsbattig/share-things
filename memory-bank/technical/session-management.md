@@ -112,41 +112,61 @@ private generateSessionToken(): string {
 localStorage.setItem('sessionToken', response.token);
 ```
 
-## Session Expiration
+## Session Expiration and Reconnection
 
 Sessions expire after a period of inactivity:
 
 1. The server tracks the last activity timestamp for each session
 2. If no activity occurs for the configured timeout period (default: 10 minutes), the session is expired
 3. Expired sessions are automatically cleaned up
+4. Clients are notified when their session expires
+5. Clients automatically attempt to rejoin when a session expires
 
 ```typescript
 // Server-side session cleanup
 private cleanupExpiredSessions(): void {
   const now = new Date();
+  console.log(`[SessionManager] Running cleanup check at ${now.toISOString()}`);
   
   for (const [sessionId, auth] of this.sessionAuth.entries()) {
     const elapsed = now.getTime() - auth.lastActivity.getTime();
+    const elapsedSeconds = Math.floor(elapsed / 1000);
+    
+    // Log sessions that are getting close to timeout
+    if (elapsed > (this.sessionTimeout * 0.8) && elapsed <= this.sessionTimeout) {
+      console.log(`[SessionManager] Session ${sessionId} approaching timeout (inactive for ${elapsedSeconds}s, timeout at ${this.sessionTimeout / 1000}s)`);
+    }
     
     if (elapsed > this.sessionTimeout) {
       // Get session
       const session = this.sessions.get(sessionId);
       
-      // If session has no clients or timeout exceeded, remove it
-      if (!session || session.clients.size === 0) {
-        console.log(`Session ${sessionId} expired (inactive for ${elapsed / 1000}s)`);
+      console.log(`[SessionManager] Session ${sessionId} expired (inactive for ${elapsedSeconds}s)`);
+      
+      // If session exists, disconnect all clients
+      if (session) {
+        const clientCount = session.clients.size;
+        console.log(`[SessionManager] Disconnecting ${clientCount} clients from expired session ${sessionId}`);
         
-        // Remove session
-        this.sessions.delete(sessionId);
-        this.sessionAuth.delete(sessionId);
-        
-        // Remove associated tokens
-        for (const [clientId, _] of this.sessionTokens.entries()) {
-          if (session?.clients.has(clientId)) {
-            this.sessionTokens.delete(clientId);
-          }
+        // Disconnect all clients
+        for (const [clientId, client] of session.clients.entries()) {
+          console.log(`[SessionManager] Disconnecting client ${clientId} from expired session ${sessionId}`);
+          client.sendNotification('session-expired', {
+            sessionId,
+            message: 'Session expired due to inactivity'
+          });
+          
+          // Remove client token
+          this.sessionTokens.delete(clientId);
         }
       }
+      
+      // Remove session
+      this.sessions.delete(sessionId);
+      this.sessionAuth.delete(sessionId);
+      
+      // Log successful cleanup
+      console.log(`[SessionManager] Successfully removed expired session ${sessionId}`);
     }
   }
 }
@@ -248,8 +268,11 @@ const joinSession = async (sessionId: string, clientName: string, passphrase: st
       // Join session
       socket.emit('join', { sessionId, clientName, fingerprint }, (response: any) => {
         if (response.success) {
-          // Store session token
+          // Store session token and credentials for potential reconnection
           localStorage.setItem('sessionToken', response.token);
+          localStorage.setItem('sessionId', sessionId);
+          localStorage.setItem('clientName', clientName);
+          localStorage.setItem('passphrase', passphrase);
           resolve(response);
         } else {
           reject(new Error(response.error || 'Failed to join session'));
@@ -260,6 +283,41 @@ const joinSession = async (sessionId: string, clientName: string, passphrase: st
       reject(new Error('Failed to create passphrase fingerprint'));
     }
   });
+};
+
+// Rejoin session (used for automatic reconnection)
+const rejoinSession = async (sessionId: string, clientName: string, passphrase: string) => {
+  if (!socket || !socket.connected || isRejoining) return;
+  
+  try {
+    setIsRejoining(true);
+    console.log(`[Socket] Rejoining session ${sessionId} as ${clientName}`);
+    
+    // Create passphrase fingerprint
+    const fingerprint = await generateFingerprint(passphrase);
+    
+    // Join session
+    socket.emit('join', { sessionId, clientName, fingerprint }, (response: JoinResponse) => {
+      if (response.success) {
+        // Update session token
+        if (response.token) {
+          localStorage.setItem('sessionToken', response.token);
+        }
+        console.log('[Socket] Successfully rejoined session');
+        
+        // Notify application that we've rejoined
+        if (socket) {
+          socket.emit('client-rejoined', { sessionId, clientName });
+        }
+      } else {
+        console.error('[Socket] Failed to rejoin session:', response.error);
+      }
+      setIsRejoining(false);
+    });
+  } catch (error) {
+    console.error('[Socket] Error rejoining session:', error);
+    setIsRejoining(false);
+  }
 };
 ```
 
@@ -276,12 +334,178 @@ socket.use((packet, next) => {
     const sessionId = socket.data.sessionId;
     const token = socket.data.sessionToken;
     
-    if (!sessionId || !token || !sessionManager.validateSessionToken(socket.id, token)) {
+    if (!sessionId || !token) {
+      console.error(`[Middleware] Missing sessionId or token for ${event} event from client ${socket.id}`);
       return next(new Error('Invalid session'));
+    }
+    
+    if (!sessionManager.validateSessionToken(socket.id, token)) {
+      console.error(`[Middleware] Invalid token for ${event} event from client ${socket.id}`);
+      return next(new Error('Invalid session'));
+    }
+    
+    // Also check if session exists
+    const session = sessionManager.getSession(sessionId);
+    if (!session) {
+      console.error(`[Middleware] Session ${sessionId} not found for ${event} event from client ${socket.id}`);
+      return next(new Error('Session not found'));
     }
   }
   
   next();
+});
+```
+
+## Automatic Reconnection
+
+The client implements several mechanisms to ensure robust connection and session management:
+
+### 1. Periodic Health Checks
+
+```typescript
+// Setup periodic health check
+const interval = setInterval(() => {
+  if (socket && socket.connected) {
+    const sessionId = localStorage.getItem('sessionId');
+    if (sessionId) {
+      console.log('[Socket] Sending health check ping');
+      socket.emit('ping', { sessionId }, (response: { valid: boolean, error?: string }) => {
+        if (response && !response.valid) {
+          console.warn('[Socket] Session invalid during health check:', response.error);
+          
+          // Try to rejoin if possible
+          const clientName = localStorage.getItem('clientName');
+          const passphrase = localStorage.getItem('passphrase');
+          if (clientName && passphrase) {
+            console.log('[Socket] Auto-rejoining after failed health check');
+            rejoinSession(sessionId, clientName, passphrase);
+          }
+        } else {
+          console.log('[Socket] Health check: Session valid');
+        }
+      });
+    }
+  }
+}, 30000); // Check every 30 seconds
+```
+
+### 2. Action-Based Verification
+
+Before any content sharing action, the client verifies the session is still valid:
+
+```typescript
+// First verify session is still valid
+socket.emit('ping', { sessionId }, (pingResponse: { valid: boolean, error?: string }) => {
+  if (!pingResponse || !pingResponse.valid) {
+    console.warn('[Socket] Session invalid before sending content:', pingResponse?.error);
+    
+    // Try to rejoin if possible
+    const clientName = localStorage.getItem('clientName');
+    const passphrase = localStorage.getItem('passphrase');
+    if (clientName && passphrase) {
+      console.log('[Socket] Attempting to rejoin before sending content');
+      rejoinSession(sessionId, clientName, passphrase)
+        .then(() => {
+          // Try sending content again after rejoining
+          console.log('[Socket] Retrying content send after rejoining');
+          sendContent(sessionId, content, data);
+        })
+        .catch(err => {
+          console.error('[Socket] Failed to rejoin session:', err);
+        });
+    }
+    return;
+  }
+  
+  // Session is valid, proceed with sending content
+  // ...
+});
+```
+
+### 3. Visibility Change Detection
+
+When the app regains focus after being in the background:
+
+```typescript
+const handleVisibilityChange = async () => {
+  if (document.visibilityState === 'visible') {
+    console.log('[SessionPage] Page became visible, verifying connection...');
+    
+    // Force connection check and rejoin if needed
+    const isConnected = await ensureConnected(sessionId);
+    console.log(`[SessionPage] Connection check result: ${isConnected ? 'connected' : 'disconnected'}`);
+    
+    if (!isConnected) {
+      // If we failed to connect, show a message
+      toast({
+        title: 'Connection issue',
+        description: 'Reconnecting to session...',
+        status: 'warning',
+        duration: 3000,
+        isClosable: true
+      });
+    }
+  }
+};
+
+// Add visibility change listener
+document.addEventListener('visibilitychange', handleVisibilityChange);
+```
+
+### 4. Session Expiration Handling
+
+```typescript
+// Add socket expiration handler
+socket.on('session-expired', (data: { sessionId: string, message: string }) => {
+  if (data.sessionId === sessionId) {
+    console.log('[SessionPage] Session expired notification received');
+    
+    toast({
+      title: 'Session expired',
+      description: data.message || 'Your session has expired due to inactivity',
+      status: 'error',
+      duration: 5000,
+      isClosable: true
+    });
+    
+    // Try to rejoin if we have credentials
+    if (clientName && passphrase) {
+      console.log('[SessionPage] Attempting to rejoin expired session');
+      
+      rejoinSession(sessionId, clientName, passphrase)
+        .then(() => {
+          console.log('[SessionPage] Successfully rejoined after expiration');
+          
+          toast({
+            title: 'Reconnected',
+            description: 'Successfully reconnected to session',
+            status: 'success',
+            duration: 3000,
+            isClosable: true
+          });
+        })
+        .catch(err => {
+          console.error('[SessionPage] Failed to rejoin after expiration:', err);
+          
+          // Navigate to home page if rejoin fails
+          toast({
+            title: 'Session error',
+            description: 'Could not rejoin the session. Returning to home page.',
+            status: 'error',
+            duration: 5000,
+            isClosable: true
+          });
+          
+          // Clear session info and redirect
+          localStorage.removeItem('sessionId');
+          localStorage.removeItem('clientName');
+          localStorage.removeItem('passphrase');
+          localStorage.removeItem('sessionToken');
+          
+          navigate('/');
+        });
+    }
+  }
 });
 ```
 
@@ -290,8 +514,10 @@ socket.use((packet, next) => {
 1. **Passphrase Protection**: The passphrase is never transmitted to the server
 2. **Token Security**: Session tokens are cryptographically secure random strings
 3. **Session Isolation**: Each session is isolated from others
-4. **Expiration**: Inactive sessions are automatically expired
+4. **Expiration**: Inactive sessions are automatically expired and clients are notified
 5. **Validation**: All session operations require valid tokens
+6. **Automatic Reconnection**: Multiple mechanisms ensure clients maintain valid sessions
+7. **Proactive Health Checks**: Regular verification prevents silent session failures
 
 ## Configuration
 

@@ -243,6 +243,8 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
       try {
         const { sessionId, content, data: contentData } = data;
         
+        console.log(`[CONTENT] Client ${socket.id} sending content ${content.contentId} in session ${sessionId}`);
+        
         // Validate session
         if (socket.data.sessionId !== sessionId) {
           console.error(`Client ${socket.id} tried to share content in session ${sessionId} but is not in it`);
@@ -253,9 +255,22 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
         // Get session
         const session = sessionManager.getSession(sessionId);
         if (!session) {
+          console.error(`[CONTENT] Session ${sessionId} not found for content ${content.contentId}`);
           if (callback) callback({ success: false, error: 'Session not found' });
           return;
         }
+        
+        // Validate session token
+        const token = socket.data.sessionToken;
+        if (!token || !sessionManager.validateSessionToken(socket.id, token)) {
+          console.error(`[CONTENT] Invalid token for client ${socket.id} in session ${sessionId}`);
+          if (callback) callback({ success: false, error: 'Invalid token' });
+          return;
+        }
+        
+        // Check client count
+        const recipientCount = session.clients.size - 1; // Exclude sender
+        console.log(`[CONTENT] Broadcasting to ${recipientCount} recipients in session ${sessionId}`);
         
         // Broadcast content to other clients
         socket.to(sessionId).emit('content', {
@@ -345,8 +360,21 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
         const sessionId = socket.data.sessionId;
         const token = socket.data.sessionToken;
         
-        if (!sessionId || !token || !sessionManager.validateSessionToken(socket.id, token)) {
+        if (!sessionId || !token) {
+          console.error(`[Middleware] Missing sessionId or token for ${event} event from client ${socket.id}`);
           return next(new Error('Invalid session'));
+        }
+        
+        if (!sessionManager.validateSessionToken(socket.id, token)) {
+          console.error(`[Middleware] Invalid token for ${event} event from client ${socket.id}`);
+          return next(new Error('Invalid session'));
+        }
+        
+        // Also check if session exists
+        const session = sessionManager.getSession(sessionId);
+        if (!session) {
+          console.error(`[Middleware] Session ${sessionId} not found for ${event} event from client ${socket.id}`);
+          return next(new Error('Session not found'));
         }
       }
       

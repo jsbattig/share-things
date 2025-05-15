@@ -49,7 +49,7 @@ const SessionPage: React.FC = () => {
   const { onOpen } = useDisclosure();
   
   // Context
-  const { socket, isConnected, connectionStatus, joinSession, leaveSession, rejoinSession } = useSocket();
+  const { socket, isConnected, connectionStatus, joinSession, leaveSession, rejoinSession, ensureConnected } = useSocket();
   const { clearContents } = useContentStore();
   
   // Load session info from localStorage
@@ -140,6 +140,51 @@ const SessionPage: React.FC = () => {
     }
   }, [connectionStatus, sessionId, clientName, passphrase, socket, clients.length, rejoinSession]);
   
+  // Add a visibility change handler to force reconnection when the page becomes visible
+  useEffect(() => {
+    if (!sessionId || !clientName || !passphrase) return;
+    
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[SessionPage] Page became visible, verifying connection...');
+        
+        // Force connection check and rejoin if needed
+        const isConnected = await ensureConnected(sessionId);
+        console.log(`[SessionPage] Connection check result: ${isConnected ? 'connected' : 'disconnected'}`);
+        
+        if (!isConnected) {
+          // If we failed to connect, show a message
+          toast({
+            title: 'Connection issue',
+            description: 'Reconnecting to session...',
+            status: 'warning',
+            duration: 3000,
+            isClosable: true
+          });
+        }
+      }
+    };
+    
+    // Add visibility change listener
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Also do an initial connection check when this effect runs
+    if (document.visibilityState === 'visible') {
+      ensureConnected(sessionId)
+        .then(connected => {
+          console.log(`[SessionPage] Initial connection check: ${connected ? 'connected' : 'disconnected'}`);
+        })
+        .catch(err => {
+          console.error('[SessionPage] Error during initial connection check:', err);
+        });
+    }
+    
+    // Clean up
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [sessionId, clientName, passphrase, toast, ensureConnected]);
+  
   // Set up socket event listeners separately
   useEffect(() => {
     if (!socket || !isConnected) return;
@@ -195,6 +240,73 @@ const SessionPage: React.FC = () => {
       socket.off('client-left', handleClientLeft);
     };
   }, [socket, isConnected, toast]);
+  
+  // Add socket expiration handler
+  useEffect(() => {
+    if (!socket || !isConnected || !sessionId) return;
+    
+    const handleSessionExpired = (data: { sessionId: string, message: string }) => {
+      if (data.sessionId === sessionId) {
+        console.log('[SessionPage] Session expired notification received');
+        
+        toast({
+          title: 'Session expired',
+          description: data.message || 'Your session has expired due to inactivity',
+          status: 'error',
+          duration: 5000,
+          isClosable: true
+        });
+        
+        // Try to rejoin if we have credentials
+        if (clientName && passphrase) {
+          console.log('[SessionPage] Attempting to rejoin expired session');
+          
+          // Use the useSocket hook's rejoinSession method
+          rejoinSession(sessionId, clientName, passphrase)
+            .then(() => {
+              console.log('[SessionPage] Successfully rejoined after expiration');
+              
+              toast({
+                title: 'Reconnected',
+                description: 'Successfully reconnected to session',
+                status: 'success',
+                duration: 3000,
+                isClosable: true
+              });
+            })
+            .catch(err => {
+              console.error('[SessionPage] Failed to rejoin after expiration:', err);
+              
+              // Navigate to home page if rejoin fails
+              toast({
+                title: 'Session error',
+                description: 'Could not rejoin the session. Returning to home page.',
+                status: 'error',
+                duration: 5000,
+                isClosable: true
+              });
+              
+              // Clear session info and redirect after a delay
+              localStorage.removeItem('sessionId');
+              localStorage.removeItem('clientName');
+              localStorage.removeItem('passphrase');
+              localStorage.removeItem('sessionToken');
+              
+              setTimeout(() => {
+                navigate('/');
+              }, 2000);
+            });
+        }
+      }
+    };
+    
+    // Add listener for session expiration events
+    socket.on('session-expired', handleSessionExpired);
+    
+    return () => {
+      socket.off('session-expired', handleSessionExpired);
+    };
+  }, [socket, isConnected, sessionId, clientName, passphrase, toast, navigate, rejoinSession]);
   
   /**
    * Leaves the session
