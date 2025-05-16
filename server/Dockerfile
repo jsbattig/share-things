@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi8/nodejs-18:latest AS builder
+FROM docker.io/library/node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 # Use a more reliable npm install approach
@@ -7,7 +7,7 @@ RUN npm config set registry https://registry.npmjs.org/ && \
 COPY . .
 RUN npm run build
 
-FROM registry.access.redhat.com/ubi8/nodejs-18:latest
+FROM docker.io/library/node:18-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --only=production

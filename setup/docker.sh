@@ -74,7 +74,7 @@ configure_podman() {
     mkdir -p ~/.config/containers
     cat > ~/.config/containers/registries.conf << EOL
 [registries.search]
-registries = ["registry.access.redhat.com", "quay.io", "docker.io"]
+registries = ["docker.io", "quay.io"]
 
 [registries.insecure]
 registries = []
@@ -133,7 +133,7 @@ EOL
   # Create registries.conf with permissive short name mode
   cat > ~/.config/containers/registries.conf << EOL
 [registries.search]
-registries = ["registry.access.redhat.com", "quay.io", "docker.io"]
+registries = ["docker.io", "quay.io"]
 
 [registries.insecure]
 registries = []
@@ -174,7 +174,7 @@ EOL
   
   # Test network configuration
   echo -e "${YELLOW}Testing network configuration...${NC}"
-  podman run --rm registry.access.redhat.com/ubi8/ubi-minimal:latest ping -c 1 google.com || echo -e "${RED}Network test failed. This might be expected in some CI environments.${NC}"
+  podman run --rm docker.io/library/alpine:latest ping -c 1 google.com || echo -e "${RED}Network test failed. This might be expected in some CI environments.${NC}"
   
   # Create .npmrc file with network configuration for builds
   echo -e "${YELLOW}Creating .npmrc file with network configuration for builds...${NC}"

@@ -59,7 +59,7 @@ services:
           - frontend  # Explicit network alias
 
   postgres:
-    image: registry.access.redhat.com/rhscl/postgresql-12-rhel7:latest
+    image: docker.io/library/postgres:14-alpine
     container_name: share-things-postgres
     environment:
       - POSTGRES_USER=${PG_USER:-postgres}
