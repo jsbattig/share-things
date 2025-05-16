@@ -149,13 +149,23 @@ cleanup_containers() {
   log "INFO" "Stopping all containers..."
   podman stop -a || true
   
+  # Wait a moment for containers to fully stop
+  sleep 2
+  
   # Remove all containers with force
   log "INFO" "Removing all containers..."
   podman rm -f -a || true
   
+  # Wait a moment for containers to be fully removed
+  sleep 2
+  
   # Specifically target share-things containers in case the above didn't catch them
   log "INFO" "Specifically targeting share-things containers..."
   podman ps -a | grep "share-things" | awk '{print $1}' | xargs -r podman rm -f || true
+  
+  # Try to reset the podman container storage
+  log "INFO" "Attempting to reset podman container storage..."
+  podman system reset --force || true
   
   # Remove volumes
   log "INFO" "Removing all volumes..."
@@ -374,7 +384,8 @@ fi
 
 # Test the application
 log "INFO" "Testing the application..."
-health_check "http://localhost:3001/health" $HEALTH_CHECK_TIMEOUT || log "WARNING" "Health check failed, but continuing anyway"
+log "INFO" "Using production port 15001 for health check..."
+health_check "http://localhost:15001/health" $HEALTH_CHECK_TIMEOUT || log "WARNING" "Health check failed, but continuing anyway"
 
 # Clean up after memory setup
 cleanup_containers
@@ -382,7 +393,7 @@ cleanup_env_files
 
 # Test setup.sh with PostgreSQL option
 log "INFO" "Testing setup.sh with PostgreSQL option..."
-run_with_timeout "./setup.sh --postgres --container-engine podman --hostname auto --use-custom-ports n --use-https n --expose-ports y --frontend-port 8080 --backend-port 3001 --pg-location l --pg-database sharethings --pg-user postgres --pg-password postgres --pg-ssl n --start" $SETUP_TIMEOUT "Running: ./setup.sh with PostgreSQL storage"
+run_with_timeout "./setup.sh --postgres --container-engine podman --hostname auto --use-custom-ports y --use-https n --expose-ports y --frontend-port 15000 --backend-port 15001 --pg-location l --pg-database sharethings --pg-user postgres --pg-password postgres --pg-ssl n --start" $SETUP_TIMEOUT "Running: ./setup.sh with PostgreSQL storage"
 RESULT=$?
 log "INFO" "Setup script exited with code: $RESULT"
 if [ $RESULT -ne 0 ]; then
