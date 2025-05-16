@@ -284,7 +284,7 @@ log "INFO" "Configuring Podman to allow short names..."
 mkdir -p ~/.config/containers
 cat > ~/.config/containers/registries.conf << EOL
 [registries.search]
-registries = ["quay.io", "docker.io"]
+registries = ["registry.access.redhat.com", "quay.io", "docker.io"]
 
 [registries.insecure]
 registries = []
@@ -312,11 +312,11 @@ cleanup_containers
 # Clean up any existing environment files
 cleanup_env_files
 
-# Update docker-compose files to use fully qualified image names from Quay.io
-log "INFO" "Updating docker-compose files to use fully qualified image names from Quay.io..."
-sed -i 's/image: postgres:17-alpine/image: quay.io\/bitnami\/postgresql:17/g' docker-compose.yml
-sed -i 's/image: postgres:17-alpine/image: quay.io\/bitnami\/postgresql:17/g' docker-compose.test.yml
-sed -i 's/image: postgres:17-alpine/image: quay.io\/bitnami\/postgresql:17/g' docker-compose.prod.yml
+# Update docker-compose files to use fully qualified image names from Red Hat Registry
+log "INFO" "Updating docker-compose files to use fully qualified image names from Red Hat Registry..."
+sed -i 's/image: postgres:17-alpine/image: registry.access.redhat.com\/rhscl\/postgresql-12-rhel7:latest/g' docker-compose.yml
+sed -i 's/image: postgres:17-alpine/image: registry.access.redhat.com\/rhscl\/postgresql-12-rhel7:latest/g' docker-compose.test.yml
+sed -i 's/image: postgres:17-alpine/image: registry.access.redhat.com\/rhscl\/postgresql-12-rhel7:latest/g' docker-compose.prod.yml
 
 # Test setup.sh with memory option
 log "INFO" "Testing setup.sh with memory option..."
@@ -353,14 +353,14 @@ sleep 2
 # Create a custom Dockerfile for the backend that doesn't rely on volume mounts
 log "INFO" "Creating a custom Dockerfile for the backend..."
 cat > server/Dockerfile.test << EOL
-FROM quay.io/nodejs/nodejs:18 AS builder
+FROM registry.access.redhat.com/ubi8/nodejs-18:latest AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
 RUN npm run build
 
-FROM quay.io/nodejs/nodejs:18
+FROM registry.access.redhat.com/ubi8/nodejs-18:latest
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --only=production
@@ -392,7 +392,7 @@ podman run --name=share-things-postgres -d \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=sharethings \
   -p 5432:5432 \
-  quay.io/bitnami/postgresql:17 || log "ERROR" "Failed to start PostgreSQL container."
+  registry.access.redhat.com/rhscl/postgresql-12-rhel7:latest || log "ERROR" "Failed to start PostgreSQL container."
 
 # Wait for PostgreSQL to start
 log "INFO" "Waiting for PostgreSQL to start..."
@@ -552,14 +552,14 @@ sleep 2
 # Create a custom Dockerfile for the backend that doesn't rely on volume mounts
 log "INFO" "Creating a custom Dockerfile for the backend with PostgreSQL support..."
 cat > server/Dockerfile.test << EOL
-FROM quay.io/nodejs/nodejs:18 AS builder
+FROM registry.access.redhat.com/ubi8/nodejs-18:latest AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
 RUN npm run build
 
-FROM quay.io/nodejs/nodejs:18
+FROM registry.access.redhat.com/ubi8/nodejs-18:latest
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --only=production
@@ -598,7 +598,7 @@ podman run --name=share-things-postgres -d \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=sharethings \
   -p 5432:5432 \
-  quay.io/bitnami/postgresql:17 || log "ERROR" "Failed to start PostgreSQL container."
+  registry.access.redhat.com/rhscl/postgresql-12-rhel7:latest || log "ERROR" "Failed to start PostgreSQL container."
 
 # Wait for PostgreSQL to start
 log "INFO" "Waiting for PostgreSQL to start..."

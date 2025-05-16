@@ -141,6 +141,16 @@ setup_env_files
 configure_session_storage
 
 # Configure Docker/Podman
+# This function is a wrapper for the main function in setup/docker.sh
+configure_container_engine() {
+  # Source the docker.sh script to get access to its functions
+  source setup/docker.sh
+  
+  # Call the main function from docker.sh
+  main
+}
+
+# Call the function
 configure_container_engine
 
 # Apply Rocky Linux-specific Podman configuration if needed

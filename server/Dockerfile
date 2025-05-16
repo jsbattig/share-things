@@ -1,4 +1,4 @@
-FROM quay.io/nodejs/nodejs:18 AS builder
+FROM registry.access.redhat.com/ubi8/nodejs-18:latest AS builder
 WORKDIR /app
 COPY package*.json ./
 # Use a more reliable npm install approach
@@ -7,7 +7,7 @@ RUN npm config set registry https://registry.npmjs.org/ && \
 COPY . .
 RUN npm run build
 
-FROM quay.io/nodejs/nodejs:18
+FROM registry.access.redhat.com/ubi8/nodejs-18:latest
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --only=production

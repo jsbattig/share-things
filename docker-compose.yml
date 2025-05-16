@@ -59,7 +59,7 @@ services:
           - frontend  # Explicit network alias
 
   postgres:
-    image: quay.io/bitnami/postgresql:17
+    image: registry.access.redhat.com/rhscl/postgresql-12-rhel7:latest
     container_name: share-things-postgres
     environment:
       - POSTGRES_USER=${PG_USER:-postgres}
