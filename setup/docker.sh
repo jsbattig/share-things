@@ -110,105 +110,25 @@ configure_podman_rocky() {
     echo "Home directory: $HOME"
     echo "Current directory: $(pwd)"
     echo "Container engine: $CONTAINER_ENGINE"
+    
+    # Check if running in GitHub Actions
+    if [ -n "$GITHUB_ACTIONS" ]; then
+      echo -e "${YELLOW}Detected GitHub Actions environment${NC}"
+    fi
   fi
   
-  # Use a configuration that works in the current environment
-  if [ -n "$GITHUB_ACTIONS" ]; then
-    # For GitHub Actions, we need to completely bypass network configuration issues
-    echo -e "${YELLOW}GitHub Actions environment detected. Using special configuration for CI environment${NC}"
-    
-    # Create a minimal containers.conf that works in GitHub Actions
-    mkdir -p ~/.config/containers
-    cat > ~/.config/containers/containers.conf << EOL
+  # Create a universal containers.conf that works in all environments
+  mkdir -p ~/.config/containers
+  cat > ~/.config/containers/containers.conf << EOL
 [engine]
 cgroup_manager = "cgroupfs"
 events_logger = "file"
 runtime = "crun"
 
-# Use bridge networking which is more compatible with CI environments
 [network]
-network_backend = "bridge"
 default_rootless_network_cmd = "slirp4netns"
-default_network = "podman"
 EOL
-    echo -e "${GREEN}Created minimal ~/.config/containers/containers.conf for GitHub Actions${NC}"
-    
-    # Create registries.conf to allow short names
-    cat > ~/.config/containers/registries.conf << EOL
-[registries.search]
-registries = ["docker.io", "quay.io"]
-
-[registries.insecure]
-registries = []
-
-[registries.block]
-registries = []
-
-[engine]
-short-name-mode="permissive"
-EOL
-    echo -e "${GREEN}Created ~/.config/containers/registries.conf${NC}"
-    
-    # Set environment variable to bypass podman-compose in test scripts
-    export GITHUB_ACTIONS_SKIP_PODMAN_COMPOSE=true
-    echo -e "${GREEN}Set GITHUB_ACTIONS_SKIP_PODMAN_COMPOSE=true${NC}"
-    
-    # Create a special script to run containers in CI environment
-    cat > ci-run-containers.sh << EOL
-#!/bin/bash
-# This script runs containers with bridge networking in CI environment
-set -e
-
-# Create a bridge network for containers
-podman network create share-things-network || true
-
-# Build backend image
-podman build -f ./server/Dockerfile.test -t share-things-test_backend ./server
-
-# Build frontend image
-podman build -f ./client/Dockerfile -t share-things-test_frontend ./client
-
-# Run backend container with bridge networking
-podman run -d --name share-things-backend \\
-  --network share-things-network \\
-  -e NODE_ENV=development \\
-  -e PORT=15001 \\
-  -e LISTEN_PORT=15001 \\
-  -e SESSION_STORAGE_TYPE=memory \\
-  -p 15001:15001 \\
-  share-things-test_backend
-
-# Run frontend container with bridge networking
-podman run -d --name share-things-frontend \\
-  --network share-things-network \\
-  -e API_PORT=15001 \\
-  -p 15000:80 \\
-  share-things-test_frontend
-
-echo "Containers started in CI mode with bridge networking"
-EOL
-    chmod +x ci-run-containers.sh
-    echo -e "${GREEN}Created ci-run-containers.sh script for CI environment${NC}"
-    
-    # Modify docker-compose files to NOT use host networking
-    echo -e "${YELLOW}Modifying docker-compose files to use standard networking instead of host for GitHub Actions...${NC}"
-    sed -i 's/network_mode: host/# network_mode: host/' docker-compose.yml
-    sed -i 's/network_mode: host/# network_mode: host/' docker-compose.prod.yml
-    sed -i 's/network_mode: host/# network_mode: host/' docker-compose.test.yml
-    echo -e "${GREEN}Modified docker-compose files to use standard networking${NC}"
-  else
-    # For other environments, use a standard configuration
-    cat > ~/.config/containers/containers.conf << EOL
-[engine]
-cgroup_manager = "cgroupfs"
-events_logger = "file"
-network_backend = "netavark"
-
-[network]
-network_backend = "netavark"
-EOL
-    echo -e "${GREEN}Created ~/.config/containers/containers.conf with standard networking${NC}"
-  fi
+  echo -e "${GREEN}Created universal ~/.config/containers/containers.conf${NC}"
   
   # Create registries.conf with permissive short name mode
   cat > ~/.config/containers/registries.conf << EOL
@@ -226,39 +146,21 @@ short-name-mode="permissive"
 EOL
   echo -e "${GREEN}Created ~/.config/containers/registries.conf${NC}"
   
-  # If we're in a CI environment, modify docker-compose.yml to use host networking
-  if [ "$IS_CI" = true ]; then
-    echo -e "${YELLOW}Modifying docker-compose.yml to use host networking...${NC}"
-    
-    # Check if docker-compose.yml exists
-    if [ -f "docker-compose.yml" ]; then
-      # Add host networking to all services
-      sed -i '/services:/,/volumes:/ s/# *network_mode: host/network_mode: host/' docker-compose.yml
-      echo -e "${YELLOW}Added host networking to all services in docker-compose.yml${NC}"
-      echo -e "${GREEN}Modified docker-compose.yml to use host networking${NC}"
-    fi
-    
-    # Check if docker-compose.prod.yml exists
-    if [ -f "docker-compose.prod.yml" ]; then
-      sed -i '/services:/,/volumes:/ s/# *network_mode: host/network_mode: host/' docker-compose.prod.yml
-      echo -e "${GREEN}Modified docker-compose.prod.yml to use host networking${NC}"
-    fi
-    
-    # Check if docker-compose.test.yml exists
-    if [ -f "docker-compose.test.yml" ]; then
-      sed -i '/services:/,/volumes:/ s/# *network_mode: host/network_mode: host/' docker-compose.test.yml
-      echo -e "${GREEN}Modified docker-compose.test.yml to use host networking${NC}"
-    fi
-    
-    # Add health checks to PostgreSQL service
-    echo -e "${YELLOW}Adding container dependency health checks...${NC}"
-    if [ -f "docker-compose.yml" ]; then
-      # Check if health checks already exist
-      if ! grep -q "healthcheck:" docker-compose.yml; then
-        # Add health checks to PostgreSQL service
-        sed -i '/postgres:/,/volumes:/ s/container_name: share-things-postgres/container_name: share-things-postgres\n    healthcheck:\n      test: ["CMD-SHELL", "pg_isready -U postgres"]\n      interval: 5s\n      timeout: 5s\n      retries: 5\n      start_period: 10s/' docker-compose.yml
-        echo -e "${GREEN}Added health checks to PostgreSQL service${NC}"
-      fi
+  # Modify docker-compose files to NOT use host networking
+  echo -e "${YELLOW}Modifying docker-compose files to use standard networking...${NC}"
+  sed -i 's/network_mode: host/# network_mode: host/' docker-compose.yml
+  sed -i 's/network_mode: host/# network_mode: host/' docker-compose.prod.yml
+  sed -i 's/network_mode: host/# network_mode: host/' docker-compose.test.yml
+  echo -e "${GREEN}Modified docker-compose files to use standard networking${NC}"
+  
+  # Add health checks to PostgreSQL service
+  echo -e "${YELLOW}Adding container dependency health checks...${NC}"
+  if [ -f "docker-compose.yml" ]; then
+    # Check if health checks already exist
+    if ! grep -q "healthcheck:" docker-compose.yml; then
+      # Add health checks to PostgreSQL service
+      sed -i '/postgres:/,/volumes:/ s/container_name: share-things-postgres/container_name: share-things-postgres\n    healthcheck:\n      test: ["CMD-SHELL", "pg_isready -U postgres"]\n      interval: 5s\n      timeout: 5s\n      retries: 5\n      start_period: 10s/' docker-compose.yml
+      echo -e "${GREEN}Added health checks to PostgreSQL service${NC}"
     fi
   fi
   
