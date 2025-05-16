@@ -339,22 +339,65 @@ else
   log "ERROR" "podman-compose is not installed."
 fi
 
-# Build the server code before starting containers
-log "INFO" "Building server code..."
-cd server && npm install && npm run build && cd ..
-
 # Try to run podman-compose directly
 log "INFO" "Trying to run podman-compose directly..."
-# Modify docker-compose.yml to not mount server directory as a volume in test environment
-log "INFO" "Modifying docker-compose.yml to not mount server directory as a volume..."
-cp docker-compose.yml docker-compose.yml.bak
-$SED_CMD 's|- ./server:/app|- ./server/dist:/app/dist|g' docker-compose.yml
 
-podman-compose -f docker-compose.yml build || log "ERROR" "podman-compose build failed."
-podman-compose -f docker-compose.yml up -d || log "ERROR" "podman-compose up failed."
+# Create a custom Dockerfile for the backend that doesn't rely on volume mounts
+log "INFO" "Creating a custom Dockerfile for the backend..."
+cat > server/Dockerfile.test << EOL
+FROM docker.io/library/node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
 
-# Restore original docker-compose.yml
-mv docker-compose.yml.bak docker-compose.yml
+FROM docker.io/library/node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --only=production
+COPY --from=builder /app/dist ./dist
+ARG PORT=3001
+ENV PORT=\${PORT}
+ENV LISTEN_PORT=\${PORT}
+EXPOSE \${PORT}
+CMD ["node", "dist/index.js"]
+EOL
+
+# Use the custom Dockerfile for the backend
+log "INFO" "Using custom Dockerfile for the backend..."
+podman build -t share-things-test_backend -f server/Dockerfile.test server || log "ERROR" "Backend build failed."
+podman build -t share-things-test_frontend -f client/Dockerfile client || log "ERROR" "Frontend build failed."
+
+# Run the containers manually
+log "INFO" "Running containers manually..."
+podman network create share-things-test_app_network || true
+
+# Run PostgreSQL
+podman run --name=share-things-postgres -d \
+  --network share-things-test_app_network \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=sharethings \
+  -p 5432:5432 \
+  docker.io/library/postgres:17-alpine || log "ERROR" "Failed to start PostgreSQL container."
+
+# Run Backend
+podman run --name=share-things-backend -d \
+  --network share-things-test_app_network \
+  -e NODE_ENV=development \
+  -e PORT=3001 \
+  -e LISTEN_PORT=3001 \
+  -e SESSION_STORAGE_TYPE=memory \
+  -p 15001:3001 \
+  share-things-test_backend || log "ERROR" "Failed to start backend container."
+
+# Run Frontend
+podman run --name=share-things-frontend -d \
+  --network share-things-test_app_network \
+  -e API_PORT=3001 \
+  -p 15000:80 \
+  share-things-test_frontend || log "ERROR" "Failed to start frontend container."
 if [ $RESULT -ne 0 ]; then
   log "ERROR" "Memory setup failed."
   cleanup_containers
