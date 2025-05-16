@@ -375,8 +375,8 @@ podman build -t share-things-test_frontend -f client/Dockerfile client || log "E
 log "INFO" "Creating container network..."
 podman network create share-things-test_app_network || true
 
-# Run the containers manually
-log "INFO" "Running containers manually..."
+# Run the containers manually without using podman-compose
+log "INFO" "Running containers manually without volume mounts..."
 
 # Run PostgreSQL
 log "INFO" "Starting PostgreSQL container..."
@@ -489,12 +489,47 @@ else
   exit 1
 fi
 
+# Check frontend container
+FRONTEND_CONTAINER=$(podman ps -a | grep frontend | awk '{print $1}')
+if [ -n "$FRONTEND_CONTAINER" ]; then
+  log "INFO" "Frontend container ID: $FRONTEND_CONTAINER"
+  
+  # Check the container status
+  CONTAINER_STATUS=$(podman inspect $FRONTEND_CONTAINER --format '{{.State.Status}}')
+  log "INFO" "Frontend container status: $CONTAINER_STATUS"
+  
+  if [ "$CONTAINER_STATUS" != "running" ]; then
+    log "ERROR" "Frontend container is not running. Status: $CONTAINER_STATUS"
+    log "ERROR" "Frontend container logs:"
+    podman logs $FRONTEND_CONTAINER
+    
+    # Fail the test since the frontend container is not running
+    log "ERROR" "Frontend container not running. Test failed."
+    cleanup_containers
+    exit 1
+  fi
+else
+  log "ERROR" "Frontend container not found."
+  cleanup_containers
+  exit 1
+fi
+
 log "INFO" "Using production port 15001 for health check..."
+log "INFO" "Health check timeout set to $HEALTH_CHECK_TIMEOUT seconds"
 if ! health_check "http://localhost:15001/health" $HEALTH_CHECK_TIMEOUT; then
   log "ERROR" "Health check failed. Test failed."
   cleanup_containers
   exit 1
 fi
+
+log "INFO" "Health check passed. Testing frontend on port 15000..."
+if ! curl -s -f "http://localhost:15000" > /dev/null 2>&1; then
+  log "ERROR" "Frontend check failed. Test failed."
+  cleanup_containers
+  exit 1
+fi
+
+log "SUCCESS" "All tests passed!"
 
 # Clean up after memory setup
 cleanup_containers

@@ -15,14 +15,14 @@ NC='\033[0m' # No Color
 # Configuration (no secrets here)
 BRANCH=${1:-"feature/postgresql-session-management"}
 WORK_DIR=${2:-"$(pwd)"}
-TEST_PORT=${3:-8080}
+TEST_PORT=${3:-15000}
 
 # Timeout settings
 SETUP_TIMEOUT=300  # 5 minutes timeout for setup.sh
 UPDATE_TIMEOUT=300  # 5 minutes timeout for update-server.sh
-HEALTH_CHECK_TIMEOUT=60  # 1 minute timeout for health check
+HEALTH_CHECK_TIMEOUT=10  # 10 seconds timeout for health check
 CONTAINER_CHECK_TIMEOUT=60  # 1 minute timeout for container check
-SERVICE_WAIT_TIMEOUT=120  # 2 minutes timeout for service availability
+SERVICE_WAIT_TIMEOUT=10  # 10 seconds timeout for service availability
 
 # Function to log messages
 log() {
@@ -261,7 +261,7 @@ sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpin
 
 # Start the application with memory storage
 log "INFO" "Starting the application with memory storage..."
-run_with_timeout "./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports n --use-https n --expose-ports y --frontend-port $TEST_PORT --backend-port 3001 --start" $SETUP_TIMEOUT "Running: ./setup.sh with memory storage"
+run_with_timeout "./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports y --use-https n --expose-ports y --frontend-port 15000 --backend-port 15001 --start" $SETUP_TIMEOUT "Running: ./setup.sh with memory storage"
 RESULT=$?
 log "INFO" "Setup script exited with code: $RESULT"
 if [ $RESULT -ne 0 ]; then
