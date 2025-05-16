@@ -67,6 +67,27 @@ check_running_containers() {
   fi
 }
 
+# Function to check if any containers (running or stopped) exist
+check_all_containers() {
+  log "INFO" "Checking for all containers (running or stopped)..."
+  
+  # Check if any share-things containers exist (running or stopped)
+  local container_count
+  container_count=$(podman ps -a | grep -c "share-things" 2>/dev/null || true)
+  # Make sure container_count is a number
+  if ! [[ "$container_count" =~ ^[0-9]+$ ]]; then
+    container_count=0
+  fi
+  
+  if [ "$container_count" -gt 0 ]; then
+    log "WARNING" "Found $container_count share-things containers (running or stopped)."
+    return 0
+  else
+    log "INFO" "No share-things containers found."
+    return 1
+  fi
+}
+
 # Function to check if containers are running with timeout
 check_containers() {
   local expected_count=$1
@@ -120,6 +141,10 @@ cleanup_containers() {
     podman-compose down -v --remove-orphans || true
   fi
   
+  # List all containers for debugging
+  log "INFO" "Current containers before cleanup:"
+  podman ps -a || true
+  
   # Stop all containers to break dependencies
   log "INFO" "Stopping all containers..."
   podman stop -a || true
@@ -128,13 +153,25 @@ cleanup_containers() {
   log "INFO" "Removing all containers..."
   podman rm -f -a || true
   
+  # Specifically target share-things containers in case the above didn't catch them
+  log "INFO" "Specifically targeting share-things containers..."
+  podman ps -a | grep "share-things" | awk '{print $1}' | xargs -r podman rm -f || true
+  
   # Remove volumes
   log "INFO" "Removing all volumes..."
   podman volume ls --format '{{.Name}}' | xargs -r podman volume rm -f || true
   
+  # Specifically target share-things volumes
+  log "INFO" "Specifically targeting share-things volumes..."
+  podman volume ls --format '{{.Name}}' | grep "share-things" | xargs -r podman volume rm -f || true
+  
   # Remove networks with force
   log "INFO" "Removing all networks..."
   podman network ls --format '{{.Name}}' | grep -v 'podman' | xargs -r podman network rm -f || true
+  
+  # Specifically target share-things networks
+  log "INFO" "Specifically targeting share-things networks..."
+  podman network ls --format '{{.Name}}' | grep "share-things" | xargs -r podman network rm -f || true
   
   # Clean container cache
   log "INFO" "Cleaning container cache..."
@@ -143,6 +180,16 @@ cleanup_containers() {
   # Clean image cache
   log "INFO" "Cleaning image cache..."
   podman image prune -f || true
+  
+  # Perform a full system prune to clean everything
+  log "INFO" "Performing full Podman system prune automatically..."
+  podman system prune -a -f || true
+  
+  # Verify cleanup
+  log "INFO" "Verifying cleanup..."
+  podman ps -a || true
+  podman volume ls || true
+  podman network ls || true
   
   log "SUCCESS" "Cleanup complete."
 }
@@ -235,13 +282,17 @@ registries = []
 short-name-mode="permissive"
 EOL
 
-# Check if containers are already running and clean them up
-if check_running_containers; then
-  log "WARNING" "Found running containers. Cleaning up before proceeding..."
+# Check for all containers (running or stopped) and clean them up
+log "INFO" "Checking for existing containers before starting tests..."
+if check_all_containers || check_running_containers; then
+  log "WARNING" "Found existing containers. Cleaning up before proceeding..."
   cleanup_containers
+else
+  log "INFO" "No existing containers found. Proceeding with clean environment."
 fi
 
-# Clean up any existing containers
+# Force a thorough cleanup to ensure a clean state
+log "INFO" "Performing thorough system cleanup to ensure clean test environment..."
 cleanup_containers
 
 # Clean up any existing environment files
@@ -255,7 +306,7 @@ sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpin
 
 # Test setup.sh with memory option
 log "INFO" "Testing setup.sh with memory option..."
-run_with_timeout "./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports n --use-https n --expose-ports y --frontend-port 8080 --backend-port 3001 --start" $SETUP_TIMEOUT "Running: ./setup.sh with memory storage"
+run_with_timeout "./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports y --use-https n --expose-ports y --frontend-port 15000 --backend-port 15001 --start" $SETUP_TIMEOUT "Running: ./setup.sh with memory storage"
 RESULT=$?
 log "INFO" "Setup script exited with code: $RESULT"
 
