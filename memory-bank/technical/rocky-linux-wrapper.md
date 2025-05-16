@@ -10,7 +10,7 @@ The primary purpose of the wrapper script is to:
 
 1. Connect to a remote Rocky Linux machine via SSH
 2. Clone or update the ShareThings repository on the remote machine
-3. Run the test-setup.sh and test-update.sh scripts on the remote machine
+3. Run the test-setup.sh and test-update.sh scripts on the remote machine (see [Rocky Linux Test Scripts](./rocky-linux-test-scripts.md) for details)
 4. Return the console output to the local machine for debugging
 
 This workflow enables rapid iteration on the setup and update scripts, allowing developers to:

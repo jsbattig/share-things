@@ -1,7 +1,9 @@
 FROM docker.io/library/node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+# Use a more reliable npm install approach
+RUN npm config set registry https://registry.npmjs.org/ && \
+    npm install
 RUN npm install crypto-js @types/crypto-js
 COPY . .
 

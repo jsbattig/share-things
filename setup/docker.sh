@@ -109,8 +109,30 @@ EOL
 configure_podman_rocky() {
   echo -e "${YELLOW}Detected Rocky Linux in CI/CD environment. Applying special Podman configuration...${NC}"
   
-  # Create containers.conf with host networking configuration
+  # Check Podman version to determine appropriate configuration
+  PODMAN_VERSION=$(podman --version | awk '{print $3}')
+  echo -e "${YELLOW}Detected Podman version: ${PODMAN_VERSION}${NC}"
+  
+  # Log environment information for debugging
+  echo -e "${YELLOW}Environment information:${NC}"
+  echo "User: $(whoami)"
+  echo "Home directory: $HOME"
+  echo "Current directory: $(pwd)"
+  echo "Container engine: $CONTAINER_ENGINE"
+  
+  # Check if running in GitHub Actions
+  if [ -n "$GITHUB_ACTIONS" ]; then
+    echo -e "${YELLOW}Detected GitHub Actions environment${NC}"
+    # Use a different approach for GitHub Actions
+    USE_GITHUB_APPROACH=true
+  else
+    USE_GITHUB_APPROACH=false
+  fi
+  
+  # Create containers.conf with appropriate networking configuration
   mkdir -p ~/.config/containers
+  
+  # Use a simple configuration that works in all environments
   cat > ~/.config/containers/containers.conf << EOL
 [engine]
 cgroup_manager = "cgroupfs"
@@ -119,9 +141,8 @@ network_backend = "netavark"
 
 [network]
 network_backend = "netavark"
-default_rootless_network_cmd = "host"
 EOL
-  echo -e "${GREEN}Created ~/.config/containers/containers.conf with host networking${NC}"
+  echo -e "${GREEN}Created ~/.config/containers/containers.conf with standard networking${NC}"
   
   # Create registries.conf with permissive short name mode
   cat > ~/.config/containers/registries.conf << EOL
@@ -144,7 +165,7 @@ EOL
   cat ~/.config/containers/containers.conf
   cat ~/.config/containers/registries.conf
   
-  # Modify docker-compose.yml to use host networking if it exists
+  # Modify docker-compose.yml to use appropriate networking if it exists
   if [ -f "docker-compose.yml" ]; then
     echo -e "${YELLOW}Modifying docker-compose.yml to use host networking...${NC}"
     
@@ -163,6 +184,9 @@ EOL
     $SED_CMD '/container_name: share-things-backend/a\    network_mode: host' docker-compose.yml
     $SED_CMD '/container_name: share-things-frontend/a\    network_mode: host' docker-compose.yml
     $SED_CMD '/container_name: share-things-postgres/a\    network_mode: host' docker-compose.yml
+    
+    # Add a note about host networking
+    echo -e "${YELLOW}Added host networking to all services in docker-compose.yml${NC}"
     
     # Update PostgreSQL host references to use localhost
     if grep -q "PG_HOST=postgres" server/.env 2>/dev/null; then
@@ -258,6 +282,10 @@ EOL
   
   echo -e "${GREEN}Added health checks to PostgreSQL service${NC}"
   
+  # Display Podman version for debugging
+  echo -e "${YELLOW}Podman version:${NC}"
+  podman --version || true
+  
   # Display Podman system info for debugging
   echo -e "${YELLOW}Podman system info:${NC}"
   podman info || true
@@ -265,6 +293,33 @@ EOL
   # Display Podman network info
   echo -e "${YELLOW}Podman network info:${NC}"
   podman network ls || true
+  
+  # Test network configuration
+  echo -e "${YELLOW}Testing network configuration...${NC}"
+  podman run --rm docker.io/library/alpine:latest ping -c 1 google.com || echo -e "${RED}Network test failed. This may indicate network configuration issues.${NC}"
+  
+  # Create a .npmrc file with network configuration for builds
+  echo -e "${YELLOW}Creating .npmrc file with network configuration for builds...${NC}"
+  cat > ~/.npmrc << EOL
+registry=https://registry.npmjs.org/
+strict-ssl=false
+proxy=null
+https-proxy=null
+EOL
+  echo -e "${GREEN}Created ~/.npmrc with network configuration${NC}"
+  
+  # Create a podman build configuration file
+  echo -e "${YELLOW}Creating podman build configuration...${NC}"
+  mkdir -p ~/.config/containers
+  cat > ~/.config/containers/storage.conf << EOL
+[storage]
+driver = "overlay"
+runroot = "/tmp/containers-$USER"
+graphroot = "$HOME/.local/share/containers/storage"
+[storage.options]
+pull_options = {use_host_networking = "true"}
+EOL
+  echo -e "${GREEN}Created podman build configuration with host networking${NC}"
   
   echo -e "${GREEN}Podman configuration for Rocky Linux complete.${NC}"
 }
