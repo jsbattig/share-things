@@ -293,6 +293,30 @@ log "INFO" "Checking if containers are running..."
 check_containers 2
 if [ $? -ne 0 ]; then
   log "ERROR" "Container check failed."
+  
+  # Get detailed logs from the backend container
+  log "INFO" "Getting detailed logs from the backend container..."
+  BACKEND_CONTAINER=$(podman ps -a | grep backend | awk '{print $1}')
+  if [ -n "$BACKEND_CONTAINER" ]; then
+    log "INFO" "Backend container ID: $BACKEND_CONTAINER"
+    log "INFO" "Backend container logs:"
+    podman logs $BACKEND_CONTAINER
+    
+    # Check if the backend container is running
+    log "INFO" "Backend container status:"
+    podman inspect $BACKEND_CONTAINER --format '{{.State.Status}}'
+    
+    # Check the exit code if the container has exited
+    log "INFO" "Backend container exit code:"
+    podman inspect $BACKEND_CONTAINER --format '{{.State.ExitCode}}'
+    
+    # Check the error message if the container has exited
+    log "INFO" "Backend container error:"
+    podman inspect $BACKEND_CONTAINER --format '{{.State.Error}}'
+  else
+    log "ERROR" "Backend container not found."
+  fi
+  
   cleanup_containers
   exit 1
 fi
