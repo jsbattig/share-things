@@ -97,8 +97,13 @@ EOL
         echo -e "${YELLOW}Using in-memory session storage (from argument).${NC}"
       fi
     elif [ "$TEST_MODE" = false ]; then
+      # Check if --memory or --postgres flags were passed
       if [ "$USE_POSTGRES" = true ]; then
         USE_POSTGRES="y"
+        echo -e "${YELLOW}Using PostgreSQL for session storage (from flag).${NC}"
+      elif [ "$USE_POSTGRES" = false ]; then
+        USE_POSTGRES="n"
+        echo -e "${YELLOW}Using in-memory session storage (from flag).${NC}"
       else
         read -p "Do you want to use PostgreSQL for session storage? (y/n): " USE_POSTGRES
       fi
