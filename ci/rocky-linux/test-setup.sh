@@ -339,8 +339,10 @@ else
   log "ERROR" "podman-compose is not installed."
 fi
 
-# Try to run podman-compose directly
-log "INFO" "Trying to run podman-compose directly..."
+# Completely clean up any existing containers, volumes, and networks
+log "INFO" "Performing complete system cleanup before starting tests..."
+podman system reset --force || true
+sleep 2
 
 # Create a custom Dockerfile for the backend that doesn't rely on volume mounts
 log "INFO" "Creating a custom Dockerfile for the backend..."
@@ -365,15 +367,19 @@ CMD ["node", "dist/index.js"]
 EOL
 
 # Use the custom Dockerfile for the backend
-log "INFO" "Using custom Dockerfile for the backend..."
+log "INFO" "Building containers with custom Dockerfiles..."
 podman build -t share-things-test_backend -f server/Dockerfile.test server || log "ERROR" "Backend build failed."
 podman build -t share-things-test_frontend -f client/Dockerfile client || log "ERROR" "Frontend build failed."
 
-# Run the containers manually
-log "INFO" "Running containers manually..."
+# Create network
+log "INFO" "Creating container network..."
 podman network create share-things-test_app_network || true
 
+# Run the containers manually
+log "INFO" "Running containers manually..."
+
 # Run PostgreSQL
+log "INFO" "Starting PostgreSQL container..."
 podman run --name=share-things-postgres -d \
   --network share-things-test_app_network \
   -e POSTGRES_USER=postgres \
@@ -382,7 +388,12 @@ podman run --name=share-things-postgres -d \
   -p 5432:5432 \
   docker.io/library/postgres:17-alpine || log "ERROR" "Failed to start PostgreSQL container."
 
+# Wait for PostgreSQL to start
+log "INFO" "Waiting for PostgreSQL to start..."
+sleep 5
+
 # Run Backend
+log "INFO" "Starting backend container..."
 podman run --name=share-things-backend -d \
   --network share-things-test_app_network \
   -e NODE_ENV=development \
@@ -392,12 +403,21 @@ podman run --name=share-things-backend -d \
   -p 15001:3001 \
   share-things-test_backend || log "ERROR" "Failed to start backend container."
 
+# Wait for backend to start
+log "INFO" "Waiting for backend to start..."
+sleep 5
+
 # Run Frontend
+log "INFO" "Starting frontend container..."
 podman run --name=share-things-frontend -d \
   --network share-things-test_app_network \
   -e API_PORT=3001 \
   -p 15000:80 \
   share-things-test_frontend || log "ERROR" "Failed to start frontend container."
+
+# Wait for frontend to start
+log "INFO" "Waiting for frontend to start..."
+sleep 5
 if [ $RESULT -ne 0 ]; then
   log "ERROR" "Memory setup failed."
   cleanup_containers
