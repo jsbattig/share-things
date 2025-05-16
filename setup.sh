@@ -28,6 +28,11 @@ PG_PASSWORD_ARG=""
 PG_SSL_ARG=""
 PG_DOCKER_ARG=""
 
+# Docker registry parameters
+DOCKER_REGISTRY_URL_ARG=""
+DOCKER_USERNAME_ARG=""
+DOCKER_PASSWORD_ARG=""
+
 # Parse additional command line arguments
 parse_additional_args() {
   while [[ $# -gt 0 ]]; do
@@ -100,6 +105,24 @@ parse_additional_args() {
         PG_DOCKER_ARG="$2"
         shift 2
         ;;
+      --docker-registry-url)
+        DOCKER_REGISTRY_URL_ARG="$2"
+        echo -e "${YELLOW}Docker registry URL: $DOCKER_REGISTRY_URL_ARG${NC}"
+        export DOCKER_REGISTRY_URL="$DOCKER_REGISTRY_URL_ARG"
+        shift 2
+        ;;
+      --docker-username)
+        DOCKER_USERNAME_ARG="$2"
+        echo -e "${YELLOW}Docker username: $DOCKER_USERNAME_ARG${NC}"
+        export DOCKER_USERNAME="$DOCKER_USERNAME_ARG"
+        shift 2
+        ;;
+      --docker-password)
+        DOCKER_PASSWORD_ARG="$2"
+        echo -e "${YELLOW}Docker password: [masked]${NC}"
+        export DOCKER_PASSWORD="$DOCKER_PASSWORD_ARG"
+        shift 2
+        ;;
       *)
         # Skip unknown arguments
         shift
@@ -112,6 +135,73 @@ parse_additional_args() {
 parse_args "$@"
 # Parse additional arguments
 parse_additional_args "$@"
+
+# Debug: Print all arguments
+echo -e "${YELLOW}All arguments: $@${NC}"
+
+# Debug: Print all environment variables
+echo -e "${YELLOW}All environment variables:${NC}"
+env | grep -E 'DOCKER_|docker' || echo "No Docker-related environment variables found"
+
+# Export Docker registry parameters as environment variables
+if [ -n "$DOCKER_REGISTRY_URL_ARG" ]; then
+  export DOCKER_REGISTRY_URL="$DOCKER_REGISTRY_URL_ARG"
+  echo -e "${YELLOW}Exported DOCKER_REGISTRY_URL=$DOCKER_REGISTRY_URL${NC}"
+  
+  # Directly update Dockerfiles with custom registry URL
+  echo -e "${YELLOW}Directly updating Dockerfiles with custom registry URL...${NC}"
+  
+  # Update server/Dockerfile
+  if [ -f "./server/Dockerfile" ]; then
+    echo -e "${YELLOW}Updating server/Dockerfile...${NC}"
+    echo -e "${YELLOW}Before update:${NC}"
+    head -10 ./server/Dockerfile
+    
+    # Use sed to replace all FROM statements
+    sed -i "s|FROM docker.io/library/|FROM ${DOCKER_REGISTRY_URL}/library/|g" ./server/Dockerfile
+    
+    echo -e "${YELLOW}After update:${NC}"
+    head -10 ./server/Dockerfile
+    
+    # Verify the update
+    if ! grep -q "$DOCKER_REGISTRY_URL" ./server/Dockerfile; then
+      echo -e "${RED}ERROR: Failed to update server/Dockerfile${NC}"
+      echo -e "${RED}Custom Docker registry URL not found in the file after update.${NC}"
+    else
+      echo -e "${GREEN}Successfully updated server/Dockerfile${NC}"
+    fi
+  fi
+  
+  # Update client/Dockerfile
+  if [ -f "./client/Dockerfile" ]; then
+    echo -e "${YELLOW}Updating client/Dockerfile...${NC}"
+    echo -e "${YELLOW}Before update:${NC}"
+    head -10 ./client/Dockerfile
+    
+    # Use sed to replace all FROM statements
+    sed -i "s|FROM docker.io/library/|FROM ${DOCKER_REGISTRY_URL}/library/|g" ./client/Dockerfile
+    
+    echo -e "${YELLOW}After update:${NC}"
+    head -10 ./client/Dockerfile
+    
+    # Verify the update
+    if ! grep -q "$DOCKER_REGISTRY_URL" ./client/Dockerfile; then
+      echo -e "${RED}ERROR: Failed to update client/Dockerfile${NC}"
+      echo -e "${RED}Custom Docker registry URL not found in the file after update.${NC}"
+    else
+      echo -e "${GREEN}Successfully updated client/Dockerfile${NC}"
+    fi
+  fi
+fi
+
+if [ -n "$DOCKER_USERNAME_ARG" ]; then
+  export DOCKER_USERNAME="$DOCKER_USERNAME_ARG"
+  echo -e "${YELLOW}Exported DOCKER_USERNAME=$DOCKER_USERNAME${NC}"
+fi
+if [ -n "$DOCKER_PASSWORD_ARG" ]; then
+  export DOCKER_PASSWORD="$DOCKER_PASSWORD_ARG"
+  echo -e "${YELLOW}Exported DOCKER_PASSWORD=[masked]${NC}"
+fi
 
 # Display welcome message
 show_welcome
@@ -139,6 +229,154 @@ setup_env_files
 
 # Configure session storage
 configure_session_storage
+
+# Configure Docker registry if parameters are provided
+if [ -n "$DOCKER_REGISTRY_URL_ARG" ]; then
+  echo -e "${YELLOW}Docker registry parameters detected: $DOCKER_REGISTRY_URL_ARG${NC}"
+  echo -e "${YELLOW}Configuring Docker registry...${NC}"
+  
+  # Check if docker-auth.sh exists in the ci/rocky-linux directory
+  if [ -f "ci/rocky-linux/docker-auth.sh" ]; then
+    echo -e "${YELLOW}Using ci/rocky-linux/docker-auth.sh for Docker registry configuration...${NC}"
+    chmod +x ci/rocky-linux/docker-auth.sh
+    
+    # Build the command with any provided arguments
+    DOCKER_AUTH_CMD="ci/rocky-linux/docker-auth.sh"
+    if [ -n "$DOCKER_REGISTRY_URL_ARG" ]; then
+      DOCKER_AUTH_CMD="$DOCKER_AUTH_CMD --registry-url $DOCKER_REGISTRY_URL_ARG"
+    fi
+    if [ -n "$DOCKER_USERNAME_ARG" ]; then
+      DOCKER_AUTH_CMD="$DOCKER_AUTH_CMD --username $DOCKER_USERNAME_ARG"
+    fi
+    if [ -n "$DOCKER_PASSWORD_ARG" ]; then
+      DOCKER_AUTH_CMD="$DOCKER_AUTH_CMD --password $DOCKER_PASSWORD_ARG"
+    fi
+    
+    # Run the Docker registry configuration script
+    eval "$DOCKER_AUTH_CMD"
+    if [ $? -eq 0 ]; then
+      echo -e "${GREEN}Docker registry configuration successful.${NC}"
+      
+      # Source the generated setup script if it exists
+      if [ -f "./docker-registry-setup.sh" ]; then
+        echo -e "${YELLOW}Sourcing docker-registry-setup.sh...${NC}"
+        source ./docker-registry-setup.sh
+      fi
+      
+      # Verify that the Dockerfiles have been updated with the custom registry URL
+      echo -e "${YELLOW}Verifying Dockerfiles have been updated with custom registry URL...${NC}"
+      
+      # Check server/Dockerfile
+      if [ -f "./server/Dockerfile" ]; then
+        echo -e "${YELLOW}Checking server/Dockerfile for custom registry URL...${NC}"
+        if ! grep -q "$DOCKER_REGISTRY_URL_ARG" ./server/Dockerfile; then
+          echo -e "${RED}ERROR: Custom Docker registry URL '$DOCKER_REGISTRY_URL_ARG' not found in server/Dockerfile.${NC}"
+          echo -e "${RED}The Dockerfile was not properly updated. Aborting setup.${NC}"
+          exit 1
+        else
+          echo -e "${GREEN}Custom Docker registry URL found in server/Dockerfile.${NC}"
+        fi
+      fi
+      
+      # Check client/Dockerfile
+      if [ -f "./client/Dockerfile" ]; then
+        echo -e "${YELLOW}Checking client/Dockerfile for custom registry URL...${NC}"
+        if ! grep -q "$DOCKER_REGISTRY_URL_ARG" ./client/Dockerfile; then
+          echo -e "${RED}ERROR: Custom Docker registry URL '$DOCKER_REGISTRY_URL_ARG' not found in client/Dockerfile.${NC}"
+          echo -e "${RED}The Dockerfile was not properly updated. Aborting setup.${NC}"
+          exit 1
+        else
+          echo -e "${GREEN}Custom Docker registry URL found in client/Dockerfile.${NC}"
+        fi
+      fi
+    else
+      echo -e "${RED}Docker registry configuration failed.${NC}"
+    fi
+  else
+    echo -e "${YELLOW}docker-auth.sh not found. Creating basic Docker registry configuration...${NC}"
+    
+    # Create basic Docker registry configuration
+    if command -v podman &> /dev/null; then
+      echo -e "${YELLOW}Configuring Podman for Docker registry...${NC}"
+      
+      # Create registries.conf
+      mkdir -p ~/.config/containers
+      cat > ~/.config/containers/registries.conf << EOL
+[registries.search]
+registries = ["${DOCKER_REGISTRY_URL_ARG}", "docker.io", "quay.io"]
+
+[registries.insecure]
+registries = []
+
+[registries.block]
+registries = []
+
+[engine]
+short-name-mode="permissive"
+EOL
+      
+      # Set up authentication if username and password are provided
+      if [ -n "$DOCKER_USERNAME_ARG" ] && [ -n "$DOCKER_PASSWORD_ARG" ]; then
+        echo -e "${YELLOW}Setting up Docker registry authentication...${NC}"
+        
+        # Create auth.json
+        mkdir -p ~/.config/containers/auth.json.d
+        cat > ~/.config/containers/auth.json << EOL
+{
+  "auths": {
+    "${DOCKER_REGISTRY_URL_ARG}": {
+      "auth": "$(echo -n "${DOCKER_USERNAME_ARG}:${DOCKER_PASSWORD_ARG}" | base64)"
+    }
+  }
+}
+EOL
+        
+        # Set permissions
+        chmod 600 ~/.config/containers/auth.json
+        
+        # Login to registry
+        podman login --username "$DOCKER_USERNAME_ARG" --password "$DOCKER_PASSWORD_ARG" "$DOCKER_REGISTRY_URL_ARG"
+      fi
+    elif command -v docker &> /dev/null; then
+      echo -e "${YELLOW}Configuring Docker for Docker registry...${NC}"
+      
+      # Set up authentication if username and password are provided
+      if [ -n "$DOCKER_USERNAME_ARG" ] && [ -n "$DOCKER_PASSWORD_ARG" ]; then
+        echo -e "${YELLOW}Setting up Docker registry authentication...${NC}"
+        
+        # Login to registry
+        docker login --username "$DOCKER_USERNAME_ARG" --password "$DOCKER_PASSWORD_ARG" "$DOCKER_REGISTRY_URL_ARG"
+      fi
+    fi
+    
+    # Update docker-compose files to use custom registry
+    if [ -n "$DOCKER_REGISTRY_URL_ARG" ]; then
+      echo -e "${YELLOW}Updating docker-compose files to use custom registry...${NC}"
+      
+      # Update docker-compose files
+      for compose_file in docker-compose.yml docker-compose.prod.yml docker-compose.test.yml; do
+        if [ -f "./$compose_file" ]; then
+          echo -e "${YELLOW}Updating $compose_file...${NC}"
+          sed -i.bak "s|image: docker.io/library/|image: ${DOCKER_REGISTRY_URL_ARG}/library/|g" ./$compose_file
+        fi
+      done
+      
+      # Update Dockerfiles
+      if [ -f "./server/Dockerfile" ]; then
+        echo -e "${YELLOW}Updating server/Dockerfile...${NC}"
+        sed -i.bak "s|FROM docker.io/library/|FROM ${DOCKER_REGISTRY_URL_ARG}/library/|g" ./server/Dockerfile
+      fi
+      
+      if [ -f "./client/Dockerfile" ]; then
+        echo -e "${YELLOW}Updating client/Dockerfile...${NC}"
+        sed -i.bak "s|FROM docker.io/library/|FROM ${DOCKER_REGISTRY_URL_ARG}/library/|g" ./client/Dockerfile
+      fi
+      
+      # Clean up backup files
+      find . -name "*.bak" -type f -delete 2>/dev/null || true
+    fi
+  fi
+fi
 
 # Configure Docker/Podman
 # This function is a wrapper for the main function in setup/docker.sh

@@ -20,9 +20,324 @@ else
     SED_CMD="sed -i"
 fi
 
+# Docker registry parameters
+DOCKER_REGISTRY_URL=""
+DOCKER_USERNAME=""
+DOCKER_PASSWORD=""
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --docker-registry-url)
+            DOCKER_REGISTRY_URL="$2"
+            echo -e "${YELLOW}Docker registry URL: $DOCKER_REGISTRY_URL${NC}"
+            export DOCKER_REGISTRY_URL="$DOCKER_REGISTRY_URL"
+            shift 2
+            ;;
+        --docker-username)
+            DOCKER_USERNAME="$2"
+            echo -e "${YELLOW}Docker username: $DOCKER_USERNAME${NC}"
+            export DOCKER_USERNAME="$DOCKER_USERNAME"
+            shift 2
+            ;;
+        --docker-password)
+            DOCKER_PASSWORD="$2"
+            echo -e "${YELLOW}Docker password: [masked]${NC}"
+            export DOCKER_PASSWORD="$DOCKER_PASSWORD"
+            shift 2
+            ;;
+        *)
+            # Skip unknown arguments
+            shift
+            ;;
+    esac
+done
+
 echo -e "${BLUE}=== ShareThings Server Update ===${NC}"
 echo "This script will update your ShareThings deployment with the latest code."
 echo ""
+
+# Configure Docker registry if parameters are provided
+if [ -n "$DOCKER_REGISTRY_URL" ]; then
+    echo -e "${YELLOW}Docker registry parameters detected. Configuring Docker registry...${NC}"
+    
+    # Check if docker-auth.sh exists in the ci/rocky-linux directory
+    if [ -f "ci/rocky-linux/docker-auth.sh" ]; then
+        echo -e "${YELLOW}Using ci/rocky-linux/docker-auth.sh for Docker registry configuration...${NC}"
+        chmod +x ci/rocky-linux/docker-auth.sh
+        
+        # Build the command with any provided arguments
+        DOCKER_AUTH_CMD="ci/rocky-linux/docker-auth.sh"
+        if [ -n "$DOCKER_REGISTRY_URL" ]; then
+            DOCKER_AUTH_CMD="$DOCKER_AUTH_CMD --registry-url $DOCKER_REGISTRY_URL"
+        fi
+        if [ -n "$DOCKER_USERNAME" ]; then
+            DOCKER_AUTH_CMD="$DOCKER_AUTH_CMD --username $DOCKER_USERNAME"
+        fi
+        if [ -n "$DOCKER_PASSWORD" ]; then
+            DOCKER_AUTH_CMD="$DOCKER_AUTH_CMD --password $DOCKER_PASSWORD"
+        fi
+        
+        # Run the Docker registry configuration script
+        eval "$DOCKER_AUTH_CMD"
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}Docker registry configuration successful.${NC}"
+            
+            # Source the generated setup script if it exists
+            if [ -f "./docker-registry-setup.sh" ]; then
+                echo -e "${YELLOW}Sourcing docker-registry-setup.sh...${NC}"
+                source ./docker-registry-setup.sh
+            fi
+        else
+            echo -e "${RED}Docker registry configuration failed.${NC}"
+        fi
+    else
+        echo -e "${YELLOW}docker-auth.sh not found. Creating basic Docker registry configuration...${NC}"
+        
+        # Create basic Docker registry configuration
+        if command -v podman &> /dev/null; then
+            echo -e "${YELLOW}Configuring Podman for Docker registry...${NC}"
+            
+            # Create registries.conf
+            mkdir -p ~/.config/containers
+            cat > ~/.config/containers/registries.conf << EOL
+[registries.search]
+registries = ["${DOCKER_REGISTRY_URL}", "docker.io", "quay.io"]
+
+[registries.insecure]
+registries = []
+
+[registries.block]
+registries = []
+
+[engine]
+short-name-mode="permissive"
+EOL
+            
+            # Set up authentication if username and password are provided
+            if [ -n "$DOCKER_USERNAME" ] && [ -n "$DOCKER_PASSWORD" ]; then
+                echo -e "${YELLOW}Setting up Docker registry authentication...${NC}"
+                
+                # Create auth.json
+                mkdir -p ~/.config/containers/auth.json.d
+                cat > ~/.config/containers/auth.json << EOL
+{
+  "auths": {
+    "${DOCKER_REGISTRY_URL}": {
+      "auth": "$(echo -n "${DOCKER_USERNAME}:${DOCKER_PASSWORD}" | base64)"
+    }
+  }
+}
+EOL
+                
+                # Set permissions
+                chmod 600 ~/.config/containers/auth.json
+                
+                # Login to registry
+                podman login --username "$DOCKER_USERNAME" --password "$DOCKER_PASSWORD" "$DOCKER_REGISTRY_URL"
+            fi
+        elif command -v docker &> /dev/null; then
+            echo -e "${YELLOW}Configuring Docker for Docker registry...${NC}"
+            
+            # Set up authentication if username and password are provided
+            if [ -n "$DOCKER_USERNAME" ] && [ -n "$DOCKER_PASSWORD" ]; then
+                echo -e "${YELLOW}Setting up Docker registry authentication...${NC}"
+                
+                # Login to registry
+                docker login --username "$DOCKER_USERNAME" --password "$DOCKER_PASSWORD" "$DOCKER_REGISTRY_URL"
+            fi
+        fi
+    fi
+fi
+
+# Define log function
+log() {
+    local level=$1
+    local message=$2
+    
+    case $level in
+        "INFO") echo -e "${BLUE}[INFO] $message${NC}" ;;
+        "SUCCESS") echo -e "${GREEN}[SUCCESS] $message${NC}" ;;
+        "WARNING") echo -e "${YELLOW}[WARNING] $message${NC}" ;;
+        "ERROR") echo -e "${RED}[ERROR] $message${NC}" ;;
+        *) echo -e "${BLUE}[$level] $message${NC}" ;;
+    esac
+}
+
+# Update docker-compose files to use fully qualified image names
+log "INFO" "Updating docker-compose files to use fully qualified image names..."
+
+# Determine registry prefix
+REGISTRY_PREFIX="docker.io/library"
+if [ -n "$DOCKER_REGISTRY_URL" ]; then
+  REGISTRY_PREFIX="${DOCKER_REGISTRY_URL}/library"
+  log "INFO" "Using custom registry URL from command line: ${DOCKER_REGISTRY_URL}"
+fi
+
+# Check if we have a .docker-registry-url file from docker-auth.sh
+if [ -f "./.docker-registry-url" ]; then
+  REGISTRY_URL=$(cat ./.docker-registry-url)
+  if [ -n "$REGISTRY_URL" ] && [ -z "$DOCKER_REGISTRY_URL" ]; then
+    REGISTRY_PREFIX="${REGISTRY_URL}/library"
+    log "INFO" "Using registry URL from .docker-registry-url: ${REGISTRY_URL}"
+  fi
+fi
+
+# Check if we have a .docker-registry-info file with more details
+if [ -f "./.docker-registry-info" ]; then
+  log "INFO" "Found .docker-registry-info file. Loading registry information..."
+  source ./.docker-registry-info
+  if [ -n "$DOCKER_REGISTRY_URL" ] && [ -z "$DOCKER_REGISTRY_URL" ]; then
+    REGISTRY_PREFIX="${DOCKER_REGISTRY_URL}/library"
+    log "INFO" "Using registry URL from .docker-registry-info: ${DOCKER_REGISTRY_URL}"
+  fi
+fi
+
+log "INFO" "Final registry prefix: ${REGISTRY_PREFIX}"
+
+# Update docker-compose files
+log "INFO" "Using registry prefix: ${REGISTRY_PREFIX}"
+$SED_CMD "s|image: postgres:17-alpine|image: ${REGISTRY_PREFIX}/postgres:14-alpine|g" docker-compose.yml
+$SED_CMD "s|image: postgres:17-alpine|image: ${REGISTRY_PREFIX}/postgres:14-alpine|g" docker-compose.test.yml
+$SED_CMD "s|image: postgres:17-alpine|image: ${REGISTRY_PREFIX}/postgres:14-alpine|g" docker-compose.prod.yml
+
+# Also update any existing image references
+$SED_CMD "s|image: docker.io/library/|image: ${REGISTRY_PREFIX}/|g" docker-compose.yml
+$SED_CMD "s|image: docker.io/library/|image: ${REGISTRY_PREFIX}/|g" docker-compose.test.yml
+$SED_CMD "s|image: docker.io/library/|image: ${REGISTRY_PREFIX}/|g" docker-compose.prod.yml
+
+# Update Dockerfiles
+if [ -f "./server/Dockerfile" ]; then
+  log "INFO" "Updating server/Dockerfile..."
+  $SED_CMD "s|FROM docker.io/library/|FROM ${REGISTRY_PREFIX}/|g" ./server/Dockerfile
+fi
+
+if [ -f "./client/Dockerfile" ]; then
+  log "INFO" "Updating client/Dockerfile..."
+  $SED_CMD "s|FROM docker.io/library/|FROM ${REGISTRY_PREFIX}/|g" ./client/Dockerfile
+fi
+
+# Directly update Dockerfiles with custom registry URL if provided
+if [ -n "$DOCKER_REGISTRY_URL" ]; then
+    echo -e "${YELLOW}Custom Docker registry URL provided: $DOCKER_REGISTRY_URL${NC}"
+    echo -e "${YELLOW}Directly updating Dockerfiles with custom registry URL...${NC}"
+    
+    # Update server/Dockerfile
+    if [ -f "./server/Dockerfile" ]; then
+        echo -e "${YELLOW}Updating server/Dockerfile...${NC}"
+        echo -e "${YELLOW}Before update:${NC}"
+        head -10 ./server/Dockerfile
+        
+        # Create a temporary file for the modified Dockerfile
+        TEMP_FILE=$(mktemp)
+        
+        # Read the Dockerfile line by line and replace all FROM statements
+        while IFS= read -r line; do
+            if [[ $line =~ ^FROM ]]; then
+                # Extract the image name and tag
+                if [[ $line =~ ^FROM[[:space:]]+([^[:space:]]+)(.*)$ ]]; then
+                    image="${BASH_REMATCH[1]}"
+                    rest="${BASH_REMATCH[2]}"
+                    
+                    # Remove docker.io prefix if present
+                    image_without_prefix="${image#docker.io/}"
+                    
+                    # Construct the new image reference with the custom registry
+                    # Remove trailing slash from registry URL if present
+                    registry_url="${DOCKER_REGISTRY_URL%/}"
+                    
+                    # Construct the new image reference
+                    new_image="${registry_url}/${image_without_prefix}"
+                    
+                    # Replace the line
+                    echo -e "${YELLOW}Replacing FROM statement: $line${NC}"
+                    echo -e "${YELLOW}With: FROM $new_image$rest${NC}"
+                    echo "FROM $new_image$rest" >> "$TEMP_FILE"
+                else
+                    # If we couldn't parse the FROM statement, keep it as is
+                    echo "$line" >> "$TEMP_FILE"
+                fi
+            else
+                # Not a FROM statement, keep it as is
+                echo "$line" >> "$TEMP_FILE"
+            fi
+        done < "./server/Dockerfile"
+        
+        # Replace the original file with the modified one
+        mv "$TEMP_FILE" "./server/Dockerfile"
+        
+        echo -e "${YELLOW}After update:${NC}"
+        head -10 ./server/Dockerfile
+        
+        # Verify the update
+        if ! grep -q "$DOCKER_REGISTRY_URL" ./server/Dockerfile; then
+            echo -e "${RED}ERROR: Failed to update server/Dockerfile${NC}"
+            echo -e "${RED}Custom Docker registry URL not found in the file after update.${NC}"
+            echo -e "${RED}Aborting update.${NC}"
+            exit 1
+        else
+            echo -e "${GREEN}Successfully updated server/Dockerfile${NC}"
+        fi
+    fi
+    
+    # Update client/Dockerfile
+    if [ -f "./client/Dockerfile" ]; then
+        echo -e "${YELLOW}Updating client/Dockerfile...${NC}"
+        echo -e "${YELLOW}Before update:${NC}"
+        head -10 ./client/Dockerfile
+        
+        # Create a temporary file for the modified Dockerfile
+        TEMP_FILE=$(mktemp)
+        
+        # Read the Dockerfile line by line and replace all FROM statements
+        while IFS= read -r line; do
+            if [[ $line =~ ^FROM ]]; then
+                # Extract the image name and tag
+                if [[ $line =~ ^FROM[[:space:]]+([^[:space:]]+)(.*)$ ]]; then
+                    image="${BASH_REMATCH[1]}"
+                    rest="${BASH_REMATCH[2]}"
+                    
+                    # Remove docker.io prefix if present
+                    image_without_prefix="${image#docker.io/}"
+                    
+                    # Construct the new image reference with the custom registry
+                    # Remove trailing slash from registry URL if present
+                    registry_url="${DOCKER_REGISTRY_URL%/}"
+                    
+                    # Construct the new image reference
+                    new_image="${registry_url}/${image_without_prefix}"
+                    
+                    # Replace the line
+                    echo -e "${YELLOW}Replacing FROM statement: $line${NC}"
+                    echo -e "${YELLOW}With: FROM $new_image$rest${NC}"
+                    echo "FROM $new_image$rest" >> "$TEMP_FILE"
+                else
+                    # If we couldn't parse the FROM statement, keep it as is
+                    echo "$line" >> "$TEMP_FILE"
+                fi
+            else
+                # Not a FROM statement, keep it as is
+                echo "$line" >> "$TEMP_FILE"
+            fi
+        done < "./client/Dockerfile"
+        
+        # Replace the original file with the modified one
+        mv "$TEMP_FILE" "./client/Dockerfile"
+        
+        echo -e "${YELLOW}After update:${NC}"
+        head -10 ./client/Dockerfile
+        
+        # Verify the update
+        if ! grep -q "$DOCKER_REGISTRY_URL" ./client/Dockerfile; then
+            echo -e "${RED}ERROR: Failed to update client/Dockerfile${NC}"
+            echo -e "${RED}Custom Docker registry URL not found in the file after update.${NC}"
+            echo -e "${RED}Aborting update.${NC}"
+            exit 1
+        else
+            echo -e "${GREEN}Successfully updated client/Dockerfile${NC}"
+        fi
+    fi
+fi
 
 # Detect which container engine is being used
 if command -v podman &> /dev/null; then

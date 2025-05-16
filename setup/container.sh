@@ -15,6 +15,129 @@ build_and_start_containers() {
   fi
   
   echo -e "${YELLOW}Building containers...${NC}"
+  
+  # Directly update Dockerfiles with custom registry URL if provided
+  if [ -n "$DOCKER_REGISTRY_URL" ]; then
+    echo -e "${YELLOW}Custom Docker registry URL provided: $DOCKER_REGISTRY_URL${NC}"
+    echo -e "${YELLOW}Directly updating Dockerfiles with custom registry URL...${NC}"
+    
+    # Update server/Dockerfile
+    if [ -f "./server/Dockerfile" ]; then
+      echo -e "${YELLOW}Updating server/Dockerfile...${NC}"
+      echo -e "${YELLOW}Before update:${NC}"
+      head -10 ./server/Dockerfile
+      
+      # Create a temporary file for the modified Dockerfile
+      TEMP_FILE=$(mktemp)
+      
+      # Read the Dockerfile line by line and replace all FROM statements
+      while IFS= read -r line; do
+        if [[ $line =~ ^FROM ]]; then
+          # Extract the image name and tag
+          if [[ $line =~ ^FROM[[:space:]]+([^[:space:]]+)(.*)$ ]]; then
+            image="${BASH_REMATCH[1]}"
+            rest="${BASH_REMATCH[2]}"
+            
+            # Remove docker.io prefix if present
+            image_without_prefix="${image#docker.io/}"
+            
+            # Construct the new image reference with the custom registry
+            # Remove trailing slash from registry URL if present
+            registry_url="${DOCKER_REGISTRY_URL%/}"
+            
+            # Construct the new image reference
+            new_image="${registry_url}/${image_without_prefix}"
+            
+            # Replace the line
+            echo -e "${YELLOW}Replacing FROM statement: $line${NC}"
+            echo -e "${YELLOW}With: FROM $new_image$rest${NC}"
+            echo "FROM $new_image$rest" >> "$TEMP_FILE"
+          else
+            # If we couldn't parse the FROM statement, keep it as is
+            echo "$line" >> "$TEMP_FILE"
+          fi
+        else
+          # Not a FROM statement, keep it as is
+          echo "$line" >> "$TEMP_FILE"
+        fi
+      done < "./server/Dockerfile"
+      
+      # Replace the original file with the modified one
+      mv "$TEMP_FILE" "./server/Dockerfile"
+      
+      echo -e "${YELLOW}After update:${NC}"
+      head -10 ./server/Dockerfile
+      
+      # Verify the update
+      if ! grep -q "$DOCKER_REGISTRY_URL" ./server/Dockerfile; then
+        echo -e "${RED}ERROR: Failed to update server/Dockerfile${NC}"
+        echo -e "${RED}Custom Docker registry URL not found in the file after update.${NC}"
+        echo -e "${RED}Aborting container build.${NC}"
+        exit 1
+      else
+        echo -e "${GREEN}Successfully updated server/Dockerfile${NC}"
+      fi
+    fi
+    
+    # Update client/Dockerfile
+    if [ -f "./client/Dockerfile" ]; then
+      echo -e "${YELLOW}Updating client/Dockerfile...${NC}"
+      echo -e "${YELLOW}Before update:${NC}"
+      head -10 ./client/Dockerfile
+      
+      # Create a temporary file for the modified Dockerfile
+      TEMP_FILE=$(mktemp)
+      
+      # Read the Dockerfile line by line and replace all FROM statements
+      while IFS= read -r line; do
+        if [[ $line =~ ^FROM ]]; then
+          # Extract the image name and tag
+          if [[ $line =~ ^FROM[[:space:]]+([^[:space:]]+)(.*)$ ]]; then
+            image="${BASH_REMATCH[1]}"
+            rest="${BASH_REMATCH[2]}"
+            
+            # Remove docker.io prefix if present
+            image_without_prefix="${image#docker.io/}"
+            
+            # Construct the new image reference with the custom registry
+            # Remove trailing slash from registry URL if present
+            registry_url="${DOCKER_REGISTRY_URL%/}"
+            
+            # Construct the new image reference
+            new_image="${registry_url}/${image_without_prefix}"
+            
+            # Replace the line
+            echo -e "${YELLOW}Replacing FROM statement: $line${NC}"
+            echo -e "${YELLOW}With: FROM $new_image$rest${NC}"
+            echo "FROM $new_image$rest" >> "$TEMP_FILE"
+          else
+            # If we couldn't parse the FROM statement, keep it as is
+            echo "$line" >> "$TEMP_FILE"
+          fi
+        else
+          # Not a FROM statement, keep it as is
+          echo "$line" >> "$TEMP_FILE"
+        fi
+      done < "./client/Dockerfile"
+      
+      # Replace the original file with the modified one
+      mv "$TEMP_FILE" "./client/Dockerfile"
+      
+      echo -e "${YELLOW}After update:${NC}"
+      head -10 ./client/Dockerfile
+      
+      # Verify the update
+      if ! grep -q "$DOCKER_REGISTRY_URL" ./client/Dockerfile; then
+        echo -e "${RED}ERROR: Failed to update client/Dockerfile${NC}"
+        echo -e "${RED}Custom Docker registry URL not found in the file after update.${NC}"
+        echo -e "${RED}Aborting container build.${NC}"
+        exit 1
+      else
+        echo -e "${GREEN}Successfully updated client/Dockerfile${NC}"
+      fi
+    fi
+  fi
+  
   if [ "$CONTAINER_ENGINE" = "podman" ]; then
     # First attempt with default configuration
     echo -e "${YELLOW}Attempting to build containers with default configuration...${NC}"
