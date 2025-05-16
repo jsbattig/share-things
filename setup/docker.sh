@@ -134,21 +134,43 @@ configure_podman_rocky() {
   
   # Use a configuration that works in the current environment
   if [ -n "$GITHUB_ACTIONS" ]; then
-    # For GitHub Actions, use netavark which is supported in the environment
-    # This avoids the "unsupported network backend" error
+    # For GitHub Actions, we need to completely bypass podman-compose
+    # and use direct podman commands instead
+    echo -e "${YELLOW}GitHub Actions environment detected. Using direct podman commands instead of podman-compose${NC}"
+    
+    # Create a minimal containers.conf that works in GitHub Actions
+    mkdir -p ~/.config/containers
     cat > ~/.config/containers/containers.conf << EOL
 [engine]
 cgroup_manager = "cgroupfs"
 events_logger = "file"
-network_backend = "netavark"
 
 [network]
-network_backend = "netavark"
 default_rootless_network_cmd = "slirp4netns"
 EOL
-    echo -e "${GREEN}Created ~/.config/containers/containers.conf with netavark networking for GitHub Actions${NC}"
+    echo -e "${GREEN}Created minimal ~/.config/containers/containers.conf for GitHub Actions${NC}"
     
-    # Also modify docker-compose files to NOT use host networking in GitHub Actions
+    # Create registries.conf to allow short names
+    cat > ~/.config/containers/registries.conf << EOL
+[registries.search]
+registries = ["docker.io", "quay.io"]
+
+[registries.insecure]
+registries = []
+
+[registries.block]
+registries = []
+
+[engine]
+short-name-mode="permissive"
+EOL
+    echo -e "${GREEN}Created ~/.config/containers/registries.conf${NC}"
+    
+    # Set environment variable to bypass podman-compose in test scripts
+    export GITHUB_ACTIONS_SKIP_PODMAN_COMPOSE=true
+    echo -e "${GREEN}Set GITHUB_ACTIONS_SKIP_PODMAN_COMPOSE=true${NC}"
+    
+    # Modify docker-compose files to NOT use host networking
     echo -e "${YELLOW}Modifying docker-compose files to use standard networking instead of host for GitHub Actions...${NC}"
     sed -i 's/network_mode: host/# network_mode: host/' docker-compose.yml
     sed -i 's/network_mode: host/# network_mode: host/' docker-compose.prod.yml

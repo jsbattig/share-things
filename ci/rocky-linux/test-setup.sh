@@ -136,9 +136,13 @@ cleanup_containers() {
   log "INFO" "Cleaning up containers..."
   
   # First try to use podman-compose to kill and remove containers
-  if command -v podman-compose &> /dev/null; then
+  if [ -z "$GITHUB_ACTIONS_SKIP_PODMAN_COMPOSE" ] && command -v podman-compose &> /dev/null; then
     log "INFO" "Using podman-compose to kill containers..."
     podman-compose down -v --remove-orphans || true
+  else
+    if [ -n "$GITHUB_ACTIONS_SKIP_PODMAN_COMPOSE" ]; then
+      log "INFO" "Skipping podman-compose due to GITHUB_ACTIONS_SKIP_PODMAN_COMPOSE=true"
+    fi
   fi
   
   # List all containers for debugging
