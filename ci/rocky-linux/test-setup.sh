@@ -557,7 +557,77 @@ fi
 
 # Test the application
 log "INFO" "Testing the application..."
-health_check "http://localhost:3001/health" $HEALTH_CHECK_TIMEOUT || log "WARNING" "Health check failed, but continuing anyway"
+
+# Check if the backend container is running or has crashed
+BACKEND_CONTAINER=$(podman ps -a | grep backend | awk '{print $1}')
+if [ -n "$BACKEND_CONTAINER" ]; then
+  log "INFO" "Backend container ID: $BACKEND_CONTAINER"
+  
+  # Check the container status
+  CONTAINER_STATUS=$(podman inspect $BACKEND_CONTAINER --format '{{.State.Status}}')
+  log "INFO" "Backend container status: $CONTAINER_STATUS"
+  
+  # Check the exit code if the container has exited
+  if [ "$CONTAINER_STATUS" = "exited" ]; then
+    EXIT_CODE=$(podman inspect $BACKEND_CONTAINER --format '{{.State.ExitCode}}')
+    log "ERROR" "Backend container exited with code: $EXIT_CODE"
+    
+    # Get the container logs to see why it crashed
+    log "ERROR" "Backend container logs:"
+    podman logs $BACKEND_CONTAINER
+    
+    # Fail the test since the backend container crashed
+    log "ERROR" "Backend container crashed. Test failed."
+    cleanup_containers
+    exit 1
+  fi
+else
+  log "ERROR" "Backend container not found."
+  cleanup_containers
+  exit 1
+fi
+
+# Check frontend container
+FRONTEND_CONTAINER=$(podman ps -a | grep frontend | awk '{print $1}')
+if [ -n "$FRONTEND_CONTAINER" ]; then
+  log "INFO" "Frontend container ID: $FRONTEND_CONTAINER"
+  
+  # Check the container status
+  CONTAINER_STATUS=$(podman inspect $FRONTEND_CONTAINER --format '{{.State.Status}}')
+  log "INFO" "Frontend container status: $CONTAINER_STATUS"
+  
+  if [ "$CONTAINER_STATUS" != "running" ]; then
+    log "ERROR" "Frontend container is not running. Status: $CONTAINER_STATUS"
+    log "ERROR" "Frontend container logs:"
+    podman logs $FRONTEND_CONTAINER
+    
+    # Fail the test since the frontend container is not running
+    log "ERROR" "Frontend container not running. Test failed."
+    cleanup_containers
+    exit 1
+  fi
+else
+  log "ERROR" "Frontend container not found."
+  cleanup_containers
+  exit 1
+fi
+
+log "INFO" "Using production port 15001 for health check..."
+log "INFO" "Health check timeout set to $HEALTH_CHECK_TIMEOUT seconds"
+if ! health_check "http://localhost:15001/health" $HEALTH_CHECK_TIMEOUT; then
+  log "ERROR" "Health check failed. Test failed."
+  cleanup_containers
+  exit 1
+fi
+
+log "INFO" "Health check passed. Testing frontend on port 15000..."
+if ! curl -s -f "http://localhost:15000" > /dev/null 2>&1; then
+  log "ERROR" "Frontend check failed. Test failed."
+  cleanup_containers
+  exit 1
+fi
+
+log "SUCCESS" "All PostgreSQL tests passed!"
 
 # Clean up after PostgreSQL setup
 cleanup_containers
