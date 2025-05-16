@@ -384,6 +384,34 @@ fi
 
 # Test the application
 log "INFO" "Testing the application..."
+
+# Check if the backend container is running or has crashed
+BACKEND_CONTAINER=$(podman ps -a | grep backend | awk '{print $1}')
+if [ -n "$BACKEND_CONTAINER" ]; then
+  log "INFO" "Backend container ID: $BACKEND_CONTAINER"
+  
+  # Check the container status
+  CONTAINER_STATUS=$(podman inspect $BACKEND_CONTAINER --format '{{.State.Status}}')
+  log "INFO" "Backend container status: $CONTAINER_STATUS"
+  
+  # Check the exit code if the container has exited
+  if [ "$CONTAINER_STATUS" = "exited" ]; then
+    EXIT_CODE=$(podman inspect $BACKEND_CONTAINER --format '{{.State.ExitCode}}')
+    log "ERROR" "Backend container exited with code: $EXIT_CODE"
+    
+    # Get the container logs to see why it crashed
+    log "INFO" "Backend container logs:"
+    podman logs $BACKEND_CONTAINER
+    
+    # Try to restart the container
+    log "INFO" "Attempting to restart the backend container..."
+    podman start $BACKEND_CONTAINER
+    sleep 5
+  fi
+else
+  log "ERROR" "Backend container not found."
+fi
+
 log "INFO" "Using production port 15001 for health check..."
 health_check "http://localhost:15001/health" $HEALTH_CHECK_TIMEOUT || log "WARNING" "Health check failed, but continuing anyway"
 
