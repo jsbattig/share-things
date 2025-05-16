@@ -134,9 +134,8 @@ configure_podman_rocky() {
   
   # Use a configuration that works in the current environment
   if [ -n "$GITHUB_ACTIONS" ]; then
-    # For GitHub Actions, we need to completely bypass podman-compose
-    # and use direct podman commands instead
-    echo -e "${YELLOW}GitHub Actions environment detected. Using direct podman commands instead of podman-compose${NC}"
+    # For GitHub Actions, we need to completely bypass network configuration issues
+    echo -e "${YELLOW}GitHub Actions environment detected. Using special configuration for CI environment${NC}"
     
     # Create a minimal containers.conf that works in GitHub Actions
     mkdir -p ~/.config/containers
@@ -144,9 +143,11 @@ configure_podman_rocky() {
 [engine]
 cgroup_manager = "cgroupfs"
 events_logger = "file"
+runtime = "crun"
 
+# Disable networking features that require systemd/dbus
 [network]
-default_rootless_network_cmd = "slirp4netns"
+network_backend = ""
 EOL
     echo -e "${GREEN}Created minimal ~/.config/containers/containers.conf for GitHub Actions${NC}"
     
@@ -169,6 +170,36 @@ EOL
     # Set environment variable to bypass podman-compose in test scripts
     export GITHUB_ACTIONS_SKIP_PODMAN_COMPOSE=true
     echo -e "${GREEN}Set GITHUB_ACTIONS_SKIP_PODMAN_COMPOSE=true${NC}"
+    
+    # Create a special script to run containers in CI environment
+    cat > ci-run-containers.sh << EOL
+#!/bin/bash
+# This script runs containers directly without networking in CI environment
+set -e
+
+# Build backend image
+podman build -f ./server/Dockerfile.test -t share-things-test_backend ./server
+
+# Build frontend image
+podman build -f ./client/Dockerfile -t share-things-test_frontend ./client
+
+# Run backend container with host networking disabled
+podman run -d --name share-things-backend \\
+  -e NODE_ENV=development \\
+  -e PORT=15001 \\
+  -e LISTEN_PORT=15001 \\
+  -e SESSION_STORAGE_TYPE=memory \\
+  share-things-test_backend
+
+# Run frontend container with host networking disabled
+podman run -d --name share-things-frontend \\
+  -e API_PORT=15001 \\
+  share-things-test_frontend
+
+echo "Containers started in CI mode"
+EOL
+    chmod +x ci-run-containers.sh
+    echo -e "${GREEN}Created ci-run-containers.sh script for CI environment${NC}"
     
     # Modify docker-compose files to NOT use host networking
     echo -e "${YELLOW}Modifying docker-compose files to use standard networking instead of host for GitHub Actions...${NC}"
