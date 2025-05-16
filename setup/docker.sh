@@ -1,71 +1,78 @@
 #!/bin/bash
 
-# Docker/Podman setup functions for ShareThings
+# Colors for output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
 
-# Configure Docker/Podman
-configure_container_engine() {
-  echo -e "${BLUE}=== Container Engine Configuration ===${NC}"
-  
-  # Check if container engine is provided as an argument
-  if [ -n "$CONTAINER_ENGINE_ARG" ]; then
-    CONTAINER_ENGINE="$CONTAINER_ENGINE_ARG"
-    echo -e "${GREEN}Using container engine from argument: ${CONTAINER_ENGINE}${NC}"
-  elif [ "$TEST_MODE" = false ]; then
-    read -p "Which container engine do you want to use? (docker/podman) [${DEFAULT_ENGINE}]: " CONTAINER_ENGINE
-    CONTAINER_ENGINE=${CONTAINER_ENGINE:-$DEFAULT_ENGINE}
-  else
-    # In test mode, use the default engine
-    CONTAINER_ENGINE=$DEFAULT_ENGINE
-    echo -e "${YELLOW}Test mode: Using ${CONTAINER_ENGINE} as container engine.${NC}"
-  fi
-  
-  # Set compose command based on container engine
-  if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-    COMPOSE_CMD="podman-compose"
-    CONTAINER_CMD="podman"
-  else
-    COMPOSE_CMD="docker-compose"
-    CONTAINER_CMD="docker"
-  fi
-  
-  echo -e "${GREEN}Using ${CONTAINER_ENGINE} for container operations${NC}"
-  
-  # Check if the selected container engine is installed
-  if ! command -v $CONTAINER_CMD &> /dev/null; then
-    echo -e "${RED}Error: ${CONTAINER_ENGINE} is not installed.${NC}"
-    echo "Please install ${CONTAINER_ENGINE} before running this script."
+# Function to check if a command exists
+check_command() {
+  if ! command -v $1 &> /dev/null; then
+    echo -e "${RED}Error: $1 is not installed. Please install it before running this script.${NC}"
     exit 1
   fi
-  
-  # Check if the appropriate compose tool is installed
-  if ! command -v $COMPOSE_CMD &> /dev/null; then
-    echo -e "${RED}Error: ${COMPOSE_CMD} is not installed.${NC}"
-    echo "Please install ${COMPOSE_CMD} before running this script."
-    exit 1
+}
+
+# Function to detect the operating system
+detect_os() {
+  if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS=$ID
+    VERSION=$VERSION_ID
+  elif type lsb_release >/dev/null 2>&1; then
+    OS=$(lsb_release -si)
+    VERSION=$(lsb_release -sr)
+  elif [ -f /etc/lsb-release ]; then
+    . /etc/lsb-release
+    OS=$DISTRIB_ID
+    VERSION=$DISTRIB_RELEASE
+  else
+    OS=$(uname -s)
+    VERSION=$(uname -r)
   fi
   
-  # Apply Podman-specific configuration if needed
-  if [[ "$CONTAINER_ENGINE" == "podman" ]]; then
-    echo -e "${YELLOW}Detected Podman. Applying Podman-specific configuration...${NC}"
+  # Convert to lowercase
+  OS=$(echo "$OS" | tr '[:upper:]' '[:lower:]')
+}
+
+# Function to detect if running in a CI/CD environment
+detect_ci() {
+  if [ -n "$CI" ] || [ -n "$GITHUB_ACTIONS" ] || [ -n "$GITLAB_CI" ] || [ -n "$JENKINS_URL" ]; then
+    IS_CI=true
+  else
+    IS_CI=false
+  fi
+}
+
+# Function to detect the container engine
+detect_container_engine() {
+  if command -v podman &> /dev/null; then
+    CONTAINER_ENGINE="podman"
+  elif command -v docker &> /dev/null; then
+    CONTAINER_ENGINE="docker"
+  else
+    echo -e "${RED}Error: No container engine found. Please install podman or docker.${NC}"
+    exit 1
+  fi
+}
+
+# Function to configure Podman
+configure_podman() {
+  echo -e "${YELLOW}Detected Podman. Applying Podman-specific configuration...${NC}"
+  
+  # Make client/docker-entrypoint.sh executable
+  chmod +x client/docker-entrypoint.sh
+  echo -e "${GREEN}Made client/docker-entrypoint.sh executable.${NC}"
+  
+  # Check if running on Rocky Linux
+  if [ "$OS" = "rocky" ]; then
+    echo -e "${YELLOW}Detected Rocky Linux. Configuring Podman to allow short names...${NC}"
+    echo "Creating registries.conf in user's home directory..."
     
-    # Make the docker-entrypoint.sh script executable
-    if [ -f "client/docker-entrypoint.sh" ]; then
-      chmod +x client/docker-entrypoint.sh
-      echo -e "${GREEN}Made client/docker-entrypoint.sh executable.${NC}"
-    else
-      echo -e "${YELLOW}Warning: client/docker-entrypoint.sh not found. Container networking might have issues.${NC}"
-    fi
-    
-    # Configure Podman to allow short names on Rocky Linux
-    if [ -f "/etc/redhat-release" ] && grep -q "Rocky Linux" /etc/redhat-release; then
-      echo -e "${YELLOW}Detected Rocky Linux. Configuring Podman to allow short names...${NC}"
-      
-      # Create or update the registries.conf file
-      if [ "$TEST_MODE" = false ]; then
-        # In normal mode, create the file in the user's home directory instead of using sudo
-        echo "Creating registries.conf in user's home directory..."
-        mkdir -p ~/.config/containers
-        cat > ~/.config/containers/registries.conf << EOL
+    mkdir -p ~/.config/containers
+    cat > ~/.config/containers/registries.conf << EOL
 [registries.search]
 registries = ["docker.io", "quay.io"]
 
@@ -78,59 +85,32 @@ registries = []
 [engine]
 short-name-mode="permissive"
 EOL
-        echo -e "${GREEN}Created ~/.config/containers/registries.conf${NC}"
-      else
-        # In test mode, just show a warning
-        echo -e "${YELLOW}Warning: Podman on Rocky Linux may require configuration to allow short image names.${NC}"
-        echo -e "${YELLOW}If you encounter 'short-name resolution enforced' errors, run the following commands:${NC}"
-        echo "mkdir -p ~/.config/containers"
-        echo "cat > ~/.config/containers/registries.conf << EOL"
-        echo "[registries.search]"
-        echo "registries = [\"docker.io\", \"quay.io\"]"
-        echo ""
-        echo "[registries.insecure]"
-        echo "registries = []"
-        echo ""
-        echo "[registries.block]"
-        echo "registries = []"
-        echo ""
-        echo "[engine]"
-        echo "short-name-mode=\"permissive\""
-        echo "EOL"
-      fi
-    fi
-    
-    echo -e "${GREEN}Podman-specific configuration applied.${NC}"
-    echo ""
+    echo -e "${GREEN}Created ~/.config/containers/registries.conf${NC}"
   fi
+  
+  echo -e "${GREEN}Podman-specific configuration applied.${NC}"
+  echo
 }
 
-# Configure Podman for Rocky Linux in CI/CD environments
+# Function to configure Podman for Rocky Linux
 configure_podman_rocky() {
-  echo -e "${YELLOW}Detected Rocky Linux in CI/CD environment. Applying special Podman configuration...${NC}"
+  echo -e "${YELLOW}Detected Rocky Linux. Applying special Podman configuration...${NC}"
   
-  # Check Podman version to determine appropriate configuration
-  PODMAN_VERSION=$(podman --version | awk '{print $3}')
-  echo -e "${YELLOW}Detected Podman version: ${PODMAN_VERSION}${NC}"
-  
-  # Log environment information for debugging
-  echo -e "${YELLOW}Environment information:${NC}"
-  echo "User: $(whoami)"
-  echo "Home directory: $HOME"
-  echo "Current directory: $(pwd)"
-  echo "Container engine: $CONTAINER_ENGINE"
-  
-  # Check if running in GitHub Actions
-  if [ -n "$GITHUB_ACTIONS" ]; then
-    echo -e "${YELLOW}Detected GitHub Actions environment${NC}"
-    # Use a different approach for GitHub Actions
-    USE_GITHUB_APPROACH=true
-  else
-    USE_GITHUB_APPROACH=false
+  # Check if running in CI/CD environment
+  if [ "$IS_CI" = true ]; then
+    echo -e "${YELLOW}Detected Rocky Linux in CI/CD environment. Applying special Podman configuration...${NC}"
+    
+    # Get Podman version
+    PODMAN_VERSION=$(podman --version | awk '{print $3}')
+    echo -e "${YELLOW}Detected Podman version: $PODMAN_VERSION${NC}"
+    
+    # Get environment information
+    echo -e "${YELLOW}Environment information:${NC}"
+    echo "User: $(whoami)"
+    echo "Home directory: $HOME"
+    echo "Current directory: $(pwd)"
+    echo "Container engine: $CONTAINER_ENGINE"
   fi
-  
-  # Create containers.conf with appropriate networking configuration
-  mkdir -p ~/.config/containers
   
   # Use a configuration that works in the current environment
   if [ -n "$GITHUB_ACTIONS" ]; then
@@ -145,9 +125,11 @@ cgroup_manager = "cgroupfs"
 events_logger = "file"
 runtime = "crun"
 
-# Disable networking features that require systemd/dbus
+# Use bridge networking which is more compatible with CI environments
 [network]
-network_backend = ""
+network_backend = "bridge"
+default_rootless_network_cmd = "slirp4netns"
+default_network = "podman"
 EOL
     echo -e "${GREEN}Created minimal ~/.config/containers/containers.conf for GitHub Actions${NC}"
     
@@ -174,8 +156,11 @@ EOL
     # Create a special script to run containers in CI environment
     cat > ci-run-containers.sh << EOL
 #!/bin/bash
-# This script runs containers directly without networking in CI environment
+# This script runs containers with bridge networking in CI environment
 set -e
+
+# Create a bridge network for containers
+podman network create share-things-network || true
 
 # Build backend image
 podman build -f ./server/Dockerfile.test -t share-things-test_backend ./server
@@ -183,20 +168,24 @@ podman build -f ./server/Dockerfile.test -t share-things-test_backend ./server
 # Build frontend image
 podman build -f ./client/Dockerfile -t share-things-test_frontend ./client
 
-# Run backend container with host networking disabled
+# Run backend container with bridge networking
 podman run -d --name share-things-backend \\
+  --network share-things-network \\
   -e NODE_ENV=development \\
   -e PORT=15001 \\
   -e LISTEN_PORT=15001 \\
   -e SESSION_STORAGE_TYPE=memory \\
+  -p 15001:15001 \\
   share-things-test_backend
 
-# Run frontend container with host networking disabled
+# Run frontend container with bridge networking
 podman run -d --name share-things-frontend \\
+  --network share-things-network \\
   -e API_PORT=15001 \\
+  -p 15000:80 \\
   share-things-test_frontend
 
-echo "Containers started in CI mode"
+echo "Containers started in CI mode with bridge networking"
 EOL
     chmod +x ci-run-containers.sh
     echo -e "${GREEN}Created ci-run-containers.sh script for CI environment${NC}"
@@ -237,161 +226,115 @@ short-name-mode="permissive"
 EOL
   echo -e "${GREEN}Created ~/.config/containers/registries.conf${NC}"
   
-  # Display Podman configuration for debugging
-  echo -e "${YELLOW}Podman configuration:${NC}"
-  cat ~/.config/containers/containers.conf
-  cat ~/.config/containers/registries.conf
-  
-  # Modify docker-compose.yml to use appropriate networking if it exists
-  if [ -f "docker-compose.yml" ]; then
+  # If we're in a CI environment, modify docker-compose.yml to use host networking
+  if [ "$IS_CI" = true ]; then
     echo -e "${YELLOW}Modifying docker-compose.yml to use host networking...${NC}"
     
-    # Create a backup of the original file
-    cp docker-compose.yml docker-compose.yml.bak
-    
-    # Update network configuration for all services
-    $SED_CMD 's/networks:/# networks:/g' docker-compose.yml
-    $SED_CMD 's/  app_network:/  # app_network:/g' docker-compose.yml
-    $SED_CMD 's/    aliases:/    # aliases:/g' docker-compose.yml
-    $SED_CMD 's/      - backend/      # - backend/g' docker-compose.yml
-    $SED_CMD 's/      - frontend/      # - frontend/g' docker-compose.yml
-    $SED_CMD 's/      - postgres/      # - postgres/g' docker-compose.yml
-    
-    # Add network_mode: host to all services
-    $SED_CMD '/container_name: share-things-backend/a\    network_mode: host' docker-compose.yml
-    $SED_CMD '/container_name: share-things-frontend/a\    network_mode: host' docker-compose.yml
-    $SED_CMD '/container_name: share-things-postgres/a\    network_mode: host' docker-compose.yml
-    
-    # Add a note about host networking
-    echo -e "${YELLOW}Added host networking to all services in docker-compose.yml${NC}"
-    
-    # Update PostgreSQL host references to use localhost
-    if grep -q "PG_HOST=postgres" server/.env 2>/dev/null; then
-      echo -e "${YELLOW}Updating PostgreSQL host to localhost in server/.env...${NC}"
-      $SED_CMD 's/PG_HOST=postgres/PG_HOST=localhost/g' server/.env
+    # Check if docker-compose.yml exists
+    if [ -f "docker-compose.yml" ]; then
+      # Add host networking to all services
+      sed -i '/services:/,/volumes:/ s/# *network_mode: host/network_mode: host/' docker-compose.yml
+      echo -e "${YELLOW}Added host networking to all services in docker-compose.yml${NC}"
+      echo -e "${GREEN}Modified docker-compose.yml to use host networking${NC}"
     fi
     
-    echo -e "${GREEN}Modified docker-compose.yml to use host networking${NC}"
-  fi
-  
-  # Modify docker-compose.prod.yml if it exists
-  if [ -f "docker-compose.prod.yml" ]; then
-    echo -e "${YELLOW}Modifying docker-compose.prod.yml to use host networking...${NC}"
+    # Check if docker-compose.prod.yml exists
+    if [ -f "docker-compose.prod.yml" ]; then
+      sed -i '/services:/,/volumes:/ s/# *network_mode: host/network_mode: host/' docker-compose.prod.yml
+      echo -e "${GREEN}Modified docker-compose.prod.yml to use host networking${NC}"
+    fi
     
-    # Create a backup of the original file
-    cp docker-compose.prod.yml docker-compose.prod.yml.bak
+    # Check if docker-compose.test.yml exists
+    if [ -f "docker-compose.test.yml" ]; then
+      sed -i '/services:/,/volumes:/ s/# *network_mode: host/network_mode: host/' docker-compose.test.yml
+      echo -e "${GREEN}Modified docker-compose.test.yml to use host networking${NC}"
+    fi
     
-    # Update network configuration for all services
-    $SED_CMD 's/networks:/# networks:/g' docker-compose.prod.yml
-    $SED_CMD 's/  app_network:/  # app_network:/g' docker-compose.prod.yml
-    $SED_CMD 's/    aliases:/    # aliases:/g' docker-compose.prod.yml
-    $SED_CMD 's/      - backend/      # - backend/g' docker-compose.prod.yml
-    $SED_CMD 's/      - frontend/      # - frontend/g' docker-compose.prod.yml
-    $SED_CMD 's/      - postgres/      # - postgres/g' docker-compose.prod.yml
-    
-    # Add network_mode: host to all services
-    $SED_CMD '/container_name: share-things-backend/a\    network_mode: host' docker-compose.prod.yml
-    $SED_CMD '/container_name: share-things-frontend/a\    network_mode: host' docker-compose.prod.yml
-    $SED_CMD '/container_name: share-things-postgres/a\    network_mode: host' docker-compose.prod.yml
-    
-    echo -e "${GREEN}Modified docker-compose.prod.yml to use host networking${NC}"
-  fi
-  
-  # Modify docker-compose.test.yml if it exists
-  if [ -f "docker-compose.test.yml" ]; then
-    echo -e "${YELLOW}Modifying docker-compose.test.yml to use host networking...${NC}"
-    
-    # Create a backup of the original file
-    cp docker-compose.test.yml docker-compose.test.yml.bak
-    
-    # Update network configuration for all services
-    $SED_CMD 's/networks:/# networks:/g' docker-compose.test.yml
-    $SED_CMD 's/  app_network:/  # app_network:/g' docker-compose.test.yml
-    $SED_CMD 's/    aliases:/    # aliases:/g' docker-compose.test.yml
-    $SED_CMD 's/      - backend/      # - backend/g' docker-compose.test.yml
-    $SED_CMD 's/      - frontend/      # - frontend/g' docker-compose.test.yml
-    $SED_CMD 's/      - postgres/      # - postgres/g' docker-compose.test.yml
-    
-    # Add network_mode: host to all services
-    $SED_CMD '/container_name: share-things-backend/a\    network_mode: host' docker-compose.test.yml
-    $SED_CMD '/container_name: share-things-frontend/a\    network_mode: host' docker-compose.test.yml
-    $SED_CMD '/container_name: share-things-postgres/a\    network_mode: host' docker-compose.test.yml
-    
-    echo -e "${GREEN}Modified docker-compose.test.yml to use host networking${NC}"
-  fi
-  
-  # Increase container startup wait times in docker-compose files
-  echo -e "${YELLOW}Adding container dependency health checks...${NC}"
-  
-  # Add healthcheck to PostgreSQL service in docker-compose.yml
-  if [ -f "docker-compose.yml" ]; then
-    if ! grep -q "healthcheck:" docker-compose.yml; then
-      $SED_CMD '/container_name: share-things-postgres/a\    healthcheck:\n      test: ["CMD-SHELL", "pg_isready -U postgres"]\n      interval: 5s\n      timeout: 5s\n      retries: 5\n      start_period: 10s' docker-compose.yml
+    # Add health checks to PostgreSQL service
+    echo -e "${YELLOW}Adding container dependency health checks...${NC}"
+    if [ -f "docker-compose.yml" ]; then
+      # Check if health checks already exist
+      if ! grep -q "healthcheck:" docker-compose.yml; then
+        # Add health checks to PostgreSQL service
+        sed -i '/postgres:/,/volumes:/ s/container_name: share-things-postgres/container_name: share-things-postgres\n    healthcheck:\n      test: ["CMD-SHELL", "pg_isready -U postgres"]\n      interval: 5s\n      timeout: 5s\n      retries: 5\n      start_period: 10s/' docker-compose.yml
+        echo -e "${GREEN}Added health checks to PostgreSQL service${NC}"
+      fi
     fi
   fi
   
-  # Add healthcheck to PostgreSQL service in docker-compose.prod.yml
-  if [ -f "docker-compose.prod.yml" ]; then
-    if ! grep -q "healthcheck:" docker-compose.prod.yml; then
-      $SED_CMD '/container_name: share-things-postgres/a\    healthcheck:\n      test: ["CMD-SHELL", "pg_isready -U postgres"]\n      interval: 5s\n      timeout: 5s\n      retries: 5\n      start_period: 10s' docker-compose.prod.yml
-    fi
-  fi
-  
-  # Add healthcheck to PostgreSQL service in docker-compose.test.yml
-  if [ -f "docker-compose.test.yml" ]; then
-    if ! grep -q "healthcheck:" docker-compose.test.yml; then
-      $SED_CMD '/container_name: share-things-postgres/a\    healthcheck:\n      test: ["CMD-SHELL", "pg_isready -U postgres"]\n      interval: 5s\n      timeout: 5s\n      retries: 5\n      start_period: 10s' docker-compose.test.yml
-    fi
-  fi
-  
-  # Update backend dependency on postgres to wait for health check
-  if [ -f "docker-compose.yml" ]; then
-    $SED_CMD 's/      - postgres/      postgres:\n        condition: service_healthy/g' docker-compose.yml
-  fi
-  
-  if [ -f "docker-compose.prod.yml" ]; then
-    $SED_CMD 's/      - postgres/      postgres:\n        condition: service_healthy/g' docker-compose.prod.yml
-  fi
-  
-  if [ -f "docker-compose.test.yml" ]; then
-    $SED_CMD 's/      - postgres/      postgres:\n        condition: service_healthy/g' docker-compose.test.yml
-  fi
-  
-  echo -e "${GREEN}Added health checks to PostgreSQL service${NC}"
-  
-  # Display Podman version for debugging
+  # Show Podman version
   echo -e "${YELLOW}Podman version:${NC}"
-  podman --version || true
+  podman --version
   
-  # Display Podman system info for debugging
+  # Show Podman system info
   echo -e "${YELLOW}Podman system info:${NC}"
-  podman info || true
-  
-  # Display Podman network info
-  echo -e "${YELLOW}Podman network info:${NC}"
-  podman network ls || true
+  podman system info
   
   # Test network configuration
   echo -e "${YELLOW}Testing network configuration...${NC}"
-  podman run --rm docker.io/library/alpine:latest ping -c 1 google.com || echo -e "${RED}Network test failed. This may indicate network configuration issues.${NC}"
+  podman run --rm docker.io/library/alpine:latest ping -c 1 google.com || echo -e "${RED}Network test failed. This might be expected in some CI environments.${NC}"
   
-  # Create a .npmrc file with network configuration for builds
+  # Create .npmrc file with network configuration for builds
   echo -e "${YELLOW}Creating .npmrc file with network configuration for builds...${NC}"
   cat > ~/.npmrc << EOL
 registry=https://registry.npmjs.org/
+strict-ssl=false
 EOL
   echo -e "${GREEN}Created ~/.npmrc with network configuration${NC}"
   
-  # Create a podman build configuration file
+  # Create podman build configuration
   echo -e "${YELLOW}Creating podman build configuration...${NC}"
   mkdir -p ~/.config/containers
   cat > ~/.config/containers/storage.conf << EOL
 [storage]
 driver = "overlay"
 runroot = "/tmp/containers-$USER"
-graphroot = "$HOME/.local/share/containers/storage"
 EOL
   echo -e "${GREEN}Created podman build configuration${NC}"
   
   echo -e "${GREEN}Podman configuration for Rocky Linux complete.${NC}"
 }
+
+# Function to test network connectivity
+test_network() {
+  echo -e "${YELLOW}Testing network connectivity...${NC}"
+  
+  # Try to ping google.com
+  if ping -c 1 google.com &> /dev/null; then
+    echo -e "${GREEN}Network connectivity test passed.${NC}"
+    return 0
+  else
+    echo -e "${RED}Network connectivity test failed.${NC}"
+    return 1
+  fi
+}
+
+# Main function
+main() {
+  # Detect OS
+  detect_os
+  echo -e "${BLUE}Detected OS: $OS $VERSION${NC}"
+  
+  # Detect if running in CI/CD environment
+  detect_ci
+  if [ "$IS_CI" = true ]; then
+    echo -e "${BLUE}Running in CI/CD environment${NC}"
+  fi
+  
+  # Detect container engine
+  detect_container_engine
+  echo -e "${BLUE}Using container engine: $CONTAINER_ENGINE${NC}"
+  
+  # Configure container engine
+  if [ "$CONTAINER_ENGINE" = "podman" ]; then
+    configure_podman
+    
+    # Apply special configuration for Rocky Linux
+    if [ "$OS" = "rocky" ]; then
+      configure_podman_rocky
+    fi
+  fi
+}
+
+# Run main function
+main
