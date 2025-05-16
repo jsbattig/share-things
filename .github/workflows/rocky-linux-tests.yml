@@ -13,7 +13,7 @@ on:
 jobs:
   rocky-linux-tests:
     name: Test Setup and Update on Rocky Linux
-    runs-on: [self-hosted, Rocky]
+    runs-on: [self-hosted, Rocky Linux]
     
     steps:
       - name: Checkout code
