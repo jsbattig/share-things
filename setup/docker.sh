@@ -134,25 +134,26 @@ configure_podman_rocky() {
   
   # Use a configuration that works in the current environment
   if [ -n "$GITHUB_ACTIONS" ]; then
-    # For GitHub Actions, use a simpler configuration without pasta
-    # This avoids the "aardvark-dns failed to start" error
+    # For GitHub Actions, use netavark which is supported in the environment
+    # This avoids the "unsupported network backend" error
     cat > ~/.config/containers/containers.conf << EOL
 [engine]
 cgroup_manager = "cgroupfs"
 events_logger = "file"
-network_backend = "bridge"
+network_backend = "netavark"
 
 [network]
-network_backend = "bridge"
+network_backend = "netavark"
+default_rootless_network_cmd = "slirp4netns"
 EOL
-    echo -e "${GREEN}Created ~/.config/containers/containers.conf with bridge networking for GitHub Actions${NC}"
+    echo -e "${GREEN}Created ~/.config/containers/containers.conf with netavark networking for GitHub Actions${NC}"
     
     # Also modify docker-compose files to NOT use host networking in GitHub Actions
-    echo -e "${YELLOW}Modifying docker-compose files to use bridge networking instead of host for GitHub Actions...${NC}"
+    echo -e "${YELLOW}Modifying docker-compose files to use standard networking instead of host for GitHub Actions...${NC}"
     sed -i 's/network_mode: host/# network_mode: host/' docker-compose.yml
     sed -i 's/network_mode: host/# network_mode: host/' docker-compose.prod.yml
     sed -i 's/network_mode: host/# network_mode: host/' docker-compose.test.yml
-    echo -e "${GREEN}Modified docker-compose files to use bridge networking${NC}"
+    echo -e "${GREEN}Modified docker-compose files to use standard networking${NC}"
   else
     # For other environments, use a standard configuration
     cat > ~/.config/containers/containers.conf << EOL
