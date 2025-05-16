@@ -296,6 +296,26 @@ registries = []
 short-name-mode="permissive"
 EOL
 
+# Configure Docker Hub authentication if credentials are provided
+if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+  log "INFO" "Docker Hub credentials found. Configuring authentication..."
+  
+  # Run the Docker Hub authentication script
+  if [ -f "$(dirname "$0")/docker-auth.sh" ]; then
+    chmod +x "$(dirname "$0")/docker-auth.sh"
+    "$(dirname "$0")/docker-auth.sh"
+    if [ $? -eq 0 ]; then
+      log "GREEN" "Docker Hub authentication configured successfully."
+    else
+      log "RED" "Docker Hub authentication configuration failed."
+    fi
+  else
+    log "RED" "Docker Hub authentication script not found."
+  fi
+else
+  log "YELLOW" "Docker Hub credentials not found. Skipping authentication."
+fi
+
 # Check for all containers (running or stopped) and clean them up
 log "INFO" "Checking for existing containers before starting tests..."
 if check_all_containers || check_running_containers; then

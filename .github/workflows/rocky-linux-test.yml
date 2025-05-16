@@ -1,0 +1,46 @@
+name: Test Setup and Update on Rocky Linux
+
+on:
+  push:
+    branches: [ main, feature/*, fix/* ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-setup-and-update:
+    runs-on: self-hosted
+    container:
+      image: rockylinux:9
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Make scripts executable
+      run: chmod +x setup.sh update-server.sh ci/rocky-linux/*.sh setup/*.sh
+    
+    - name: Show OS information
+      run: |
+        echo "OS Information:"
+        cat /etc/os-release
+        
+        echo "Podman version:"
+        podman --version
+        
+        echo "Podman-compose version:"
+        podman-compose --version || echo "podman-compose not installed"
+        
+        echo "Current directory:"
+        pwd
+    
+    - name: Run the test-setup.sh script with the current branch and directory
+      run: |
+        # This script handles both memory and PostgreSQL storage tests
+        ./ci/rocky-linux/test-setup.sh ${{ github.ref_name }} $(pwd)
+    
+    - name: Run the test-update.sh script with the current branch and directory
+      run: |
+        # This script tests the update-server.sh script
+        ./ci/rocky-linux/test-update.sh ${{ github.ref_name }} $(pwd)
