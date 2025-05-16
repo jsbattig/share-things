@@ -19,10 +19,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
       
-      - name: Install required packages
-        run: |
-          sudo dnf install -y podman podman-compose curl util-linux-user
-      
       - name: Make scripts executable
         run: |
           chmod +x setup.sh update-server.sh ci/rocky-linux/*.sh
