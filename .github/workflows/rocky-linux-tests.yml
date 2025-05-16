@@ -19,14 +19,35 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
       
+      - name: Configure podman for service environment
+        run: |
+          # Configure podman to use cgroupfs instead of systemd
+          mkdir -p ~/.config/containers
+          echo '[engine]' > ~/.config/containers/containers.conf
+          echo 'cgroup_manager = "cgroupfs"' >> ~/.config/containers/containers.conf
+          
+          # Ensure podman runs non-interactively
+          echo 'PODMAN_INTERACTIVE=0' >> ~/.bashrc
+          export PODMAN_INTERACTIVE=0
+          
+          # Configure podman to automatically select the first image without prompting
+          echo 'short-name-mode="enforcing"' >> ~/.config/containers/registries.conf
+          
+          # Display podman configuration for debugging
+          echo "Podman configuration:"
+          cat ~/.config/containers/containers.conf
+          cat ~/.config/containers/registries.conf
+      
       - name: Make scripts executable
         run: |
           chmod +x setup.sh update-server.sh ci/rocky-linux/*.sh
       
       - name: Run the setup test script
         run: |
-          ./ci/rocky-linux/test-setup.sh ${{ github.ref_name }} $(pwd)
+          # Run with non-interactive mode explicitly set
+          PODMAN_INTERACTIVE=0 ./ci/rocky-linux/test-setup.sh ${{ github.ref_name }} $(pwd)
       
       - name: Run the update test script
         run: |
-          ./ci/rocky-linux/test-update.sh ${{ github.ref_name }} $(pwd) 15000
+          # Run with non-interactive mode explicitly set
+          PODMAN_INTERACTIVE=0 ./ci/rocky-linux/test-update.sh ${{ github.ref_name }} $(pwd) 15000
