@@ -132,8 +132,10 @@ configure_podman_rocky() {
   # Create containers.conf with appropriate networking configuration
   mkdir -p ~/.config/containers
   
-  # Use a simple configuration that works in all environments
-  cat > ~/.config/containers/containers.conf << EOL
+  # Use a configuration that works in GitHub Actions environment
+  if [ -n "$GITHUB_ACTIONS" ]; then
+    # For GitHub Actions, use pasta as the rootless network command
+    cat > ~/.config/containers/containers.conf << EOL
 [engine]
 cgroup_manager = "cgroupfs"
 events_logger = "file"
@@ -141,6 +143,22 @@ network_backend = "netavark"
 
 [network]
 network_backend = "netavark"
+default_rootless_network_cmd = "pasta"
+EOL
+    echo -e "${GREEN}Created ~/.config/containers/containers.conf with pasta networking for GitHub Actions${NC}"
+  else
+    # For other environments, use a standard configuration
+    cat > ~/.config/containers/containers.conf << EOL
+[engine]
+cgroup_manager = "cgroupfs"
+events_logger = "file"
+network_backend = "netavark"
+
+[network]
+network_backend = "netavark"
+EOL
+    echo -e "${GREEN}Created ~/.config/containers/containers.conf with standard networking${NC}"
+  fi
 EOL
   echo -e "${GREEN}Created ~/.config/containers/containers.conf with standard networking${NC}"
   
@@ -300,18 +318,40 @@ EOL
   
   # Create a .npmrc file with network configuration for builds
   echo -e "${YELLOW}Creating .npmrc file with network configuration for builds...${NC}"
-  cat > ~/.npmrc << EOL
+  
+  if [ -n "$GITHUB_ACTIONS" ]; then
+    # For GitHub Actions, use a simpler configuration
+    cat > ~/.npmrc << EOL
+registry=https://registry.npmjs.org/
+EOL
+    echo -e "${GREEN}Created ~/.npmrc with simple configuration for GitHub Actions${NC}"
+  else
+    # For other environments, use a more detailed configuration
+    cat > ~/.npmrc << EOL
 registry=https://registry.npmjs.org/
 strict-ssl=false
 proxy=null
 https-proxy=null
 EOL
-  echo -e "${GREEN}Created ~/.npmrc with network configuration${NC}"
+    echo -e "${GREEN}Created ~/.npmrc with network configuration${NC}"
+  fi
   
   # Create a podman build configuration file
   echo -e "${YELLOW}Creating podman build configuration...${NC}"
   mkdir -p ~/.config/containers
-  cat > ~/.config/containers/storage.conf << EOL
+  
+  if [ -n "$GITHUB_ACTIONS" ]; then
+    # For GitHub Actions, don't use host networking
+    cat > ~/.config/containers/storage.conf << EOL
+[storage]
+driver = "overlay"
+runroot = "/tmp/containers-$USER"
+graphroot = "$HOME/.local/share/containers/storage"
+EOL
+    echo -e "${GREEN}Created podman build configuration for GitHub Actions${NC}"
+  else
+    # For other environments, use host networking
+    cat > ~/.config/containers/storage.conf << EOL
 [storage]
 driver = "overlay"
 runroot = "/tmp/containers-$USER"
@@ -319,7 +359,8 @@ graphroot = "$HOME/.local/share/containers/storage"
 [storage.options]
 pull_options = {use_host_networking = "true"}
 EOL
-  echo -e "${GREEN}Created podman build configuration with host networking${NC}"
+    echo -e "${GREEN}Created podman build configuration with host networking${NC}"
+  fi
   
   echo -e "${GREEN}Podman configuration for Rocky Linux complete.${NC}"
 }
