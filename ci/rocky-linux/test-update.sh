@@ -343,13 +343,19 @@ if [ $? -ne 0 ]; then
 fi
 
 # Wait for the application to be available again
-wait_for_service "http://localhost:$TEST_PORT" $SERVICE_WAIT_TIMEOUT || {
-  log "WARNING" "Application did not become available after update, but continuing anyway"
+# After update-server.sh runs, the port changes to 15000 for production mode
+log "INFO" "Checking for service on port 15000 (production port)..."
+wait_for_service "http://localhost:15000" $SERVICE_WAIT_TIMEOUT || {
+  log "WARNING" "Application did not become available on port 15000 after update, trying original port $TEST_PORT..."
+  wait_for_service "http://localhost:$TEST_PORT" $SERVICE_WAIT_TIMEOUT || {
+    log "WARNING" "Application did not become available after update, but continuing anyway"
+  }
 }
 
 # Verify that the change is present
 log "INFO" "Verifying that the change is present..."
-RESPONSE=$(curl -s --max-time 30 "http://localhost:$TEST_PORT" || echo "Failed to get response")
+# Try production port first, then fall back to original port
+RESPONSE=$(curl -s --max-time 30 "http://localhost:15000" || curl -s --max-time 30 "http://localhost:$TEST_PORT" || echo "Failed to get response")
 if echo "$RESPONSE" | grep -q "$TEST_MESSAGE"; then
   log "SUCCESS" "Change is present in the response!"
 else
