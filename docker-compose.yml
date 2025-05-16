@@ -59,7 +59,7 @@ services:
           - frontend  # Explicit network alias
 
   postgres:
-    image: postgres:17-alpine
+    image: quay.io/bitnami/postgresql:17
     container_name: share-things-postgres
     environment:
       - POSTGRES_USER=${PG_USER:-postgres}

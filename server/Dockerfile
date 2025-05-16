@@ -1,4 +1,4 @@
-FROM docker.io/library/node:18-alpine AS builder
+FROM quay.io/nodejs/nodejs:18 AS builder
 WORKDIR /app
 COPY package*.json ./
 # Use a more reliable npm install approach
@@ -7,7 +7,7 @@ RUN npm config set registry https://registry.npmjs.org/ && \
 COPY . .
 RUN npm run build
 
-FROM docker.io/library/node:18-alpine
+FROM quay.io/nodejs/nodejs:18
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --only=production
