@@ -55,8 +55,37 @@ echo "  ROCKY_LINUX_HOST=${ROCKY_LINUX_HOST}"
 echo "  ROCKY_LINUX_USER=${ROCKY_LINUX_USER}"
 echo "  ROCKY_LINUX_PASSWORD=********"
 
-echo "To use these variables in any session, add this line to your ~/.bashrc or ~/.bash_profile:"
+echo "To use these variables in any session, the following line will be added to your shell profile:"
 echo "  source ~/.rocky-linux-env.sh"
+echo ""
+
+# Determine which shell profile to use
+SHELL_PROFILE=""
+if [[ "$SHELL" == *"zsh"* ]]; then
+  SHELL_PROFILE="$HOME/.zshrc"
+elif [[ "$SHELL" == *"bash"* ]]; then
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    SHELL_PROFILE="$HOME/.bash_profile"
+  else
+    SHELL_PROFILE="$HOME/.bashrc"
+  fi
+fi
+
+# Add source line to shell profile if it doesn't already exist
+if [ -n "$SHELL_PROFILE" ]; then
+  if ! grep -q "source ~/.rocky-linux-env.sh" "$SHELL_PROFILE"; then
+    echo "" >> "$SHELL_PROFILE"
+    echo "# ShareThings Rocky Linux testing environment" >> "$SHELL_PROFILE"
+    echo "source ~/.rocky-linux-env.sh" >> "$SHELL_PROFILE"
+    echo -e "${GREEN}Added source line to $SHELL_PROFILE${NC}"
+  else
+    echo -e "${YELLOW}Source line already exists in $SHELL_PROFILE${NC}"
+  fi
+else
+  echo -e "${YELLOW}Could not determine shell profile. Please add the following line manually:${NC}"
+  echo "  source ~/.rocky-linux-env.sh"
+fi
+
 echo ""
 echo "To use these variables immediately in this session, run:"
 echo "  source ~/.rocky-linux-env.sh"

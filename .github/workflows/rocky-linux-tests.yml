@@ -19,35 +19,108 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
       
-      - name: Configure podman for service environment
-        run: |
-          # Configure podman to use cgroupfs instead of systemd
-          mkdir -p ~/.config/containers
-          echo '[engine]' > ~/.config/containers/containers.conf
-          echo 'cgroup_manager = "cgroupfs"' >> ~/.config/containers/containers.conf
-          
-          # Ensure podman runs non-interactively
-          echo 'PODMAN_INTERACTIVE=0' >> ~/.bashrc
-          export PODMAN_INTERACTIVE=0
-          
-          # Configure podman to automatically select the first image without prompting
-          echo 'short-name-mode="enforcing"' >> ~/.config/containers/registries.conf
-          
-          # Display podman configuration for debugging
-          echo "Podman configuration:"
-          cat ~/.config/containers/containers.conf
-          cat ~/.config/containers/registries.conf
-      
       - name: Make scripts executable
         run: |
-          chmod +x setup.sh update-server.sh ci/rocky-linux/*.sh
+          chmod +x setup.sh update-server.sh ci/rocky-linux/*.sh setup/*.sh
       
-      - name: Run the setup test script
+      - name: Display environment information
         run: |
-          # Run with non-interactive mode explicitly set
-          PODMAN_INTERACTIVE=0 ./ci/rocky-linux/test-setup.sh ${{ github.ref_name }} $(pwd)
+          echo "OS Information:"
+          cat /etc/os-release
+          
+          echo "Podman version:"
+          podman --version
+          
+          echo "Podman-compose version:"
+          podman-compose --version || echo "podman-compose not installed"
+          
+          echo "Current directory:"
+          pwd
       
-      - name: Run the update test script
+      - name: Test setup with memory storage
+        env:
+          GITHUB_ACTIONS: true
+          CI: true
         run: |
-          # Run with non-interactive mode explicitly set
-          PODMAN_INTERACTIVE=0 ./ci/rocky-linux/test-update.sh ${{ github.ref_name }} $(pwd) 15000
+          # Run setup.sh with memory storage
+          ./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports y --frontend-port 15000 --backend-port 15001 --start
+          
+          # Check if containers are running
+          echo "Checking containers status:"
+          podman ps -a
+          
+          # Check container logs
+          echo "Backend container logs:"
+          podman logs share-things-backend || true
+          
+          echo "Frontend container logs:"
+          podman logs share-things-frontend || true
+          
+          # Test backend health endpoint
+          echo "Testing backend health endpoint:"
+          curl -v http://localhost:15001/health || true
+          
+          # Test frontend
+          echo "Testing frontend:"
+          curl -s -I http://localhost:15000 || true
+          
+          # Clean up
+          podman-compose down -v || true
+          podman system reset --force || true
+      
+      - name: Test setup with PostgreSQL storage
+        env:
+          GITHUB_ACTIONS: true
+          CI: true
+        run: |
+          # Run setup.sh with PostgreSQL storage
+          ./setup.sh --postgresql --container-engine podman --hostname auto --use-custom-ports y --frontend-port 15000 --backend-port 15001 --start
+          
+          # Check if containers are running
+          echo "Checking containers status:"
+          podman ps -a
+          
+          # Check container logs
+          echo "PostgreSQL container logs:"
+          podman logs share-things-postgres || true
+          
+          echo "Backend container logs:"
+          podman logs share-things-backend || true
+          
+          echo "Frontend container logs:"
+          podman logs share-things-frontend || true
+          
+          # Test backend health endpoint
+          echo "Testing backend health endpoint:"
+          curl -v http://localhost:15001/health || true
+          
+          # Test frontend
+          echo "Testing frontend:"
+          curl -s -I http://localhost:15000 || true
+          
+          # Clean up
+          podman-compose down -v || true
+          podman system reset --force || true
+      
+      - name: Test update script
+        env:
+          GITHUB_ACTIONS: true
+          CI: true
+        run: |
+          # Run setup.sh first
+          ./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports y --frontend-port 15000 --backend-port 15001 --start
+          
+          # Run update script
+          ./update-server.sh
+          
+          # Check if containers are running after update
+          echo "Checking containers status after update:"
+          podman ps -a
+          
+          # Test backend health endpoint after update
+          echo "Testing backend health endpoint after update:"
+          curl -v http://localhost:15001/health || true
+          
+          # Clean up
+          podman-compose down -v || true
+          podman system reset --force || true

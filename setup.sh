@@ -122,6 +122,11 @@ source setup/postgres.sh
 source setup/docker.sh
 source setup/container.sh
 
+# Source Rocky Linux-specific Podman configuration if available
+if [ -f "setup/podman-rocky.sh" ]; then
+  source setup/podman-rocky.sh
+fi
+
 # If running in test mode, source test module
 if [ "$TEST_MODE" = true ]; then
   source setup/test.sh
@@ -137,6 +142,12 @@ configure_session_storage
 
 # Configure Docker/Podman
 configure_container_engine
+
+# Apply Rocky Linux-specific Podman configuration if needed
+if [ "$CONTAINER_ENGINE" = "podman" ] && [ -f "/etc/redhat-release" ] && grep -q "Rocky Linux" /etc/redhat-release; then
+  echo -e "${YELLOW}Detected Rocky Linux. Applying special Podman configuration...${NC}"
+  configure_podman_rocky
+fi
 
 # Build and start containers if requested
 if [ "$START_CONTAINERS" = true ]; then

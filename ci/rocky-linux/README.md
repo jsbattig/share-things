@@ -1,140 +1,107 @@
-# Rocky Linux Testing Scripts
+# Rocky Linux CI/CD Scripts
 
-This directory contains scripts for testing the ShareThings application on Rocky Linux as part of the CI/CD pipeline.
+This directory contains scripts for testing ShareThings on Rocky Linux environments.
 
 ## Overview
 
-These scripts are designed to test the setup and update processes on Rocky Linux before deploying to production. They ensure that:
-
-1. The application can be installed cleanly using the `setup.sh` script
-2. The application can be updated using the `update-server.sh` script
+These scripts facilitate testing of the ShareThings setup and update scripts on Rocky Linux machines, both locally and in CI/CD environments.
 
 ## Scripts
 
-### `rocky-linux-wrapper.sh`
+### rocky-linux-wrapper.sh
 
-This script is a wrapper for running the test scripts on a Rocky Linux machine. It:
+A wrapper script that connects to a remote Rocky Linux machine via SSH and runs the test scripts. This allows developers to test changes to the setup and update scripts in a real Rocky Linux environment without having to manually SSH into the machine.
 
-- Connects to a Rocky Linux machine using SSH
-- Clones or updates the repository
-- Makes the scripts executable
-- Installs required packages
-- Runs the test scripts
-- Reports the results
+For detailed documentation, see [Rocky Linux Wrapper Documentation](../../memory-bank/technical/rocky-linux-wrapper.md).
 
-Unlike the previous wrapper script, this version uses environment variables for sensitive information instead of hardcoded secrets, making it safe to commit to the repository.
+### setup-env.sh
 
-### `setup-env.sh`
+Sets up environment variables required by the Rocky Linux wrapper script. This script:
 
-This script sets up the environment variables needed by the wrapper script. It:
+1. Prompts for the Rocky Linux host, username, and password
+2. Creates a file (~/.rocky-linux-env.sh) with these variables
+3. Adds a source line to your shell profile to ensure the variables are available in future sessions
+4. Exports the variables for the current session
 
-- Prompts for the hostname, username, and password of the Rocky Linux machine
-- Creates a file in `/etc/profile.d/` to set these variables persistently
-- Sets appropriate permissions to protect sensitive information
-- Exports the variables for the current session
-
-Run this script once on the Rocky Linux machine to set up the environment for testing.
-
-### `test-setup.sh`
-
-This script tests the `setup.sh` script with both memory and PostgreSQL options. It:
-
-- Configures Podman to allow short names
-- Updates docker-compose files to use fully qualified image names
-- Tests `setup.sh` with memory option in test mode
-- Tests `setup.sh` with PostgreSQL option in test mode
-- Tests `setup.sh` with memory option and starts containers
-- Verifies that the containers are running
-- Tests the application's health endpoint
-
-### `test-update.sh`
-
-This script tests the `update-server.sh` script by making a minimal change to the login screen and verifying that the change is present after the update. It:
-
-- Starts the application with memory storage
-- Makes a minimal change to the login screen
-- Runs the `update-server.sh` script
-- Verifies that the change is present in the response
-
-## Usage
-
-These scripts are designed to be run on a Rocky Linux machine. They do not contain any secrets and can be safely committed to the repository.
-
-### Manual Testing
-
-To run these scripts manually on a Rocky Linux machine:
+Run this script once to configure your environment:
 
 ```bash
-# Clone the repository
-git clone https://github.com/jsbattig/share-things.git
-cd share-things
-
-# Make the scripts executable
-chmod +x ci/rocky-linux/*.sh
-
-# Run the setup test
-./ci/rocky-linux/test-setup.sh
-
-# Run the update test
-./ci/rocky-linux/test-update.sh
+./ci/rocky-linux/setup-env.sh
 ```
 
-### CI/CD Integration
+### test-setup.sh
 
-These scripts are integrated into the CI/CD pipeline using GitHub Actions. The workflow is defined in `.github/workflows/rocky-linux-tests.yml`.
+Tests the setup.sh script on a Rocky Linux machine. This script:
 
-The workflow:
+1. Cleans up any existing containers
+2. Runs setup.sh with memory storage
+3. Verifies that the containers are running correctly
+4. Cleans up
+5. Runs setup.sh with PostgreSQL storage
+6. Verifies that the containers are running correctly
+7. Cleans up
 
-1. Runs on push to main and feature/postgresql-session-management branches
-2. Runs on pull requests to main
-3. Can be triggered manually
-4. Creates a wrapper script that contains the secrets needed to connect to the Rocky Linux machine
-5. Runs the tests on the Rocky Linux machine
-6. Fails if any of the tests fail
-
-## Secrets
-
-The GitHub Actions workflow requires the following secrets:
-
-- `ROCKY_LINUX_HOST`: The hostname or IP address of the Rocky Linux machine
-- `ROCKY_LINUX_USER`: The username to use for SSH
-- `ROCKY_LINUX_PASSWORD`: The password to use for SSH
-- `ROCKY_LINUX_SSH_KEY`: The SSH private key to use for SSH (optional)
-
-## Notes
-
-- All scripts in this directory can be safely committed to the repository.
-- The `wrapper.sh` script uses environment variables for sensitive information, which should be set up using the `setup-env.sh` script.
-- The test scripts are designed to clean up after themselves, so they can be run multiple times without issues.
-
-## Setting Up Environment Variables
-
-To set up the environment variables needed by the wrapper script:
+This script is typically run by the wrapper script, but can also be run directly on a Rocky Linux machine:
 
 ```bash
-# Make the script executable
-chmod +x ci/rocky-linux/setup-env.sh
-
-# Run the script (requires sudo)
-sudo ./ci/rocky-linux/setup-env.sh
-
-# Follow the prompts to enter the hostname, username, and password
+./ci/rocky-linux/test-setup.sh [branch] [work_dir]
 ```
 
-## Running Tests with the Wrapper
+### test-update.sh
 
-To run tests using the wrapper script:
+Tests the update-server.sh script on a Rocky Linux machine. This script:
+
+1. Sets up the application using setup.sh
+2. Runs update-server.sh
+3. Verifies that the update was successful
+4. Cleans up
+
+This script is typically run by the wrapper script, but can also be run directly on a Rocky Linux machine:
 
 ```bash
-# Make sure environment variables are set
-source /etc/profile.d/rocky-linux-testing.sh
-
-# Run the wrapper script
-./ci/rocky-linux/rocky-linux-wrapper.sh
+./ci/rocky-linux/test-update.sh [branch] [work_dir] [port]
 ```
 
-You can also specify a branch to test:
+## Workflow
 
-```bash
-./ci/rocky-linux/rocky-linux-wrapper.sh feature/my-branch
-```
+The typical workflow for using these scripts is:
+
+1. Set up environment variables (if not already set):
+   ```bash
+   ./ci/rocky-linux/setup-env.sh
+   ```
+
+2. Make changes to setup.sh or update-server.sh
+
+3. Commit and push changes to the current branch
+
+4. Run the wrapper script:
+   ```bash
+   ./ci/rocky-linux/rocky-linux-wrapper.sh
+   ```
+
+5. Review the output and debug any issues
+
+6. Repeat steps 2-5 as necessary
+
+## Troubleshooting
+
+If the wrapper script fails to connect to the remote machine, ensure that:
+
+1. The environment variables are correctly set:
+   ```bash
+   echo $ROCKY_LINUX_HOST
+   echo $ROCKY_LINUX_USER
+   ```
+
+2. The SSH connection is working:
+   ```bash
+   ssh $ROCKY_LINUX_USER@$ROCKY_LINUX_HOST
+   ```
+
+3. The remote machine has the necessary dependencies installed:
+   ```bash
+   ssh $ROCKY_LINUX_USER@$ROCKY_LINUX_HOST "command -v podman podman-compose curl"
+   ```
+
+If the environment variables are not persisting between terminal sessions, run the setup-env.sh script again and check that it's correctly modifying your shell profile.
