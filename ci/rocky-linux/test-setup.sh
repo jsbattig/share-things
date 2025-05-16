@@ -296,24 +296,77 @@ registries = []
 short-name-mode="permissive"
 EOL
 
-# Configure Docker Hub authentication if credentials are provided
-if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
-  log "INFO" "Docker Hub credentials found. Configuring authentication..."
-  
-  # Run the Docker Hub authentication script
-  if [ -f "$(dirname "$0")/docker-auth.sh" ]; then
-    chmod +x "$(dirname "$0")/docker-auth.sh"
-    "$(dirname "$0")/docker-auth.sh"
-    if [ $? -eq 0 ]; then
-      log "GREEN" "Docker Hub authentication configured successfully."
-    else
-      log "RED" "Docker Hub authentication configuration failed."
-    fi
+# Additional command line arguments for Docker registry
+DOCKER_REGISTRY_URL_ARG=""
+DOCKER_USERNAME_ARG=""
+DOCKER_PASSWORD_ARG=""
+
+# Parse additional command line arguments for Docker registry
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --docker-registry-url)
+      DOCKER_REGISTRY_URL_ARG="$2"
+      shift 2
+      ;;
+    --docker-username)
+      DOCKER_USERNAME_ARG="$2"
+      shift 2
+      ;;
+    --docker-password)
+      DOCKER_PASSWORD_ARG="$2"
+      shift 2
+      ;;
+    *)
+      # Skip unknown arguments
+      shift
+      ;;
+  esac
+done
+
+# Configure Docker registry access
+log "INFO" "Configuring Docker registry access..."
+
+# Check if we're running in GitHub Actions
+if [ -n "$GITHUB_ACTIONS" ]; then
+  log "INFO" "Running in GitHub Actions environment."
+  # Use GitHub secrets if available
+  if [ -n "$HARBORURL" ]; then
+    DOCKER_REGISTRY_URL_ARG="$HARBORURL"
+    log "INFO" "Using Harbor URL from GitHub secrets."
+  fi
+  if [ -n "$HARBORUSERNAME" ]; then
+    DOCKER_USERNAME_ARG="$HARBORUSERNAME"
+    log "INFO" "Using Harbor username from GitHub secrets."
+  fi
+  if [ -n "$HARBORPASSWORD" ]; then
+    DOCKER_PASSWORD_ARG="$HARBORPASSWORD"
+    log "INFO" "Using Harbor password from GitHub secrets."
+  fi
+fi
+
+# Build the command with any provided arguments
+DOCKER_AUTH_CMD="$(dirname "$0")/docker-auth.sh"
+if [ -n "$DOCKER_REGISTRY_URL_ARG" ]; then
+  DOCKER_AUTH_CMD="$DOCKER_AUTH_CMD --registry-url $DOCKER_REGISTRY_URL_ARG"
+fi
+if [ -n "$DOCKER_USERNAME_ARG" ]; then
+  DOCKER_AUTH_CMD="$DOCKER_AUTH_CMD --username $DOCKER_USERNAME_ARG"
+fi
+if [ -n "$DOCKER_PASSWORD_ARG" ]; then
+  DOCKER_AUTH_CMD="$DOCKER_AUTH_CMD --password $DOCKER_PASSWORD_ARG"
+fi
+
+# Run the Docker registry configuration script
+if [ -f "$(dirname "$0")/docker-auth.sh" ]; then
+  chmod +x "$(dirname "$0")/docker-auth.sh"
+  eval "$DOCKER_AUTH_CMD"
+  if [ $? -eq 0 ]; then
+    log "GREEN" "Docker registry configuration successful."
   else
-    log "RED" "Docker Hub authentication script not found."
+    log "RED" "Docker registry configuration failed."
   fi
 else
-  log "YELLOW" "Docker Hub credentials not found. Skipping authentication."
+  log "RED" "Docker registry configuration script not found."
 fi
 
 # Check for all containers (running or stopped) and clean them up
@@ -332,15 +385,61 @@ cleanup_containers
 # Clean up any existing environment files
 cleanup_env_files
 
-# Update docker-compose files to use fully qualified image names from Docker Hub
-log "INFO" "Updating docker-compose files to use fully qualified image names from Docker Hub..."
-sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:14-alpine/g' docker-compose.yml
-sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:14-alpine/g' docker-compose.test.yml
-sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:14-alpine/g' docker-compose.prod.yml
+# Update docker-compose files to use fully qualified image names
+log "INFO" "Updating docker-compose files to use fully qualified image names..."
+
+# Determine registry prefix
+REGISTRY_PREFIX="docker.io/library"
+if [ -n "$DOCKER_REGISTRY_URL_ARG" ]; then
+  REGISTRY_PREFIX="${DOCKER_REGISTRY_URL_ARG}/library"
+  log "INFO" "Using custom registry URL for docker-compose files: ${DOCKER_REGISTRY_URL_ARG}"
+fi
+
+# Check if we have a .docker-registry-url file from docker-auth.sh
+if [ -f "./.docker-registry-url" ]; then
+  REGISTRY_URL=$(cat ./.docker-registry-url)
+  if [ -n "$REGISTRY_URL" ] && [ -z "$DOCKER_REGISTRY_URL_ARG" ]; then
+    REGISTRY_PREFIX="${REGISTRY_URL}/library"
+    log "INFO" "Using registry URL from .docker-registry-url: ${REGISTRY_URL}"
+  fi
+fi
+
+# Update docker-compose files
+log "INFO" "Using registry prefix: ${REGISTRY_PREFIX}"
+sed -i "s|image: postgres:17-alpine|image: ${REGISTRY_PREFIX}/postgres:14-alpine|g" docker-compose.yml
+sed -i "s|image: postgres:17-alpine|image: ${REGISTRY_PREFIX}/postgres:14-alpine|g" docker-compose.test.yml
+sed -i "s|image: postgres:17-alpine|image: ${REGISTRY_PREFIX}/postgres:14-alpine|g" docker-compose.prod.yml
+
+# Also update any existing image references
+sed -i "s|image: docker.io/library/|image: ${REGISTRY_PREFIX}/|g" docker-compose.yml
+sed -i "s|image: docker.io/library/|image: ${REGISTRY_PREFIX}/|g" docker-compose.test.yml
+sed -i "s|image: docker.io/library/|image: ${REGISTRY_PREFIX}/|g" docker-compose.prod.yml
+
+# Prepare Docker registry parameters for setup.sh
+SETUP_DOCKER_PARAMS=""
+if [ -n "$DOCKER_REGISTRY_URL_ARG" ]; then
+  SETUP_DOCKER_PARAMS="$SETUP_DOCKER_PARAMS --docker-registry-url $DOCKER_REGISTRY_URL_ARG"
+  log "INFO" "Adding Docker registry URL parameter to setup.sh"
+fi
+if [ -n "$DOCKER_USERNAME_ARG" ]; then
+  SETUP_DOCKER_PARAMS="$SETUP_DOCKER_PARAMS --docker-username $DOCKER_USERNAME_ARG"
+  log "INFO" "Adding Docker username parameter to setup.sh"
+fi
+if [ -n "$DOCKER_PASSWORD_ARG" ]; then
+  SETUP_DOCKER_PARAMS="$SETUP_DOCKER_PARAMS --docker-password $DOCKER_PASSWORD_ARG"
+  log "INFO" "Adding Docker password parameter to setup.sh"
+fi
+
+# Let setup.sh handle the Docker registry URL
+if [ -n "$DOCKER_REGISTRY_URL_ARG" ]; then
+  log "INFO" "Using Docker registry URL: $DOCKER_REGISTRY_URL_ARG"
+  log "INFO" "setup.sh will handle updating Dockerfiles with the custom registry URL."
+fi
 
 # Test setup.sh with memory option
 log "INFO" "Testing setup.sh with memory option..."
-run_with_timeout "./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports y --use-https n --expose-ports y --frontend-port 15000 --backend-port 15001 --start" $SETUP_TIMEOUT "Running: ./setup.sh with memory storage"
+log "INFO" "Setup command: ./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports y --use-https n --expose-ports y --frontend-port 15000 --backend-port 15001 --start $SETUP_DOCKER_PARAMS"
+run_with_timeout "./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports y --use-https n --expose-ports y --frontend-port 15000 --backend-port 15001 --start $SETUP_DOCKER_PARAMS" $SETUP_TIMEOUT "Running: ./setup.sh with memory storage"
 RESULT=$?
 log "INFO" "Setup script exited with code: $RESULT"
 
@@ -372,15 +471,43 @@ sleep 2
 
 # Create a custom Dockerfile for the backend that doesn't rely on volume mounts
 log "INFO" "Creating a custom Dockerfile for the backend..."
+
+# Use custom registry URL if provided
+REGISTRY_PREFIX="docker.io/library"
+if [ -n "$DOCKER_REGISTRY_URL_ARG" ]; then
+  REGISTRY_PREFIX="${DOCKER_REGISTRY_URL_ARG}/library"
+  log "INFO" "Using custom registry URL for Dockerfile.test: ${DOCKER_REGISTRY_URL_ARG}"
+  
+  # Also update the original Dockerfiles
+  log "INFO" "Updating original Dockerfiles with custom registry URL..."
+  sed -i "s|FROM docker.io/library/|FROM ${DOCKER_REGISTRY_URL_ARG}/library/|g" ./server/Dockerfile
+  sed -i "s|FROM docker.io/library/|FROM ${DOCKER_REGISTRY_URL_ARG}/library/|g" ./client/Dockerfile
+  
+  # Update docker-compose files
+  log "INFO" "Updating docker-compose files with custom registry URL..."
+  sed -i "s|image: docker.io/library/|image: ${DOCKER_REGISTRY_URL_ARG}/library/|g" docker-compose.yml
+  sed -i "s|image: docker.io/library/|image: ${DOCKER_REGISTRY_URL_ARG}/library/|g" docker-compose.test.yml
+  sed -i "s|image: docker.io/library/|image: ${DOCKER_REGISTRY_URL_ARG}/library/|g" docker-compose.prod.yml
+fi
+
+# Check if we have a .docker-registry-url file from docker-auth.sh
+if [ -f "./.docker-registry-url" ]; then
+  REGISTRY_URL=$(cat ./.docker-registry-url)
+  if [ -n "$REGISTRY_URL" ] && [ -z "$DOCKER_REGISTRY_URL_ARG" ]; then
+    REGISTRY_PREFIX="${REGISTRY_URL}/library"
+    log "INFO" "Using registry URL from .docker-registry-url: ${REGISTRY_URL}"
+  fi
+fi
+
 cat > server/Dockerfile.test << EOL
-FROM docker.io/library/node:18-alpine AS builder
+FROM ${REGISTRY_PREFIX}/node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
 RUN npm run build
 
-FROM docker.io/library/node:18-alpine
+FROM ${REGISTRY_PREFIX}/node:18-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --only=production
@@ -412,7 +539,7 @@ podman run --name=share-things-postgres -d \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=sharethings \
   -p 5432:5432 \
-  docker.io/library/postgres:14-alpine || log "ERROR" "Failed to start PostgreSQL container."
+  ${REGISTRY_PREFIX}/postgres:14-alpine || log "ERROR" "Failed to start PostgreSQL container."
 
 # Wait for PostgreSQL to start
 log "INFO" "Waiting for PostgreSQL to start..."
@@ -572,14 +699,14 @@ sleep 2
 # Create a custom Dockerfile for the backend that doesn't rely on volume mounts
 log "INFO" "Creating a custom Dockerfile for the backend with PostgreSQL support..."
 cat > server/Dockerfile.test << EOL
-FROM docker.io/library/node:18-alpine AS builder
+FROM ${REGISTRY_PREFIX}/node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
 RUN npm run build
 
-FROM docker.io/library/node:18-alpine
+FROM ${REGISTRY_PREFIX}/node:18-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --only=production
@@ -618,7 +745,7 @@ podman run --name=share-things-postgres -d \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=sharethings \
   -p 5432:5432 \
-  docker.io/library/postgres:14-alpine || log "ERROR" "Failed to start PostgreSQL container."
+  ${REGISTRY_PREFIX}/postgres:14-alpine || log "ERROR" "Failed to start PostgreSQL container."
 
 # Wait for PostgreSQL to start
 log "INFO" "Waiting for PostgreSQL to start..."
