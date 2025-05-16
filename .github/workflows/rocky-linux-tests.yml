@@ -37,90 +37,19 @@ jobs:
           echo "Current directory:"
           pwd
       
+      # Instead of running setup.sh directly, we'll use the test-setup.sh script
+      # This ensures we follow the same code path as the wrapper script
       - name: Test setup with memory storage
-        env:
-          GITHUB_ACTIONS: true
-          CI: true
         run: |
-          # Run setup.sh with memory storage
-          ./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports y --frontend-port 15000 --backend-port 15001 --start
-          
-          # Check if containers are running
-          echo "Checking containers status:"
-          podman ps -a
-          
-          # Check container logs
-          echo "Backend container logs:"
-          podman logs share-things-backend || true
-          
-          echo "Frontend container logs:"
-          podman logs share-things-frontend || true
-          
-          # Test backend health endpoint
-          echo "Testing backend health endpoint:"
-          curl -v http://localhost:15001/health || true
-          
-          # Test frontend
-          echo "Testing frontend:"
-          curl -s -I http://localhost:15000 || true
-          
-          # Clean up
-          podman-compose down -v || true
-          podman system reset --force || true
+          # Run the test-setup.sh script with the current branch and directory
+          # This script handles both memory and PostgreSQL storage tests
+          ./ci/rocky-linux/test-setup.sh feature/postgresql-session-management $(pwd)
       
-      - name: Test setup with PostgreSQL storage
-        env:
-          GITHUB_ACTIONS: true
-          CI: true
-        run: |
-          # Run setup.sh with PostgreSQL storage
-          ./setup.sh --postgresql --container-engine podman --hostname auto --use-custom-ports y --frontend-port 15000 --backend-port 15001 --start
-          
-          # Check if containers are running
-          echo "Checking containers status:"
-          podman ps -a
-          
-          # Check container logs
-          echo "PostgreSQL container logs:"
-          podman logs share-things-postgres || true
-          
-          echo "Backend container logs:"
-          podman logs share-things-backend || true
-          
-          echo "Frontend container logs:"
-          podman logs share-things-frontend || true
-          
-          # Test backend health endpoint
-          echo "Testing backend health endpoint:"
-          curl -v http://localhost:15001/health || true
-          
-          # Test frontend
-          echo "Testing frontend:"
-          curl -s -I http://localhost:15000 || true
-          
-          # Clean up
-          podman-compose down -v || true
-          podman system reset --force || true
+      # The PostgreSQL storage test is already included in the test-setup.sh script
+      # We don't need a separate step for it
       
+      # Use the test-update.sh script instead of running update-server.sh directly
       - name: Test update script
-        env:
-          GITHUB_ACTIONS: true
-          CI: true
         run: |
-          # Run setup.sh first
-          ./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports y --frontend-port 15000 --backend-port 15001 --start
-          
-          # Run update script
-          ./update-server.sh
-          
-          # Check if containers are running after update
-          echo "Checking containers status after update:"
-          podman ps -a
-          
-          # Test backend health endpoint after update
-          echo "Testing backend health endpoint after update:"
-          curl -v http://localhost:15001/health || true
-          
-          # Clean up
-          podman-compose down -v || true
-          podman system reset --force || true
+          # Run the test-update.sh script with the current branch and directory
+          ./ci/rocky-linux/test-update.sh feature/postgresql-session-management $(pwd)
