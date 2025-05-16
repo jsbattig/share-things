@@ -17,7 +17,7 @@ WORK_DIR=${2:-"$(pwd)"}
 
 # Timeout settings
 SETUP_TIMEOUT=300  # 5 minutes timeout for setup.sh
-HEALTH_CHECK_TIMEOUT=60  # 1 minute timeout for health check
+HEALTH_CHECK_TIMEOUT=10  # 10 seconds timeout for health check
 CONTAINER_CHECK_TIMEOUT=60  # 1 minute timeout for container check
 
 # Function to log messages
@@ -339,10 +339,22 @@ else
   log "ERROR" "podman-compose is not installed."
 fi
 
+# Build the server code before starting containers
+log "INFO" "Building server code..."
+cd server && npm install && npm run build && cd ..
+
 # Try to run podman-compose directly
 log "INFO" "Trying to run podman-compose directly..."
+# Modify docker-compose.yml to not mount server directory as a volume in test environment
+log "INFO" "Modifying docker-compose.yml to not mount server directory as a volume..."
+cp docker-compose.yml docker-compose.yml.bak
+$SED_CMD 's|- ./server:/app|- ./server/dist:/app/dist|g' docker-compose.yml
+
 podman-compose -f docker-compose.yml build || log "ERROR" "podman-compose build failed."
 podman-compose -f docker-compose.yml up -d || log "ERROR" "podman-compose up failed."
+
+# Restore original docker-compose.yml
+mv docker-compose.yml.bak docker-compose.yml
 if [ $RESULT -ne 0 ]; then
   log "ERROR" "Memory setup failed."
   cleanup_containers
@@ -400,20 +412,26 @@ if [ -n "$BACKEND_CONTAINER" ]; then
     log "ERROR" "Backend container exited with code: $EXIT_CODE"
     
     # Get the container logs to see why it crashed
-    log "INFO" "Backend container logs:"
+    log "ERROR" "Backend container logs:"
     podman logs $BACKEND_CONTAINER
     
-    # Try to restart the container
-    log "INFO" "Attempting to restart the backend container..."
-    podman start $BACKEND_CONTAINER
-    sleep 5
+    # Fail the test since the backend container crashed
+    log "ERROR" "Backend container crashed. Test failed."
+    cleanup_containers
+    exit 1
   fi
 else
   log "ERROR" "Backend container not found."
+  cleanup_containers
+  exit 1
 fi
 
 log "INFO" "Using production port 15001 for health check..."
-health_check "http://localhost:15001/health" $HEALTH_CHECK_TIMEOUT || log "WARNING" "Health check failed, but continuing anyway"
+if ! health_check "http://localhost:15001/health" $HEALTH_CHECK_TIMEOUT; then
+  log "ERROR" "Health check failed. Test failed."
+  cleanup_containers
+  exit 1
+fi
 
 # Clean up after memory setup
 cleanup_containers
