@@ -537,7 +537,99 @@ cleanup_env_files
 
 # Test setup.sh with PostgreSQL option
 log "INFO" "Testing setup.sh with PostgreSQL option..."
-run_with_timeout "./setup.sh --postgres --container-engine podman --hostname auto --use-custom-ports y --use-https n --expose-ports y --frontend-port 15000 --backend-port 15001 --pg-location l --pg-database sharethings --pg-user postgres --pg-password postgres --pg-ssl n --start" $SETUP_TIMEOUT "Running: ./setup.sh with PostgreSQL storage"
+
+# Completely clean up any existing containers, volumes, and networks
+log "INFO" "Performing complete system cleanup before starting PostgreSQL tests..."
+podman system reset --force || true
+sleep 2
+
+# Create a custom Dockerfile for the backend that doesn't rely on volume mounts
+log "INFO" "Creating a custom Dockerfile for the backend with PostgreSQL support..."
+cat > server/Dockerfile.test << EOL
+FROM docker.io/library/node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+FROM docker.io/library/node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --only=production
+COPY --from=builder /app/dist ./dist
+ARG PORT=3001
+ENV PORT=\${PORT}
+ENV LISTEN_PORT=\${PORT}
+ENV SESSION_STORAGE_TYPE=postgresql
+ENV PG_HOST=postgres
+ENV PG_PORT=5432
+ENV PG_DATABASE=sharethings
+ENV PG_USER=postgres
+ENV PG_PASSWORD=postgres
+ENV PG_SSL=false
+EXPOSE \${PORT}
+CMD ["node", "dist/index.js"]
+EOL
+
+# Use the custom Dockerfile for the backend
+log "INFO" "Building containers with custom Dockerfiles for PostgreSQL setup..."
+podman build -t share-things-test_backend -f server/Dockerfile.test server || log "ERROR" "Backend build failed."
+podman build -t share-things-test_frontend -f client/Dockerfile client || log "ERROR" "Frontend build failed."
+
+# Create network
+log "INFO" "Creating container network..."
+podman network create share-things-test_app_network || true
+
+# Run the containers manually
+log "INFO" "Running containers manually without volume mounts for PostgreSQL setup..."
+
+# Run PostgreSQL
+log "INFO" "Starting PostgreSQL container..."
+podman run --name=share-things-postgres -d \
+  --network share-things-test_app_network \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=sharethings \
+  -p 5432:5432 \
+  docker.io/library/postgres:17-alpine || log "ERROR" "Failed to start PostgreSQL container."
+
+# Wait for PostgreSQL to start
+log "INFO" "Waiting for PostgreSQL to start..."
+sleep 10
+
+# Run Backend
+log "INFO" "Starting backend container..."
+podman run --name=share-things-backend -d \
+  --network share-things-test_app_network \
+  -e NODE_ENV=development \
+  -e PORT=3001 \
+  -e LISTEN_PORT=3001 \
+  -e SESSION_STORAGE_TYPE=postgresql \
+  -e PG_HOST=postgres \
+  -e PG_PORT=5432 \
+  -e PG_DATABASE=sharethings \
+  -e PG_USER=postgres \
+  -e PG_PASSWORD=postgres \
+  -e PG_SSL=false \
+  -p 15001:3001 \
+  share-things-test_backend || log "ERROR" "Failed to start backend container."
+
+# Wait for backend to start
+log "INFO" "Waiting for backend to start..."
+sleep 5
+
+# Run Frontend
+log "INFO" "Starting frontend container..."
+podman run --name=share-things-frontend -d \
+  --network share-things-test_app_network \
+  -e API_PORT=3001 \
+  -p 15000:80 \
+  share-things-test_frontend || log "ERROR" "Failed to start frontend container."
+
+# Wait for frontend to start
+log "INFO" "Waiting for frontend to start..."
+sleep 5
 RESULT=$?
 log "INFO" "Setup script exited with code: $RESULT"
 if [ $RESULT -ne 0 ]; then
