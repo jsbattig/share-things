@@ -11,6 +11,30 @@ These scripts are designed to test the setup and update processes on Rocky Linux
 
 ## Scripts
 
+### `rocky-linux-wrapper.sh`
+
+This script is a wrapper for running the test scripts on a Rocky Linux machine. It:
+
+- Connects to a Rocky Linux machine using SSH
+- Clones or updates the repository
+- Makes the scripts executable
+- Installs required packages
+- Runs the test scripts
+- Reports the results
+
+Unlike the previous wrapper script, this version uses environment variables for sensitive information instead of hardcoded secrets, making it safe to commit to the repository.
+
+### `setup-env.sh`
+
+This script sets up the environment variables needed by the wrapper script. It:
+
+- Prompts for the hostname, username, and password of the Rocky Linux machine
+- Creates a file in `/etc/profile.d/` to set these variables persistently
+- Sets appropriate permissions to protect sensitive information
+- Exports the variables for the current session
+
+Run this script once on the Rocky Linux machine to set up the environment for testing.
+
 ### `test-setup.sh`
 
 This script tests the `setup.sh` script with both memory and PostgreSQL options. It:
@@ -79,6 +103,38 @@ The GitHub Actions workflow requires the following secrets:
 
 ## Notes
 
-- The wrapper script (`rocky-linux-wrapper.sh`) contains secrets and should NOT be committed to the repository.
-- The test scripts do not contain any secrets and can be safely committed to the repository.
+- All scripts in this directory can be safely committed to the repository.
+- The `wrapper.sh` script uses environment variables for sensitive information, which should be set up using the `setup-env.sh` script.
 - The test scripts are designed to clean up after themselves, so they can be run multiple times without issues.
+
+## Setting Up Environment Variables
+
+To set up the environment variables needed by the wrapper script:
+
+```bash
+# Make the script executable
+chmod +x ci/rocky-linux/setup-env.sh
+
+# Run the script (requires sudo)
+sudo ./ci/rocky-linux/setup-env.sh
+
+# Follow the prompts to enter the hostname, username, and password
+```
+
+## Running Tests with the Wrapper
+
+To run tests using the wrapper script:
+
+```bash
+# Make sure environment variables are set
+source /etc/profile.d/rocky-linux-testing.sh
+
+# Run the wrapper script
+./ci/rocky-linux/rocky-linux-wrapper.sh
+```
+
+You can also specify a branch to test:
+
+```bash
+./ci/rocky-linux/rocky-linux-wrapper.sh feature/my-branch
+```
