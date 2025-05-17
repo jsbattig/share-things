@@ -12,6 +12,83 @@ fix_double_slash() {
   url_no_scheme=$(echo "$url_no_scheme" | sed 's|//|/|g')
   echo "$url_no_scheme"
 }
+
+# Helper function to fix image references
+fix_image_reference() {
+  local registry_url="$1"
+  local image_name="$2"
+  
+  # Remove https:// or http:// prefix
+  local url_no_scheme="${registry_url#http://}"
+  url_no_scheme="${url_no_scheme#https://}"
+  
+  # Replace any double slashes with single slashes
+  url_no_scheme=$(echo "$url_no_scheme" | sed 's|//|/|g')
+  
+  # Remove trailing slash if present
+  url_no_scheme="${url_no_scheme%/}"
+  
+  # Return the fixed image reference
+  echo "${url_no_scheme}/${image_name}"
+}
+
+# Helper function to fix the Dockerfile creation
+create_dockerfile_with_fixed_url() {
+  local registry_prefix="$1"
+  local output_file="$2"
+  
+  # Use helper function to fix image references
+  local node_image=$(fix_image_reference "${registry_prefix}" "node:18-alpine")
+  
+  log "INFO" "Using fixed node image reference: ${node_image}"
+  
+  cat > "$output_file" << EOL
+FROM ${node_image} AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
+
+FROM ${node_image}
+WORKDIR /app
+COPY package*.json ./
+RUN npm install --only=production
+COPY --from=builder /app/dist ./dist
+ARG PORT=3001
+ENV PORT=\${PORT}
+ENV LISTEN_PORT=\${PORT}
+ENV SESSION_STORAGE_TYPE=postgresql
+ENV PG_HOST=postgres
+ENV PG_PORT=5432
+ENV PG_DATABASE=sharethings
+ENV PG_USER=postgres
+ENV PG_PASSWORD=postgres
+ENV PG_SSL=false
+EXPOSE \${PORT}
+CMD ["node", "dist/index.js"]
+EOL
+}
+# Helper function to start PostgreSQL container
+start_postgres_container() {
+  local registry_prefix="$1"
+  
+  log "INFO" "Starting PostgreSQL container..."
+  
+  # Use helper function to fix image references
+  local postgres_image=$(fix_image_reference "${registry_prefix}" "postgres:14-alpine")
+  
+  log "INFO" "Using fixed PostgreSQL image reference: ${postgres_image}"
+  
+  podman run --name=share-things-postgres -d \
+    --network share-things-test_app_network \
+    -e POSTGRES_USER=postgres \
+    -e POSTGRES_PASSWORD=postgres \
+    -e POSTGRES_DB=sharethings \
+    -p 5432:5432 \
+    ${postgres_image} || log "ERROR" "Failed to start PostgreSQL container."
+}
+
 # This script tests the setup.sh script with both memory and PostgreSQL options
 # It is designed to be run directly on a Rocky Linux machine as part of CI/CD
 
@@ -562,14 +639,7 @@ podman network create share-things-test_app_network || true
 log "INFO" "Running containers manually without volume mounts..."
 
 # Run PostgreSQL
-log "INFO" "Starting PostgreSQL container..."
-podman run --name=share-things-postgres -d \
-  --network share-things-test_app_network \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=sharethings \
-  -p 5432:5432 \
-  ${REGISTRY_PREFIX}/postgres:14-alpine || log "ERROR" "Failed to start PostgreSQL container."
+start_postgres_container "${REGISTRY_PREFIX}"
 
 # Wait for PostgreSQL to start
 log "INFO" "Waiting for PostgreSQL to start..."
@@ -728,37 +798,9 @@ sleep 2
 
 # Create a custom Dockerfile for the backend that doesn't rely on volume mounts
 log "INFO" "Creating a custom Dockerfile for the backend with PostgreSQL support..."
-# Use helper function to fix double slash issues
-FIXED_REGISTRY_PREFIX=$(fix_double_slash "${REGISTRY_PREFIX}")
 
-log "INFO" "Using fixed registry prefix for Dockerfile: ${FIXED_REGISTRY_PREFIX}"
-
-cat > server/Dockerfile.test << EOL
-FROM ${FIXED_REGISTRY_PREFIX}/node:18-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm install
-COPY . .
-RUN npm run build
-
-FROM ${FIXED_REGISTRY_PREFIX}/node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --only=production
-COPY --from=builder /app/dist ./dist
-ARG PORT=3001
-ENV PORT=\${PORT}
-ENV LISTEN_PORT=\${PORT}
-ENV SESSION_STORAGE_TYPE=postgresql
-ENV PG_HOST=postgres
-ENV PG_PORT=5432
-ENV PG_DATABASE=sharethings
-ENV PG_USER=postgres
-ENV PG_PASSWORD=postgres
-ENV PG_SSL=false
-EXPOSE \${PORT}
-CMD ["node", "dist/index.js"]
-EOL
+# Use our helper function to create the Dockerfile
+create_dockerfile_with_fixed_url "${REGISTRY_PREFIX}" "server/Dockerfile.test"
 
 # Use the custom Dockerfile for the backend
 log "INFO" "Building containers with custom Dockerfiles for PostgreSQL setup..."
@@ -780,13 +822,7 @@ FIXED_REGISTRY_PREFIX=$(fix_double_slash "${REGISTRY_PREFIX}")
 
 log "INFO" "Using fixed registry prefix: ${FIXED_REGISTRY_PREFIX}"
 
-podman run --name=share-things-postgres -d \
-  --network share-things-test_app_network \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=sharethings \
-  -p 5432:5432 \
-  ${FIXED_REGISTRY_PREFIX}/postgres:14-alpine || log "ERROR" "Failed to start PostgreSQL container."
+start_postgres_container "${REGISTRY_PREFIX}"
 
 # Wait for PostgreSQL to start
 log "INFO" "Waiting for PostgreSQL to start..."
