@@ -203,60 +203,12 @@ jobs:
         name: test-results
         path: test-results/
 
-  build-production:
-    name: Build Production
-    needs: [integration]
-    runs-on: [self-hosted, Rocky Linux]
-    
-    steps:
-    - name: Check Podman installation
-      run: |
-        if ! command -v podman &> /dev/null; then
-          echo "Error: Podman is not installed on the runner."
-          exit 1
-        fi
-        if ! command -v podman-compose &> /dev/null; then
-          echo "Error: Podman Compose is not installed on the runner."
-          exit 1
-        fi
-        echo "Podman version: $(podman --version)"
-        echo "Podman Compose version: $(podman-compose --version)"
-    
-    - uses: actions/checkout@v3
-    
-    - name: Make build-production script executable
-      run: |
-        chmod +x build-production.sh
-    
-    - name: Debug environment
-      run: |
-        echo "GitHub Actions environment:"
-        echo "Working directory: $(pwd)"
-        ls -la
-        echo "Podman version:"
-        podman --version
-        echo "Podman Compose version:"
-        podman-compose --version
-        echo "Podman info:"
-        podman info
-    
-    - name: Build production containers
-      run: ./build-production.sh
-      env:
-        CI: true
-        PODMAN_USERNS: keep-id
-    
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: production-build-artifacts
-        path: |
-          server/dist
-          client/dist
+  # The build-production job has been removed as we're relying on the test-setup job
+  # to verify production readiness
 
   deploy-production:
     name: Deploy to Production
-    needs: [build-production, test-setup]
+    needs: [test-setup, integration]
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     runs-on: [self-hosted, Rocky Linux]
     

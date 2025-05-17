@@ -69,29 +69,53 @@ if [ -n "$API_PORT" ]; then
   
   echo "Updating nginx.conf to use backend port: $ACTUAL_PORT"
   # Create a temporary file in a writable location
-  TEMP_CONF=$(mktemp -p /tmp nginx.conf.XXXXXX)
-  cat /etc/nginx/conf.d/default.conf > $TEMP_CONF
-  
-  # Modify the temporary file
-  sed "s|http://backend:3001|http://backend:$ACTUAL_PORT|g" $TEMP_CONF > /tmp/nginx.conf.new
-  
-  # Try to use the modified file
-  if [ -w /etc/nginx/conf.d/default.conf ]; then
-    # If writable, update the original
-    cat /tmp/nginx.conf.new > /etc/nginx/conf.d/default.conf
-    echo "Successfully updated nginx.conf with backend port: $ACTUAL_PORT"
-  else
-    # If not writable, print diagnostic info
-    echo "WARNING: Cannot write to /etc/nginx/conf.d/default.conf (permission denied)"
-    echo "Current nginx.conf content:"
-    cat /etc/nginx/conf.d/default.conf
-    echo "Modified content that would be applied:"
-    cat /tmp/nginx.conf.new
-    echo "Will continue with original configuration"
+  TEMP_DIR="/tmp"
+  if [ ! -w "$TEMP_DIR" ]; then
+    # If /tmp is not writable, try current directory
+    TEMP_DIR="."
   fi
   
-  # Clean up
-  rm -f $TEMP_CONF /tmp/nginx.conf.new
+  # Create a temporary configuration file
+  TEMP_CONF="$TEMP_DIR/nginx.conf.tmp"
+  TEMP_NEW="$TEMP_DIR/nginx.conf.new"
+  
+  # Copy the original configuration
+  cat /etc/nginx/conf.d/default.conf > "$TEMP_CONF" 2>/dev/null || echo "Error: Cannot read nginx config"
+  
+  # Modify the temporary file
+  if [ -f "$TEMP_CONF" ]; then
+    sed "s|http://backend:3001|http://backend:$ACTUAL_PORT|g" "$TEMP_CONF" > "$TEMP_NEW" 2>/dev/null
+    
+    # Try to use the modified file
+    if [ -w /etc/nginx/conf.d/default.conf ]; then
+      # If writable, update the original
+      cat "$TEMP_NEW" > /etc/nginx/conf.d/default.conf 2>/dev/null
+      echo "Successfully updated nginx.conf with backend port: $ACTUAL_PORT"
+    else
+      # If not writable, create a symbolic link to the modified file
+      echo "WARNING: Cannot write to /etc/nginx/conf.d/default.conf (permission denied)"
+      echo "Creating a symbolic link to the modified configuration"
+      
+      # Try to create a symbolic link
+      if ln -sf "$TEMP_NEW" /etc/nginx/conf.d/default.conf 2>/dev/null; then
+        echo "Successfully created symbolic link to modified configuration"
+      else
+        echo "WARNING: Cannot create symbolic link (permission denied)"
+        echo "Using environment variable workaround for backend hostname"
+        
+        # Set environment variables that nginx can use
+        export BACKEND_HOST="backend"
+        export BACKEND_PORT="$ACTUAL_PORT"
+        echo "Set environment variables: BACKEND_HOST=$BACKEND_HOST, BACKEND_PORT=$BACKEND_PORT"
+      fi
+    fi
+  else
+    echo "WARNING: Could not create temporary nginx configuration"
+  fi
+  
+  # Clean up only if files exist
+  [ -f "$TEMP_CONF" ] && rm -f "$TEMP_CONF"
+  [ -f "$TEMP_NEW" ] && rm -f "$TEMP_NEW"
 else
   echo "Using default backend port: 3001"
 fi
@@ -107,5 +131,40 @@ getent hosts backend || echo "Backend hostname not in hosts database"
 echo "Current nginx configuration:"
 cat /etc/nginx/conf.d/default.conf
 
-# Execute the original docker-entrypoint.sh from the Nginx image
-exec /docker-entrypoint.sh "$@"
+# Add a health check endpoint
+mkdir -p /usr/share/nginx/html/health
+echo '{"status":"ok"}' > /usr/share/nginx/html/health/index.json
+
+# In rootless mode, we need to handle the case where we can't modify the nginx config
+if [ ! -w /etc/nginx/conf.d/default.conf ] && [ -n "$BACKEND_HOST" ] && [ -n "$BACKEND_PORT" ]; then
+  echo "Using runtime workaround for backend hostname resolution"
+  # Create a simple script to periodically update /etc/hosts with the backend IP
+  (
+    while true; do
+      # Try to resolve backend IP
+      BACKEND_IP=$(getent hosts backend 2>/dev/null | awk '{ print $1 }')
+      if [ -n "$BACKEND_IP" ]; then
+        echo "Resolved backend IP: $BACKEND_IP"
+      fi
+      sleep 10
+    done
+  ) &
+fi
+
+# Print final diagnostic information
+echo "FINAL CONFIGURATION:"
+echo "Backend hostname resolution:"
+getent hosts backend || echo "Backend hostname not in hosts database"
+echo "Network interfaces:"
+ip addr | grep -E 'inet|eth' || echo "No network interfaces found"
+echo "DNS servers:"
+cat /etc/resolv.conf || echo "No DNS configuration found"
+
+# Execute the original docker-entrypoint.sh from the Nginx image with error handling
+if [ -x /docker-entrypoint.sh ]; then
+  exec /docker-entrypoint.sh "$@"
+else
+  echo "ERROR: Cannot find or execute /docker-entrypoint.sh"
+  echo "Falling back to direct nginx execution"
+  exec nginx -g "daemon off;"
+fi

@@ -18,6 +18,7 @@ COMPOSE_CMD="podman-compose"
 CONTAINER_CMD="podman"
 COMPOSE_FILE="podman-compose.yml"
 FORCE_INSTALL="false"
+DEBUG_MODE="false"
 
 # Source the module scripts
 source setup/common.sh
@@ -81,6 +82,10 @@ while [[ $# -gt 0 ]]; do
             FORCE_INSTALL="true"
             shift
             ;;
+        --debug)
+            DEBUG_MODE="true"
+            shift
+            ;;
         --help)
             show_help
             exit 0
@@ -95,6 +100,12 @@ done
 
 # Main execution flow based on mode
 check_podman
+
+# If debug mode is enabled, show more verbose output
+if [ "$DEBUG_MODE" = "true" ]; then
+    echo "Debug mode enabled - showing verbose output"
+    set -x  # Enable command tracing
+fi
 
 case $INSTALL_MODE in
     "install")
