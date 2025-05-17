@@ -746,13 +746,18 @@ log "INFO" "Running containers manually without volume mounts for PostgreSQL set
 
 # Run PostgreSQL
 log "INFO" "Starting PostgreSQL container..."
+
+# Remove https:// or http:// prefix for image reference
+REGISTRY_PREFIX_NO_SCHEME="${REGISTRY_PREFIX#http://}"
+REGISTRY_PREFIX_NO_SCHEME="${REGISTRY_PREFIX_NO_SCHEME#https://}"
+
 podman run --name=share-things-postgres -d \
   --network share-things-test_app_network \
   -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=sharethings \
   -p 5432:5432 \
-  ${REGISTRY_PREFIX}/postgres:14-alpine || log "ERROR" "Failed to start PostgreSQL container."
+  ${REGISTRY_PREFIX_NO_SCHEME}/postgres:14-alpine || log "ERROR" "Failed to start PostgreSQL container."
 
 # Wait for PostgreSQL to start
 log "INFO" "Waiting for PostgreSQL to start..."
