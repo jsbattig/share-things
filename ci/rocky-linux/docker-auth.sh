@@ -241,7 +241,14 @@ if [ -n "$DOCKER_REGISTRY_URL" ]; then
           image_without_prefix="${image#docker.io/}"
           
           # Construct the new image reference with the custom registry
-          new_image="${DOCKER_REGISTRY_URL%/}/${image_without_prefix}"
+          # Remove https:// or http:// prefix from registry URL for image references
+          registry_url_no_scheme="${DOCKER_REGISTRY_URL#http://}"
+          registry_url_no_scheme="${registry_url_no_scheme#https://}"
+          # Remove trailing slash if present
+          registry_url_no_scheme="${registry_url_no_scheme%/}"
+          
+          # Construct the new image reference
+          new_image="${registry_url_no_scheme}/${image_without_prefix}"
           
           # Replace the line
           log "INFO" "Replacing FROM statement: $line"
@@ -286,7 +293,14 @@ if [ -n "$DOCKER_REGISTRY_URL" ]; then
           image_without_prefix="${image#docker.io/}"
           
           # Construct the new image reference with the custom registry
-          new_image="${DOCKER_REGISTRY_URL%/}/${image_without_prefix}"
+          # Remove https:// or http:// prefix from registry URL for image references
+          registry_url_no_scheme="${DOCKER_REGISTRY_URL#http://}"
+          registry_url_no_scheme="${registry_url_no_scheme#https://}"
+          # Remove trailing slash if present
+          registry_url_no_scheme="${registry_url_no_scheme%/}"
+          
+          # Construct the new image reference
+          new_image="${registry_url_no_scheme}/${image_without_prefix}"
           
           # Replace the line
           log "INFO" "Replacing FROM statement: $line"
@@ -327,11 +341,14 @@ if [ -n "$DOCKER_REGISTRY_URL" ]; then
           image_without_prefix="${image#docker.io/}"
           
           # Construct the new image reference with the custom registry
-          # Remove trailing slash from registry URL if present
-          registry_url="${DOCKER_REGISTRY_URL%/}"
+          # Remove https:// or http:// prefix from registry URL for image references
+          registry_url_no_scheme="${DOCKER_REGISTRY_URL#http://}"
+          registry_url_no_scheme="${registry_url_no_scheme#https://}"
+          # Remove trailing slash if present
+          registry_url_no_scheme="${registry_url_no_scheme%/}"
           
           # Construct the new image reference
-          new_image="${registry_url}/${image_without_prefix}"
+          new_image="${registry_url_no_scheme}/${image_without_prefix}"
           
           # Replace the line
           log "INFO" "Replacing image reference: $line"
@@ -360,7 +377,13 @@ if [ -n "$DOCKER_REGISTRY_URL" ]; then
     if grep -q "FROM docker.io/library/" ./server/Dockerfile.test; then
       log "INFO" "Found 'FROM docker.io/library/' pattern in server/Dockerfile.test"
       # Do the original replacement
-      sed -i "s|FROM docker.io/library/|FROM ${DOCKER_REGISTRY_URL}/library/|g" ./server/Dockerfile.test
+      # Remove https:// or http:// prefix from registry URL for image references
+      registry_url_no_scheme="${DOCKER_REGISTRY_URL#http://}"
+      registry_url_no_scheme="${registry_url_no_scheme#https://}"
+      # Remove trailing slash if present
+      registry_url_no_scheme="${registry_url_no_scheme%/}"
+      
+      sed -i "s|FROM docker.io/library/|FROM ${registry_url_no_scheme}/library/|g" ./server/Dockerfile.test
     else
       log "WARNING" "Pattern 'FROM docker.io/library/' not found in server/Dockerfile.test"
       log "INFO" "Checking for other FROM patterns..."
@@ -368,12 +391,18 @@ if [ -n "$DOCKER_REGISTRY_URL" ]; then
       
       # Try multiple replacement patterns
       log "INFO" "Trying multiple replacement patterns for server/Dockerfile.test..."
-      sed -i "s|FROM node:|FROM ${DOCKER_REGISTRY_URL}/library/node:|g" ./server/Dockerfile.test
-      sed -i "s|FROM alpine:|FROM ${DOCKER_REGISTRY_URL}/library/alpine:|g" ./server/Dockerfile.test
-      sed -i "s|FROM nginx:|FROM ${DOCKER_REGISTRY_URL}/library/nginx:|g" ./server/Dockerfile.test
+      # Remove https:// or http:// prefix from registry URL for image references
+      registry_url_no_scheme="${DOCKER_REGISTRY_URL#http://}"
+      registry_url_no_scheme="${registry_url_no_scheme#https://}"
+      # Remove trailing slash if present
+      registry_url_no_scheme="${registry_url_no_scheme%/}"
+      
+      sed -i "s|FROM node:|FROM ${registry_url_no_scheme}/library/node:|g" ./server/Dockerfile.test
+      sed -i "s|FROM alpine:|FROM ${registry_url_no_scheme}/library/alpine:|g" ./server/Dockerfile.test
+      sed -i "s|FROM nginx:|FROM ${registry_url_no_scheme}/library/nginx:|g" ./server/Dockerfile.test
       
       # Handle multi-stage builds with AS
-      sed -i "s|FROM node:.* AS |FROM ${DOCKER_REGISTRY_URL}/library/node:18-alpine AS |g" ./server/Dockerfile.test
+      sed -i "s|FROM node:.* AS |FROM ${registry_url_no_scheme}/library/node:18-alpine AS |g" ./server/Dockerfile.test
     fi
     
     # Create a temporary file for the modified Dockerfile
@@ -391,11 +420,14 @@ if [ -n "$DOCKER_REGISTRY_URL" ]; then
           image_without_prefix="${image#docker.io/}"
           
           # Construct the new image reference with the custom registry
-          # Remove trailing slash from registry URL if present
-          registry_url="${DOCKER_REGISTRY_URL%/}"
+          # Remove https:// or http:// prefix from registry URL for image references
+          registry_url_no_scheme="${DOCKER_REGISTRY_URL#http://}"
+          registry_url_no_scheme="${registry_url_no_scheme#https://}"
+          # Remove trailing slash if present
+          registry_url_no_scheme="${registry_url_no_scheme%/}"
           
           # Construct the new image reference
-          new_image="${registry_url}/${image_without_prefix}"
+          new_image="${registry_url_no_scheme}/${image_without_prefix}"
           
           # Replace the line
           log "INFO" "Replacing FROM statement: $line"
@@ -441,11 +473,14 @@ if [ -n "$DOCKER_REGISTRY_URL" ]; then
           image_without_prefix="${image#docker.io/}"
           
           # Construct the new image reference with the custom registry
-          # Remove trailing slash from registry URL if present
-          registry_url="${DOCKER_REGISTRY_URL%/}"
+          # Remove https:// or http:// prefix from registry URL for image references
+          registry_url_no_scheme="${DOCKER_REGISTRY_URL#http://}"
+          registry_url_no_scheme="${registry_url_no_scheme#https://}"
+          # Remove trailing slash if present
+          registry_url_no_scheme="${registry_url_no_scheme%/}"
           
           # Construct the new image reference
-          new_image="${registry_url}/${image_without_prefix}"
+          new_image="${registry_url_no_scheme}/${image_without_prefix}"
           
           # Replace the line
           log "INFO" "Replacing FROM statement: $line"
