@@ -1,5 +1,13 @@
 import 'blob-polyfill';
 
+// Add TextEncoder and TextDecoder polyfills for Node.js environment
+if (typeof global.TextEncoder === 'undefined') {
+  const { TextEncoder, TextDecoder } = require('util');
+  global.TextEncoder = TextEncoder;
+  global.TextDecoder = TextDecoder;
+  console.log('TextEncoder and TextDecoder polyfills installed');
+}
+
 // Define extended interfaces for our mock crypto implementation
 interface MockCryptoKey extends CryptoKey {
   _keyId: string;
