@@ -407,7 +407,10 @@ fi
 # Update docker-compose files
 # Remove trailing slash from registry URL if present
 REGISTRY_URL="${DOCKER_REGISTRY_URL_ARG%/}"
+# Ensure there's no double slash between proxy and library
 REGISTRY_PREFIX="${REGISTRY_URL}/library"
+# Replace any double slashes with single slashes (except in http:// or https://)
+REGISTRY_PREFIX=$(echo "$REGISTRY_PREFIX" | sed 's|://|PROTOCOLPLACEHOLDER|g' | sed 's|//|/|g' | sed 's|PROTOCOLPLACEHOLDER|://|g')
 
 log "INFO" "Using registry prefix: ${REGISTRY_PREFIX}"
 sed -i "s|image: postgres:17-alpine|image: ${REGISTRY_PREFIX}/postgres:14-alpine|g" docker-compose.yml

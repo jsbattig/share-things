@@ -301,6 +301,8 @@ if [ -n "$DOCKER_REGISTRY_URL" ]; then
           
           # Construct the new image reference
           new_image="${registry_url_no_scheme}/${image_without_prefix}"
+          # Replace any double slashes with single slashes (except in http:// or https://)
+          new_image=$(echo "$new_image" | sed 's|://|PROTOCOLPLACEHOLDER|g' | sed 's|//|/|g' | sed 's|PROTOCOLPLACEHOLDER|://|g')
           
           # Replace the line
           log "INFO" "Replacing FROM statement: $line"
@@ -349,6 +351,8 @@ if [ -n "$DOCKER_REGISTRY_URL" ]; then
           
           # Construct the new image reference
           new_image="${registry_url_no_scheme}/${image_without_prefix}"
+          # Replace any double slashes with single slashes (except in http:// or https://)
+          new_image=$(echo "$new_image" | sed 's|://|PROTOCOLPLACEHOLDER|g' | sed 's|//|/|g' | sed 's|PROTOCOLPLACEHOLDER|://|g')
           
           # Replace the line
           log "INFO" "Replacing image reference: $line"
@@ -397,12 +401,15 @@ if [ -n "$DOCKER_REGISTRY_URL" ]; then
       # Remove trailing slash if present
       registry_url_no_scheme="${registry_url_no_scheme%/}"
       
-      sed -i "s|FROM node:|FROM ${registry_url_no_scheme}/library/node:|g" ./server/Dockerfile.test
-      sed -i "s|FROM alpine:|FROM ${registry_url_no_scheme}/library/alpine:|g" ./server/Dockerfile.test
-      sed -i "s|FROM nginx:|FROM ${registry_url_no_scheme}/library/nginx:|g" ./server/Dockerfile.test
+      # Create normalized registry URL (no double slashes)
+      registry_url_normalized=$(echo "${registry_url_no_scheme}/library" | sed 's|://|PROTOCOLPLACEHOLDER|g' | sed 's|//|/|g' | sed 's|PROTOCOLPLACEHOLDER|://|g')
+      
+      sed -i "s|FROM node:|FROM ${registry_url_normalized}/node:|g" ./server/Dockerfile.test
+      sed -i "s|FROM alpine:|FROM ${registry_url_normalized}/alpine:|g" ./server/Dockerfile.test
+      sed -i "s|FROM nginx:|FROM ${registry_url_normalized}/nginx:|g" ./server/Dockerfile.test
       
       # Handle multi-stage builds with AS
-      sed -i "s|FROM node:.* AS |FROM ${registry_url_no_scheme}/library/node:18-alpine AS |g" ./server/Dockerfile.test
+      sed -i "s|FROM node:.* AS |FROM ${registry_url_normalized}/node:18-alpine AS |g" ./server/Dockerfile.test
     fi
     
     # Create a temporary file for the modified Dockerfile
@@ -428,6 +435,10 @@ if [ -n "$DOCKER_REGISTRY_URL" ]; then
           
           # Construct the new image reference
           new_image="${registry_url_no_scheme}/${image_without_prefix}"
+          # Replace any double slashes with single slashes (except in http:// or https://)
+          new_image=$(echo "$new_image" | sed 's|://|PROTOCOLPLACEHOLDER|g' | sed 's|//|/|g' | sed 's|PROTOCOLPLACEHOLDER|://|g')
+          # Replace any double slashes with single slashes (except in http:// or https://)
+          new_image=$(echo "$new_image" | sed 's|://|PROTOCOLPLACEHOLDER|g' | sed 's|//|/|g' | sed 's|PROTOCOLPLACEHOLDER|://|g')
           
           # Replace the line
           log "INFO" "Replacing FROM statement: $line"
