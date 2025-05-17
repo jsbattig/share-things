@@ -1,8 +1,8 @@
 import 'blob-polyfill';
+import { TextEncoder, TextDecoder } from 'util';
 
 // Add TextEncoder and TextDecoder polyfills for Node.js environment
 if (typeof global.TextEncoder === 'undefined') {
-  const { TextEncoder, TextDecoder } = require('util');
   global.TextEncoder = TextEncoder;
   global.TextDecoder = TextDecoder;
   console.log('TextEncoder and TextDecoder polyfills installed');
