@@ -108,6 +108,50 @@ jobs:
           server/dist
           client/dist
 
+  test-setup:
+    name: Test Setup Script
+    needs: [build]
+    runs-on: [self-hosted, Rocky Linux]
+    
+    steps:
+    - name: Check Podman installation
+      run: |
+        if ! command -v podman &> /dev/null; then
+          echo "Error: Podman is not installed on the runner."
+          exit 1
+        fi
+        if ! command -v podman-compose &> /dev/null; then
+          echo "Error: Podman Compose is not installed on the runner."
+          exit 1
+        fi
+        echo "Podman version: $(podman --version)"
+        echo "Podman Compose version: $(podman-compose --version)"
+    
+    - uses: actions/checkout@v3
+    
+    - name: Make test-setup script executable
+      run: chmod +x test-setup.sh
+    
+    - name: Debug environment
+      run: |
+        echo "GitHub Actions environment:"
+        echo "Working directory: $(pwd)"
+        ls -la
+        echo "Podman version:"
+        podman --version
+        echo "Podman Compose version:"
+        podman-compose --version
+        echo "Podman info:"
+        podman info
+        echo "Available disk space:"
+        df -h
+    
+    - name: Run test-setup script
+      run: ./test-setup.sh
+      env:
+        CI: true
+        PODMAN_USERNS: keep-id
+
   integration:
     name: Dockered Build and Tests
     needs: [build]
@@ -212,7 +256,7 @@ jobs:
 
   deploy-production:
     name: Deploy to Production
-    needs: [build-production]
+    needs: [build-production, test-setup]
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     runs-on: [self-hosted, Rocky Linux]
     
@@ -238,23 +282,23 @@ jobs:
             sudo yum install -y sshpass
           fi
           
-          # Function to check if update-server.sh is running
+          # Function to check if setup.sh --update is running
           check_update_script_running() {
-            sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "pgrep -f update-server.sh" > /dev/null
+            sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "pgrep -f 'setup.sh --update'" > /dev/null
             return $?
           }
           
-          # Wait until any existing update-server.sh process completes
-          echo "Checking if update-server.sh is already running on the production server..."
+          # Wait until any existing setup.sh --update process completes
+          echo "Checking if setup.sh --update is already running on the production server..."
           while check_update_script_running; do
-            echo "update-server.sh is currently running. Waiting 30 seconds before checking again..."
+            echo "setup.sh --update is currently running. Waiting 30 seconds before checking again..."
             sleep 30
           done
           
-          echo "No running update-server.sh process detected. Proceeding with deployment..."
+          echo "No running setup.sh --update process detected. Proceeding with deployment..."
           
           # Set up SSH connection and run the update script, capturing the exit code
-          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && ./update-server.sh"
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && ./setup.sh --update --non-interactive"
           DEPLOY_EXIT_CODE=$?
           
           # Check if the deployment was successful
