@@ -138,6 +138,16 @@ build_and_start_containers() {
     fi
   fi
   
+  # Login to Docker registry if credentials are provided
+  if [ -n "$DOCKER_REGISTRY_URL" ] && [ -n "$DOCKER_USERNAME" ] && [ -n "$DOCKER_PASSWORD" ]; then
+    echo -e "${YELLOW}Logging in to Docker registry: $DOCKER_REGISTRY_URL${NC}"
+    if [ "$CONTAINER_ENGINE" = "podman" ]; then
+      podman login --username "$DOCKER_USERNAME" --password "$DOCKER_PASSWORD" "$DOCKER_REGISTRY_URL" || echo -e "${YELLOW}Login failed, but continuing anyway...${NC}"
+    else
+      docker login --username "$DOCKER_USERNAME" --password "$DOCKER_PASSWORD" "$DOCKER_REGISTRY_URL" || echo -e "${YELLOW}Login failed, but continuing anyway...${NC}"
+    fi
+  fi
+
   if [ "$CONTAINER_ENGINE" = "podman" ]; then
     # First attempt with default configuration
     echo -e "${YELLOW}Attempting to build containers with default configuration...${NC}"

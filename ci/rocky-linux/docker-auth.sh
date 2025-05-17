@@ -66,9 +66,14 @@ log "INFO" "Docker Password: ${DOCKER_PASSWORD:+masked}"
 
 # Create registries.conf to ensure the registry is in the search path
 mkdir -p ~/.config/containers
+
+# Remove https:// or http:// prefix from registry URL for registries.conf
+registry_url_no_scheme="${DOCKER_REGISTRY_URL#http://}"
+registry_url_no_scheme="${registry_url_no_scheme#https://}"
+
 cat > ~/.config/containers/registries.conf << EOL
 [registries.search]
-registries = ["${DOCKER_REGISTRY_URL}", "docker.io", "quay.io"]
+registries = ["${registry_url_no_scheme}", "docker.io", "quay.io"]
 
 [registries.insecure]
 registries = []
@@ -86,8 +91,12 @@ if [ -d "/etc/containers" ]; then
   # Use sudo if available, otherwise try without it
   if command -v sudo &> /dev/null; then
     sudo mkdir -p /etc/containers || log "WARNING" "Could not create /etc/containers directory"
+    # Remove https:// or http:// prefix from registry URL for registries.conf
+    registry_url_no_scheme="${DOCKER_REGISTRY_URL#http://}"
+    registry_url_no_scheme="${registry_url_no_scheme#https://}"
+    
     echo "[registries.search]
-registries = [\"${DOCKER_REGISTRY_URL}\", \"docker.io\", \"quay.io\"]
+registries = [\"${registry_url_no_scheme}\", \"docker.io\", \"quay.io\"]
 
 [registries.insecure]
 registries = []
@@ -99,8 +108,12 @@ registries = []
 short-name-mode=\"permissive\"" | sudo tee /etc/containers/registries.conf > /dev/null || log "WARNING" "Could not create system-wide registries.conf"
   else
     mkdir -p /etc/containers 2>/dev/null || log "WARNING" "Could not create /etc/containers directory"
+    # Remove https:// or http:// prefix from registry URL for registries.conf
+    registry_url_no_scheme="${DOCKER_REGISTRY_URL#http://}"
+    registry_url_no_scheme="${registry_url_no_scheme#https://}"
+    
     echo "[registries.search]
-registries = [\"${DOCKER_REGISTRY_URL}\", \"docker.io\", \"quay.io\"]
+registries = [\"${registry_url_no_scheme}\", \"docker.io\", \"quay.io\"]
 
 [registries.insecure]
 registries = []
