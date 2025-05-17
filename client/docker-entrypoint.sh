@@ -56,5 +56,17 @@ else
   echo "Using default backend port: 3001"
 fi
 
-# Execute the original docker-entrypoint.sh from the Nginx image
-exec /docker-entrypoint.sh "$@"
+# Wait for backend to be available
+wait_for_backend
+
+# Check if the original entrypoint script exists
+if [ -f "/docker-entrypoint.sh" ]; then
+  # Execute the original docker-entrypoint.sh from the Nginx image
+  exec /docker-entrypoint.sh "$@"
+elif [ -f "/usr/local/bin/docker-entrypoint.sh" ]; then
+  # Try alternative path
+  exec /usr/local/bin/docker-entrypoint.sh "$@"
+else
+  # If original entrypoint not found, just run the command directly
+  exec "$@"
+fi
