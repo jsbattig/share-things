@@ -487,14 +487,24 @@ if [ -n "$DOCKER_REGISTRY_URL_ARG" ]; then
   
   # Also update the original Dockerfiles
   log "INFO" "Updating original Dockerfiles with custom registry URL..."
-  sed -i "s|FROM docker.io/library/|FROM ${DOCKER_REGISTRY_URL_ARG}/library/|g" ./server/Dockerfile
-  sed -i "s|FROM docker.io/library/|FROM ${DOCKER_REGISTRY_URL_ARG}/library/|g" ./client/Dockerfile
+  
+  # Remove https:// or http:// prefix for image reference
+  REGISTRY_URL_NO_SCHEME="${DOCKER_REGISTRY_URL_ARG#http://}"
+  REGISTRY_URL_NO_SCHEME="${REGISTRY_URL_NO_SCHEME#https://}"
+  
+  sed -i "s|FROM docker.io/library/|FROM ${REGISTRY_URL_NO_SCHEME}/library/|g" ./server/Dockerfile
+  sed -i "s|FROM docker.io/library/|FROM ${REGISTRY_URL_NO_SCHEME}/library/|g" ./client/Dockerfile
   
   # Update docker-compose files
   log "INFO" "Updating docker-compose files with custom registry URL..."
-  sed -i "s|image: docker.io/library/|image: ${DOCKER_REGISTRY_URL_ARG}/library/|g" docker-compose.yml
-  sed -i "s|image: docker.io/library/|image: ${DOCKER_REGISTRY_URL_ARG}/library/|g" docker-compose.test.yml
-  sed -i "s|image: docker.io/library/|image: ${DOCKER_REGISTRY_URL_ARG}/library/|g" docker-compose.prod.yml
+  
+  # Remove https:// or http:// prefix for image reference
+  REGISTRY_URL_NO_SCHEME="${DOCKER_REGISTRY_URL_ARG#http://}"
+  REGISTRY_URL_NO_SCHEME="${REGISTRY_URL_NO_SCHEME#https://}"
+  
+  sed -i "s|image: docker.io/library/|image: ${REGISTRY_URL_NO_SCHEME}/library/|g" docker-compose.yml
+  sed -i "s|image: docker.io/library/|image: ${REGISTRY_URL_NO_SCHEME}/library/|g" docker-compose.test.yml
+  sed -i "s|image: docker.io/library/|image: ${REGISTRY_URL_NO_SCHEME}/library/|g" docker-compose.prod.yml
 fi
 
 # Check if we have a .docker-registry-url file from docker-auth.sh
@@ -705,15 +715,19 @@ sleep 2
 
 # Create a custom Dockerfile for the backend that doesn't rely on volume mounts
 log "INFO" "Creating a custom Dockerfile for the backend with PostgreSQL support..."
+# Remove https:// or http:// prefix for image reference
+REGISTRY_PREFIX_NO_SCHEME="${REGISTRY_PREFIX#http://}"
+REGISTRY_PREFIX_NO_SCHEME="${REGISTRY_PREFIX_NO_SCHEME#https://}"
+
 cat > server/Dockerfile.test << EOL
-FROM ${REGISTRY_PREFIX}/node:18-alpine AS builder
+FROM ${REGISTRY_PREFIX_NO_SCHEME}/node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
 RUN npm run build
 
-FROM ${REGISTRY_PREFIX}/node:18-alpine
+FROM ${REGISTRY_PREFIX_NO_SCHEME}/node:18-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --only=production
