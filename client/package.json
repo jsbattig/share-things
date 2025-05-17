@@ -8,9 +8,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "jest --config=\"$(pwd)/jest.config.mjs\"",
-    "test:watch": "jest --watch --config=\"$(pwd)/jest.config.mjs\"",
-    "test:coverage": "jest --coverage --config=\"$(pwd)/jest.config.mjs\"",
+    "test": "jest --config=./jest.config.mjs",
+    "test:watch": "jest --watch --config=./jest.config.mjs",
+    "test:coverage": "jest --coverage --config=./jest.config.mjs",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write 'src/**/*.{ts,tsx,css}'",
     "set-backend-url": "node set-backend-url.js"
