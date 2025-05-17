@@ -14,7 +14,7 @@ COPY . .
 # Set build arguments with defaults
 ARG API_URL=auto
 ARG SOCKET_URL=auto
-ARG API_PORT=15001
+ARG API_PORT=3001
 ARG VITE_API_PORT=${API_PORT}
 
 # Create production .env file
@@ -25,6 +25,14 @@ VITE_ENABLE_ANALYTICS=false\n\
 VITE_ENABLE_LOGGING=false\n\
 VITE_MAX_FILE_SIZE=104857600\n\
 VITE_DEFAULT_CHUNK_SIZE=65536" > .env
+
+# Print environment for debugging
+RUN echo "Client build environment:" && \
+    echo "API_URL=${API_URL}" && \
+    echo "SOCKET_URL=${SOCKET_URL}" && \
+    echo "API_PORT=${API_PORT}" && \
+    echo "VITE_API_PORT=${VITE_API_PORT}" && \
+    cat .env
 
 # Build the application (skip TypeScript type checking)
 RUN npx vite build || (mkdir -p dist && echo "<html><body>Build failed</body></html>" > dist/index.html)
