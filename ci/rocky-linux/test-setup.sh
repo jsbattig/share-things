@@ -799,8 +799,12 @@ sleep 2
 # Create a custom Dockerfile for the backend that doesn't rely on volume mounts
 log "INFO" "Creating a custom Dockerfile for the backend with PostgreSQL support..."
 
+# Fix the issue with the double slash in the URL
+FIXED_REGISTRY_PREFIX=$(fix_double_slash "${REGISTRY_PREFIX}")
+log "INFO" "Using fixed registry prefix for backend Dockerfile: ${FIXED_REGISTRY_PREFIX}"
+
 # Use our helper function to create the Dockerfile
-create_dockerfile_with_fixed_url "${REGISTRY_PREFIX}" "server/Dockerfile.test"
+create_dockerfile_with_fixed_url "${FIXED_REGISTRY_PREFIX}" "server/Dockerfile.test"
 
 # Use the custom Dockerfile for the backend
 log "INFO" "Building containers with custom Dockerfiles for PostgreSQL setup..."
@@ -822,7 +826,7 @@ FIXED_REGISTRY_PREFIX=$(fix_double_slash "${REGISTRY_PREFIX}")
 
 log "INFO" "Using fixed registry prefix: ${FIXED_REGISTRY_PREFIX}"
 
-start_postgres_container "${REGISTRY_PREFIX}"
+start_postgres_container "${FIXED_REGISTRY_PREFIX}"
 
 # Wait for PostgreSQL to start
 log "INFO" "Waiting for PostgreSQL to start..."
