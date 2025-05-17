@@ -1,10 +1,12 @@
 import 'blob-polyfill';
-import { TextEncoder, TextDecoder } from 'util';
 
-// Add TextEncoder and TextDecoder polyfills for Node.js environment
+// Add TextEncoder and TextDecoder polyfills for Node.js environment in Jest
 if (typeof global.TextEncoder === 'undefined') {
-  global.TextEncoder = TextEncoder;
-  global.TextDecoder = TextDecoder;
+  // Use dynamic import to avoid TypeScript errors during build
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const util = require('util');
+  global.TextEncoder = util.TextEncoder;
+  global.TextDecoder = util.TextDecoder;
   console.log('TextEncoder and TextDecoder polyfills installed');
 }
 
