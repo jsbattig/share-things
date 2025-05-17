@@ -47,11 +47,22 @@ if ! ping -c1 backend &>/dev/null; then
 fi
 
 # Update nginx.conf with the correct backend port
+# Extract the actual port value from API_PORT if it contains shell syntax
 if [ -n "$API_PORT" ]; then
-  echo "Updating nginx.conf to use backend port: $API_PORT"
-  # Use sed to replace the hardcoded port 3001 with the API_PORT value
-  sed -i "s|http://backend:3001|http://backend:$API_PORT|g" /etc/nginx/conf.d/default.conf
-  echo "Updated nginx.conf with backend port: $API_PORT"
+  # Handle the case where API_PORT might be in the format ${API_PORT:-3001}
+  if [[ "$API_PORT" == *":-"* ]]; then
+    # Extract the default value from the variable
+    DEFAULT_PORT=$(echo "$API_PORT" | sed -n 's/.*:-\([0-9]*\).*/\1/p')
+    echo "API_PORT contains shell syntax, using default port: $DEFAULT_PORT"
+    ACTUAL_PORT=$DEFAULT_PORT
+  else
+    ACTUAL_PORT=$API_PORT
+  fi
+  
+  echo "Updating nginx.conf to use backend port: $ACTUAL_PORT"
+  # Use sed to replace the hardcoded port 3001 with the actual port value
+  sed -i "s|http://backend:3001|http://backend:$ACTUAL_PORT|g" /etc/nginx/conf.d/default.conf
+  echo "Updated nginx.conf with backend port: $ACTUAL_PORT"
 else
   echo "Using default backend port: 3001"
 fi

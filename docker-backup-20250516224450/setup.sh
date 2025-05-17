@@ -17,7 +17,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     # Use a temporary file approach instead of creating backup files with ''
     SED_CMD="sed -i.bak"
     # macOS typically uses Docker
-    DEFAULT_ENGINE="podman"
+    DEFAULT_ENGINE="docker"
 else
     # Linux and others use GNU sed
     SED_CMD="sed -i"
@@ -28,7 +28,7 @@ else
         DEFAULT_ENGINE="podman"
     else
         # Default to Docker for other Linux distributions
-        DEFAULT_ENGINE="podman"
+        DEFAULT_ENGINE="docker"
     fi
 fi
 

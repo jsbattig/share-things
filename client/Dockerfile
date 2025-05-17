@@ -1,5 +1,5 @@
 # Build stage
-FROM node:18-alpine as builder
+FROM linner.ddns.net:4443/docker.io.proxy/node:18-alpine as builder
 
 WORKDIR /app
 
@@ -30,7 +30,7 @@ VITE_DEFAULT_CHUNK_SIZE=65536" > .env
 RUN npx vite build || (mkdir -p dist && echo "<html><body>Build failed</body></html>" > dist/index.html)
 
 # Production stage with Nginx
-FROM nginx:alpine
+FROM linner.ddns.net:4443/docker.io.proxy/nginx:alpine
 
 # Install necessary tools for the entrypoint script
 RUN apk add --no-cache iputils bind-tools

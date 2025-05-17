@@ -25,27 +25,30 @@ echo "This script will build and test the ShareThings application using Docker."
 echo ""
 
 # Check if Docker is installed
-if ! command -v podman &> /dev/null; then
-    echo -e "${RED}Error: Podman is not installed.${NC}"
-    echo "Please install Podman before running this script."
+if ! command -v docker &> /dev/null; then
+    echo -e "${RED}Error: Docker is not installed.${NC}"
+    echo "Please install Docker before running this script."
     exit 1
 fi
 
 # Check if Docker Compose is installed (either standalone or as part of Docker CLI)
 DOCKER_COMPOSE_CMD=""
-if command -v podman-compose &> /dev/null; then
-    DOCKER_COMPOSE_CMD="podman-compose"
+if command -v docker-compose &> /dev/null; then
+    DOCKER_COMPOSE_CMD="docker-compose"
+elif docker compose version &> /dev/null; then
+    DOCKER_COMPOSE_CMD="docker compose"
 else
-    echo -e "${RED}Error: Podman Compose is not installed.${NC}"
-    echo "Please install Podman Compose before running this script."
+    echo -e "${RED}Error: Docker Compose is not installed.${NC}"
+    echo "Please install Docker Compose before running this script."
     exit 1
 fi
+
 echo -e "${GREEN}Using Docker Compose command: ${DOCKER_COMPOSE_CMD}${NC}"
 
 # Check if Docker daemon is running
-if ! podman info &> /dev/null; then
-    echo -e "${RED}Error: Podman is not running.${NC}"
-    echo "Please start Podman before running this script."
+if ! docker info &> /dev/null; then
+    echo -e "${RED}Error: Docker daemon is not running.${NC}"
+    echo "Please start Docker before running this script."
     exit 1
 fi
 

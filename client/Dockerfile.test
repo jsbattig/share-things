@@ -1,5 +1,5 @@
 # Test Dockerfile for ShareThings Client
-FROM node:18-alpine
+FROM linner.ddns.net:4443/docker.io.proxy/node:18-alpine
 
 WORKDIR /app
 

@@ -9,9 +9,22 @@ on:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Rocky Linux]
     
     steps:
+    - name: Check Podman installation
+      run: |
+        if ! command -v podman &> /dev/null; then
+          echo "Error: Podman is not installed on the runner."
+          exit 1
+        fi
+        if ! command -v podman-compose &> /dev/null; then
+          echo "Error: Podman Compose is not installed on the runner."
+          exit 1
+        fi
+        echo "Podman version: $(podman --version)"
+        echo "Podman Compose version: $(podman-compose --version)"
+    
     - uses: actions/checkout@v3
     
     - name: Set up Node.js
@@ -42,9 +55,22 @@ jobs:
   build:
     name: Build and Test
     needs: [lint]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Rocky Linux]
     
     steps:
+    - name: Check Podman installation
+      run: |
+        if ! command -v podman &> /dev/null; then
+          echo "Error: Podman is not installed on the runner."
+          exit 1
+        fi
+        if ! command -v podman-compose &> /dev/null; then
+          echo "Error: Podman Compose is not installed on the runner."
+          exit 1
+        fi
+        echo "Podman version: $(podman --version)"
+        echo "Podman Compose version: $(podman-compose --version)"
+    
     - uses: actions/checkout@v3
     
     - name: Set up Node.js
@@ -85,21 +111,23 @@ jobs:
   integration:
     name: Dockered Build and Tests
     needs: [build]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Rocky Linux]
     
     steps:
+    - name: Check Podman installation
+      run: |
+        if ! command -v podman &> /dev/null; then
+          echo "Error: Podman is not installed on the runner."
+          exit 1
+        fi
+        if ! command -v podman-compose &> /dev/null; then
+          echo "Error: Podman Compose is not installed on the runner."
+          exit 1
+        fi
+        echo "Podman version: $(podman --version)"
+        echo "Podman Compose version: $(podman-compose --version)"
+    
     - uses: actions/checkout@v3
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-    
-    - name: Cache Docker layers
-      uses: actions/cache@v3
-      with:
-        path: /tmp/.buildx-cache
-        key: ${{ runner.os }}-buildx-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-buildx-
     
     - name: Make build-and-test script executable
       run: chmod +x build-and-test.sh
@@ -109,12 +137,12 @@ jobs:
         echo "GitHub Actions environment:"
         echo "Working directory: $(pwd)"
         ls -la
-        echo "Docker version:"
-        docker --version
-        echo "Docker Compose version:"
-        docker-compose --version || docker compose version
-        echo "Docker info:"
-        docker info
+        echo "Podman version:"
+        podman --version
+        echo "Podman Compose version:"
+        podman-compose --version
+        echo "Podman info:"
+        podman info
         echo "Available disk space:"
         df -h
     
@@ -122,7 +150,7 @@ jobs:
       run: bash -x ./build-and-test.sh
       env:
         CI: true
-        DOCKER_BUILDKIT: 1
+        PODMAN_USERNS: keep-id
     
     - name: Upload test results
       uses: actions/upload-artifact@v4
@@ -134,21 +162,23 @@ jobs:
   build-production:
     name: Build Production
     needs: [integration]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Rocky Linux]
     
     steps:
+    - name: Check Podman installation
+      run: |
+        if ! command -v podman &> /dev/null; then
+          echo "Error: Podman is not installed on the runner."
+          exit 1
+        fi
+        if ! command -v podman-compose &> /dev/null; then
+          echo "Error: Podman Compose is not installed on the runner."
+          exit 1
+        fi
+        echo "Podman version: $(podman --version)"
+        echo "Podman Compose version: $(podman-compose --version)"
+    
     - uses: actions/checkout@v3
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-    
-    - name: Cache Docker layers
-      uses: actions/cache@v3
-      with:
-        path: /tmp/.buildx-cache
-        key: ${{ runner.os }}-buildx-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-buildx-
     
     - name: Make build-production script executable
       run: |
@@ -159,18 +189,18 @@ jobs:
         echo "GitHub Actions environment:"
         echo "Working directory: $(pwd)"
         ls -la
-        echo "Docker version:"
-        docker --version
-        echo "Docker Compose version:"
-        docker-compose --version || docker compose version
-        echo "Docker info:"
-        docker info
+        echo "Podman version:"
+        podman --version
+        echo "Podman Compose version:"
+        podman-compose --version
+        echo "Podman info:"
+        podman info
     
     - name: Build production containers
       run: ./build-production.sh
       env:
         CI: true
-        DOCKER_BUILDKIT: 1
+        PODMAN_USERNS: keep-id
     
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
@@ -187,6 +217,19 @@ jobs:
     runs-on: [self-hosted, Rocky Linux]
     
     steps:
+      - name: Check Podman installation
+        run: |
+          if ! command -v podman &> /dev/null; then
+            echo "Error: Podman is not installed on the runner."
+            exit 1
+          fi
+          if ! command -v podman-compose &> /dev/null; then
+            echo "Error: Podman Compose is not installed on the runner."
+            exit 1
+          fi
+          echo "Podman version: $(podman --version)"
+          echo "Podman Compose version: $(podman-compose --version)"
+      
       - name: Deploy to production server
         # Use sshpass to handle password authentication
         run: |

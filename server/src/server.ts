@@ -38,7 +38,11 @@ const io = new Server(server, {
   maxHttpBufferSize: 1e8 // 100MB
 });
 
-// Create session manager
+// Determine session storage type (always use memory since PostgreSQL is not available)
+const storageType = 'memory';
+console.log(`Using session storage type: ${storageType}`);
+
+// Create session manager with in-memory storage
 const sessionManager = new SessionManager({
   sessionTimeout: parseInt(process.env.SESSION_TIMEOUT || '600000') // Default 10 minutes
 });

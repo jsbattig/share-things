@@ -1,5 +1,5 @@
 # Build stage
-FROM node:18-alpine as builder
+FROM linner.ddns.net:4443/docker.io.proxy/node:18-alpine as builder
 
 WORKDIR /app
 
@@ -14,7 +14,7 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM node:18-alpine
+FROM linner.ddns.net:4443/docker.io.proxy/node:18-alpine
 
 WORKDIR /app
 
