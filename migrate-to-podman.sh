@@ -89,6 +89,8 @@ cd ..
 
 # Build and start the containers with Podman
 echo "Building and starting containers with Podman..."
+# Set environment variable for rootless Podman
+export PODMAN_USERNS=keep-id
 podman-compose -f podman-compose.yml build
 podman-compose -f podman-compose.yml up -d
 

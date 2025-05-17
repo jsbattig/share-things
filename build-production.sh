@@ -198,6 +198,8 @@ if [ $BUILD_EXIT_CODE -ne 0 ] && [ -n "$CI" ]; then
 else
     # Start the containers to verify they work
     echo -e "${YELLOW}Starting production containers to verify configuration...${NC}"
+    # Add environment variable for rootless Podman
+    export PODMAN_USERNS=keep-id
     $DOCKER_COMPOSE_CMD -f docker-compose.prod.temp.yml up -d
     START_EXIT_CODE=$?
 

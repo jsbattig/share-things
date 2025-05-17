@@ -75,9 +75,23 @@ We've updated the CI/CD pipeline to use Podman instead of Docker:
    - The workflow verifies Podman installation before proceeding with each job
    - See [GitHub Actions Podman Setup](github-actions-podman-setup.md) for detailed instructions
 
+## Rootless Podman Considerations
+
+When running Podman in rootless mode (which is the default on most systems), there are some permission differences compared to Docker:
+
+1. **Container Permissions**: Rootless Podman containers have more restricted permissions and cannot modify system files like `/etc/hosts`.
+
+2. **Entrypoint Script Modifications**: We updated the `client/docker-entrypoint.sh` script to handle permission denied errors gracefully when trying to modify `/etc/hosts`.
+
+3. **User Namespace Mapping**: We added the `PODMAN_USERNS=keep-id` environment variable to the build scripts and GitHub Actions workflow to ensure proper user namespace mapping.
+
+4. **Network Aliases**: We rely on Podman's network aliases for container communication instead of modifying `/etc/hosts`.
+
+These changes ensure that our containers work properly in both Docker and Podman environments, including CI/CD pipelines running on self-hosted runners.
+
 ## Next Steps
 
 1. ✅ Update CI/CD pipelines to use Podman instead of Docker
-2. Update documentation to reflect the use of Podman
+2. ✅ Update documentation to reflect the use of Podman
 3. Train team members on Podman-specific features and commands
 4. Consider implementing Podman-specific optimizations

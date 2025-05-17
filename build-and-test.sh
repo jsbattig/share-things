@@ -155,6 +155,8 @@ echo -e "${GREEN}Cleanup complete.${NC}"
 
 # Build the containers
 echo -e "${YELLOW}Building containers...${NC}"
+# Add environment variable for rootless Podman
+export PODMAN_USERNS=keep-id
 $DOCKER_COMPOSE_CMD -f docker-compose.test.yml build
 BUILD_EXIT_CODE=$?
 

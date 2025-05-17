@@ -28,14 +28,22 @@ if ! ping -c1 backend &>/dev/null; then
       GATEWAY_IP=$(ip -4 route list 0/0 | awk '{print $3}')
       echo "Gateway IP: $GATEWAY_IP"
       
-      # Add backend entry to /etc/hosts as a fallback
-      echo "$GATEWAY_IP backend" >> /etc/hosts
-      echo "Added backend entry to /etc/hosts: $GATEWAY_IP backend"
+      # Try to add backend entry to /etc/hosts as a fallback
+      if echo "$GATEWAY_IP backend" >> /etc/hosts 2>/dev/null; then
+        echo "Added backend entry to /etc/hosts: $GATEWAY_IP backend"
+      else
+        echo "Warning: Cannot modify /etc/hosts (permission denied). Running in rootless mode."
+        echo "Will rely on Podman's network aliases instead."
+      fi
     fi
   else
-    # Add backend entry to /etc/hosts
-    echo "$BACKEND_IP backend" >> /etc/hosts
-    echo "Added backend entry to /etc/hosts: $BACKEND_IP backend"
+    # Try to add backend entry to /etc/hosts
+    if echo "$BACKEND_IP backend" >> /etc/hosts 2>/dev/null; then
+      echo "Added backend entry to /etc/hosts: $BACKEND_IP backend"
+    else
+      echo "Warning: Cannot modify /etc/hosts (permission denied). Running in rootless mode."
+      echo "Will rely on Podman's network aliases instead."
+    fi
   fi
   
   # Verify the fix
