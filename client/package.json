@@ -8,9 +8,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
     "lint": "eslint . --ext .ts,.tsx",
     "format": "prettier --write 'src/**/*.{ts,tsx,css}'",
     "set-backend-url": "node set-backend-url.js"
@@ -50,8 +50,7 @@
     "typescript": "^5.0.4",
     "vite": "^4.3.1",
     "vite-plugin-svgr": "^2.4.0",
-    "vite-tsconfig-paths": "^4.2.0",
-    "vitest": "^0.30.1"
+    "vite-tsconfig-paths": "^4.2.0"
   },
   "browserslist": {
     "production": [

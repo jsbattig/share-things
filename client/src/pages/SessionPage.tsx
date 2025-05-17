@@ -442,7 +442,6 @@ const SessionPage: React.FC = () => {
         </GridItem>
       </Grid>
       
-      {/* TODO: Add modals for user list, settings, etc. */}
     </Container>
   );
 };

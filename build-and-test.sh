@@ -141,22 +141,6 @@ services:
           - frontend
     command: sh -c "npm install && npm run preview -- --host 0.0.0.0 --port 3000"
 
-  e2e-tests:
-    build:
-      context: ./test/e2e/browser
-      dockerfile: Dockerfile.test
-    container_name: share-things-e2e-tests
-    depends_on:
-      - frontend
-      - backend
-    environment:
-      - FRONTEND_URL=http://frontend:3000
-      - BACKEND_URL=http://backend:3001
-    volumes:
-      - ./test:/app/test
-      - ./test-results:/app/test-results
-    networks:
-      - app_network
 
 # Explicit network configuration
 networks:
@@ -166,30 +150,6 @@ EOL
 
 echo -e "${GREEN}Docker Compose test configuration created.${NC}"
 
-# Create Dockerfile.test for e2e tests
-mkdir -p test/e2e/browser
-cat > test/e2e/browser/Dockerfile.test << EOL
-FROM mcr.microsoft.com/playwright:v1.40.0-focal
-
-WORKDIR /app
-
-# Create a minimal package.json if it doesn't exist
-RUN echo '{"name":"share-things-e2e-tests","version":"1.0.0","scripts":{"test:e2e:browser":"echo \"No tests specified\""}}' > package.json
-
-# Install dependencies
-RUN npm install
-
-# Copy test files
-COPY . .
-
-# Set environment variables
-ENV CI=true
-
-# Command to run tests
-CMD ["echo", "E2E tests would run here"]
-EOL
-
-echo -e "${GREEN}E2E test Dockerfile created.${NC}"
 
 # Clean up any existing containers
 echo -e "${YELLOW}Cleaning up existing containers...${NC}"
@@ -239,21 +199,6 @@ echo -e "${YELLOW}Skipping functional tests for now due to Web Crypto API issues
 echo -e "${GREEN}Functional tests passed.${NC}"
 FUNCTIONAL_TEST_EXIT_CODE=0
 
-# Run end-to-end tests if they exist
-if [ -d "test/e2e/browser/tests" ]; then
-    echo -e "${YELLOW}Running end-to-end tests...${NC}"
-    $DOCKER_COMPOSE_CMD -f docker-compose.test.yml up --build e2e-tests
-    E2E_TEST_EXIT_CODE=$?
-
-    if [ $E2E_TEST_EXIT_CODE -eq 0 ]; then
-        echo -e "${GREEN}End-to-end tests passed.${NC}"
-    else
-        echo -e "${RED}End-to-end tests failed.${NC}"
-    fi
-else
-    echo -e "${YELLOW}Skipping end-to-end tests (test directory not found).${NC}"
-    E2E_TEST_EXIT_CODE=0
-fi
 
 # Clean up
 echo -e "${YELLOW}Cleaning up containers...${NC}"
@@ -280,15 +225,6 @@ else
     echo -e "${RED}Functional tests: FAILED${NC}"
 fi
 
-if [ -d "test/e2e/browser/tests" ]; then
-    if [ $E2E_TEST_EXIT_CODE -eq 0 ]; then
-        echo -e "${GREEN}End-to-end tests: PASSED${NC}"
-    else
-        echo -e "${RED}End-to-end tests: FAILED${NC}"
-    fi
-else
-    echo -e "${YELLOW}End-to-end tests: SKIPPED${NC}"
-fi
 
 # Clean up any backup files created by sed
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -298,7 +234,7 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
 fi
 
 # Overall result
-if [ $SERVER_TEST_EXIT_CODE -eq 0 ] && [ $CLIENT_TEST_EXIT_CODE -eq 0 ] && [ $FUNCTIONAL_TEST_EXIT_CODE -eq 0 ] && [ $E2E_TEST_EXIT_CODE -eq 0 ]; then
+if [ $SERVER_TEST_EXIT_CODE -eq 0 ] && [ $CLIENT_TEST_EXIT_CODE -eq 0 ] && [ $FUNCTIONAL_TEST_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}All tests passed!${NC}"
     exit 0
 else

@@ -7,9 +7,8 @@ This document outlines how to set up a Docker-based test environment for the Sha
 1. [Overview](#overview)
 2. [Test Environment Configuration](#test-environment-configuration)
 3. [Docker Compose Test Configuration](#docker-compose-test-configuration)
-4. [Test Dockerfile for E2E Tests](#test-dockerfile-for-e2e-tests)
-5. [Running Tests in Docker](#running-tests-in-docker)
-6. [CI Integration](#ci-integration)
+4. [Running Tests in Docker](#running-tests-in-docker)
+5. [CI Integration](#ci-integration)
 
 ## Overview
 
@@ -17,7 +16,6 @@ The ShareThings test environment uses Docker to create isolated, reproducible te
 
 1. **Unit Tests**: Testing individual components in isolation
 2. **Functional Tests**: Testing API endpoints and services
-3. **End-to-End Tests**: Testing the full application with browser automation
 
 Using Docker for testing ensures consistent test environments across different development machines and CI systems.
 
@@ -85,46 +83,8 @@ services:
     volumes:
       - ./client:/app
       - /app/node_modules
-
-  e2e-tests:
-    build:
-      context: ./test/e2e/browser
-      dockerfile: Dockerfile
-    depends_on:
-      - frontend
-      - backend
-    environment:
-      - FRONTEND_URL=http://frontend
-      - BACKEND_URL=http://backend:3001
-    volumes:
-      - ./test:/app/test
-      - ./test-results:/app/test-results
 ```
 
-## Test Dockerfile for E2E Tests
-
-Create a Dockerfile in the `test/e2e/browser` directory for running end-to-end tests:
-
-```dockerfile
-FROM mcr.microsoft.com/playwright:v1.52.0-focal
-
-WORKDIR /app
-
-# Copy package files
-COPY package*.json ./
-
-# Install dependencies
-RUN npm ci
-
-# Copy test files
-COPY . .
-
-# Set environment variables
-ENV CI=true
-
-# Command to run tests
-CMD ["npm", "run", "test"]
-```
 
 ## Running Tests in Docker
 
@@ -150,13 +110,6 @@ To run functional tests:
 docker-compose run --rm backend npm run test:e2e
 ```
 
-### End-to-End Tests
-
-To run end-to-end tests:
-
-```bash
-docker-compose -f docker-compose.yml -f docker-compose.test.yml up e2e-tests
-```
 
 ### Running All Tests
 
@@ -208,10 +161,7 @@ jobs:
 
 Test results are stored in the `test-results` directory, which is mounted as a volume in the Docker containers. This allows the CI system to access the test results even if the tests fail.
 
-For Playwright tests, the results include:
-- HTML test reports
-- Screenshots of failed tests
-- Trace files for debugging
+Test results are stored in the `test-results` directory, which is mounted as a volume in the Docker containers. This allows the CI system to access the test results even if the tests fail.
 
 ### Optimizing for CI
 

@@ -1,10 +1,10 @@
-import { describe, test, expect, beforeEach, vi } from 'vitest';
+import { describe, test, expect, beforeEach } from '@jest/globals';
 import { ChunkTrackingService, ChunkStatus } from '../services/ChunkTrackingService';
 import { UrlRegistry } from '../services/UrlRegistry';
 
 // Mock URL.createObjectURL and URL.revokeObjectURL
-global.URL.createObjectURL = vi.fn(() => 'mock-url');
-global.URL.revokeObjectURL = vi.fn();
+global.URL.createObjectURL = jest.fn(() => 'mock-url');
+global.URL.revokeObjectURL = jest.fn();
 
 describe('ChunkTrackingService', () => {
   let chunkTrackingService: ChunkTrackingService;
@@ -106,8 +106,8 @@ describe('UrlRegistry', () => {
 
   beforeEach(() => {
     urlRegistry = new UrlRegistry();
-    (global.URL.createObjectURL as ReturnType<typeof vi.fn>).mockClear();
-    (global.URL.revokeObjectURL as ReturnType<typeof vi.fn>).mockClear();
+    (global.URL.createObjectURL as jest.Mock).mockClear();
+    (global.URL.revokeObjectURL as jest.Mock).mockClear();
   });
 
   test('should create and register URLs', () => {
