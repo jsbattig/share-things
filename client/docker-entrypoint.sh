@@ -59,22 +59,5 @@ fi
 # Wait for backend to be available
 wait_for_backend
 
-# Find the original entrypoint script
-ENTRYPOINT_PATHS="/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh /usr/bin/docker-entrypoint.sh /docker-entrypoint.d/docker-entrypoint.sh"
-ENTRYPOINT_FOUND=0
-
-for path in $ENTRYPOINT_PATHS; do
-  if [ -f "$path" ]; then
-    echo "Found original entrypoint at $path"
-    ENTRYPOINT_FOUND=1
-    # Execute the original docker-entrypoint.sh from the Nginx image
-    exec "$path" "$@"
-    break
-  fi
-done
-
-if [ $ENTRYPOINT_FOUND -eq 0 ]; then
-  echo "Original entrypoint not found, running nginx directly"
-  # If original entrypoint not found, just run nginx directly with daemon off
-  exec nginx -g "daemon off;"
-fi
+# Setup complete, Nginx will be started by the Dockerfile ENTRYPOINT
+echo "Container setup complete, ready to start Nginx"

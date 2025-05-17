@@ -21,5 +21,6 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY docker-entrypoint.sh /usr/local/bin/custom-entrypoint.sh
 RUN chmod +x /usr/local/bin/custom-entrypoint.sh
-ENTRYPOINT ["/usr/local/bin/custom-entrypoint.sh"]
-CMD ["nginx", "-g", "daemon off;"]
+
+# Use a shell form of ENTRYPOINT to ensure the script runs and then executes nginx directly
+ENTRYPOINT ["/bin/sh", "-c", "/usr/local/bin/custom-entrypoint.sh && nginx -g 'daemon off;'"]
