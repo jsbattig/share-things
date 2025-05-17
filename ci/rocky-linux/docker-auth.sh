@@ -67,13 +67,15 @@ log "INFO" "Docker Password: ${DOCKER_PASSWORD:+masked}"
 # Create registries.conf to ensure the registry is in the search path
 mkdir -p ~/.config/containers
 
-# Remove https:// or http:// prefix from registry URL for registries.conf
+# Extract only the hostname and port from the registry URL for registries.conf
 registry_url_no_scheme="${DOCKER_REGISTRY_URL#http://}"
 registry_url_no_scheme="${registry_url_no_scheme#https://}"
+# Extract only the hostname and port (remove path)
+registry_hostname_port="${registry_url_no_scheme%%/*}"
 
 cat > ~/.config/containers/registries.conf << EOL
 [registries.search]
-registries = ["${registry_url_no_scheme}", "docker.io", "quay.io"]
+registries = ["${registry_hostname_port}", "docker.io", "quay.io"]
 
 [registries.insecure]
 registries = []
@@ -85,46 +87,8 @@ registries = []
 short-name-mode="permissive"
 EOL
 
-# Create a system-wide registries.conf for more persistent configuration
-if [ -d "/etc/containers" ]; then
-  log "INFO" "Creating system-wide registry configuration..."
-  # Use sudo if available, otherwise try without it
-  if command -v sudo &> /dev/null; then
-    sudo mkdir -p /etc/containers || log "WARNING" "Could not create /etc/containers directory"
-    # Remove https:// or http:// prefix from registry URL for registries.conf
-    registry_url_no_scheme="${DOCKER_REGISTRY_URL#http://}"
-    registry_url_no_scheme="${registry_url_no_scheme#https://}"
-    
-    echo "[registries.search]
-registries = [\"${registry_url_no_scheme}\", \"docker.io\", \"quay.io\"]
-
-[registries.insecure]
-registries = []
-
-[registries.block]
-registries = []
-
-[engine]
-short-name-mode=\"permissive\"" | sudo tee /etc/containers/registries.conf > /dev/null || log "WARNING" "Could not create system-wide registries.conf"
-  else
-    mkdir -p /etc/containers 2>/dev/null || log "WARNING" "Could not create /etc/containers directory"
-    # Remove https:// or http:// prefix from registry URL for registries.conf
-    registry_url_no_scheme="${DOCKER_REGISTRY_URL#http://}"
-    registry_url_no_scheme="${registry_url_no_scheme#https://}"
-    
-    echo "[registries.search]
-registries = [\"${registry_url_no_scheme}\", \"docker.io\", \"quay.io\"]
-
-[registries.insecure]
-registries = []
-
-[registries.block]
-registries = []
-
-[engine]
-short-name-mode=\"permissive\"" > /etc/containers/registries.conf 2>/dev/null || log "WARNING" "Could not create system-wide registries.conf"
-  fi
-fi
+# Skip system-wide configuration - only use user-level configuration
+log "INFO" "Using user-level configuration only (skipping system-wide configuration)"
 
 # If username and password are provided, set up authentication
 if [ -n "$DOCKER_USERNAME" ] && [ -n "$DOCKER_PASSWORD" ]; then
@@ -147,32 +111,8 @@ EOL
   # Set permissions
   chmod 600 ~/.config/containers/auth.json
   
-  # Create a system-wide auth.json for more persistent authentication
-  if [ -d "/etc/containers" ]; then
-    log "INFO" "Creating system-wide authentication configuration..."
-    # Use sudo if available, otherwise try without it
-    if command -v sudo &> /dev/null; then
-      sudo mkdir -p /etc/containers || log "WARNING" "Could not create /etc/containers directory"
-      echo "{
-  \"auths\": {
-    \"${DOCKER_REGISTRY_URL}\": {
-      \"auth\": \"$(echo -n "${DOCKER_USERNAME}:${DOCKER_PASSWORD}" | base64)\"
-    }
-  }
-}" | sudo tee /etc/containers/auth.json > /dev/null || log "WARNING" "Could not create system-wide auth.json"
-      sudo chmod 644 /etc/containers/auth.json || log "WARNING" "Could not set permissions on system-wide auth.json"
-    else
-      mkdir -p /etc/containers 2>/dev/null || log "WARNING" "Could not create /etc/containers directory"
-      echo "{
-  \"auths\": {
-    \"${DOCKER_REGISTRY_URL}\": {
-      \"auth\": \"$(echo -n "${DOCKER_USERNAME}:${DOCKER_PASSWORD}" | base64)\"
-    }
-  }
-}" > /etc/containers/auth.json 2>/dev/null || log "WARNING" "Could not create system-wide auth.json"
-      chmod 644 /etc/containers/auth.json 2>/dev/null || log "WARNING" "Could not set permissions on system-wide auth.json"
-    fi
-  fi
+  # Skip system-wide auth.json creation
+  log "INFO" "Using user-level auth.json only (skipping system-wide configuration)"
   
   # Test authentication
   log "INFO" "Testing Docker registry authentication..."
