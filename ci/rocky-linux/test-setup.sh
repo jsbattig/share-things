@@ -405,6 +405,10 @@ if [ -f "./.docker-registry-url" ]; then
 fi
 
 # Update docker-compose files
+# Remove trailing slash from registry URL if present
+REGISTRY_URL="${DOCKER_REGISTRY_URL_ARG%/}"
+REGISTRY_PREFIX="${REGISTRY_URL}/library"
+
 log "INFO" "Using registry prefix: ${REGISTRY_PREFIX}"
 sed -i "s|image: postgres:17-alpine|image: ${REGISTRY_PREFIX}/postgres:14-alpine|g" docker-compose.yml
 sed -i "s|image: postgres:17-alpine|image: ${REGISTRY_PREFIX}/postgres:14-alpine|g" docker-compose.test.yml

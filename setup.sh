@@ -157,8 +157,11 @@ if [ -n "$DOCKER_REGISTRY_URL_ARG" ]; then
     echo -e "${YELLOW}Before update:${NC}"
     head -10 ./server/Dockerfile
     
+    # Remove trailing slash from registry URL if present
+    registry_url="${DOCKER_REGISTRY_URL%/}"
+    
     # Use sed to replace all FROM statements
-    sed -i "s|FROM docker.io/library/|FROM ${DOCKER_REGISTRY_URL}/library/|g" ./server/Dockerfile
+    sed -i "s|FROM docker.io/library/|FROM ${registry_url}/library/|g" ./server/Dockerfile
     
     echo -e "${YELLOW}After update:${NC}"
     head -10 ./server/Dockerfile
@@ -178,8 +181,11 @@ if [ -n "$DOCKER_REGISTRY_URL_ARG" ]; then
     echo -e "${YELLOW}Before update:${NC}"
     head -10 ./client/Dockerfile
     
+    # Remove trailing slash from registry URL if present
+    registry_url="${DOCKER_REGISTRY_URL%/}"
+    
     # Use sed to replace all FROM statements
-    sed -i "s|FROM docker.io/library/|FROM ${DOCKER_REGISTRY_URL}/library/|g" ./client/Dockerfile
+    sed -i "s|FROM docker.io/library/|FROM ${registry_url}/library/|g" ./client/Dockerfile
     
     echo -e "${YELLOW}After update:${NC}"
     head -10 ./client/Dockerfile

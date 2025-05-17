@@ -185,6 +185,9 @@ show_help() {
   echo "  --pg-password PASS         Specify PostgreSQL password"
   echo "  --pg-ssl y/n               Use SSL for PostgreSQL connection"
   echo "  --pg-docker y/n            Run PostgreSQL in Docker"
+  echo "  --docker-registry-url URL  Specify Docker registry URL"
+  echo "  --docker-username USER     Specify Docker registry username"
+  echo "  --docker-password PASS     Specify Docker registry password"
   echo "  --help                     Show this help message"
 }
 
