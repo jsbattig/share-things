@@ -606,8 +606,12 @@ if [ -f "./.docker-registry-url" ]; then
   fi
 fi
 
-cat > server/Dockerfile.test << EOL
-FROM ${REGISTRY_PREFIX}/node:18-alpine AS builder
+# Fix the issue with the double slash in the URL
+FIXED_REGISTRY_PREFIX=$(fix_double_slash "${REGISTRY_PREFIX}")
+log "INFO" "Using fixed registry prefix for backend Dockerfile: ${FIXED_REGISTRY_PREFIX}"
+
+# Use our helper function to create the Dockerfile
+create_dockerfile_with_fixed_url "${FIXED_REGISTRY_PREFIX}" "server/Dockerfile.test"
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
