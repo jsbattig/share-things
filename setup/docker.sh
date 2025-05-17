@@ -72,7 +72,24 @@ configure_podman() {
     echo "Creating registries.conf in user's home directory..."
     
     mkdir -p ~/.config/containers
-    cat > ~/.config/containers/registries.conf << EOL
+    # Check if DOCKER_REGISTRY_URL is set
+    if [ -n "$DOCKER_REGISTRY_URL" ]; then
+      echo -e "${YELLOW}Using custom Docker registry URL: $DOCKER_REGISTRY_URL${NC}"
+      cat > ~/.config/containers/registries.conf << EOL
+[registries.search]
+registries = ["${DOCKER_REGISTRY_URL}", "docker.io", "quay.io"]
+
+[registries.insecure]
+registries = []
+
+[registries.block]
+registries = []
+
+[engine]
+short-name-mode="permissive"
+EOL
+    else
+      cat > ~/.config/containers/registries.conf << EOL
 [registries.search]
 registries = ["docker.io", "quay.io"]
 
@@ -85,6 +102,7 @@ registries = []
 [engine]
 short-name-mode="permissive"
 EOL
+    fi
     echo -e "${GREEN}Created ~/.config/containers/registries.conf${NC}"
   fi
   
@@ -131,7 +149,24 @@ EOL
   echo -e "${GREEN}Created universal ~/.config/containers/containers.conf${NC}"
   
   # Create registries.conf with permissive short name mode
-  cat > ~/.config/containers/registries.conf << EOL
+  # Check if DOCKER_REGISTRY_URL is set
+  if [ -n "$DOCKER_REGISTRY_URL" ]; then
+    echo -e "${YELLOW}Using custom Docker registry URL: $DOCKER_REGISTRY_URL${NC}"
+    cat > ~/.config/containers/registries.conf << EOL
+[registries.search]
+registries = ["${DOCKER_REGISTRY_URL}", "docker.io", "quay.io"]
+
+[registries.insecure]
+registries = []
+
+[registries.block]
+registries = []
+
+[engine]
+short-name-mode="permissive"
+EOL
+  else
+    cat > ~/.config/containers/registries.conf << EOL
 [registries.search]
 registries = ["docker.io", "quay.io"]
 
@@ -144,6 +179,7 @@ registries = []
 [engine]
 short-name-mode="permissive"
 EOL
+  fi
   echo -e "${GREEN}Created ~/.config/containers/registries.conf${NC}"
   
   # Modify docker-compose files to NOT use host networking

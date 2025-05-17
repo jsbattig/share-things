@@ -32,6 +32,12 @@ ROCKY_LINUX_HOST=$(prompt_with_default "Enter the hostname or IP address of the 
 ROCKY_LINUX_USER=$(prompt_with_default "Enter the username to use for SSH" "$(whoami)" "ROCKY_LINUX_USER")
 ROCKY_LINUX_PASSWORD=$(prompt_with_default "Enter the password to use for SSH" "" "ROCKY_LINUX_PASSWORD")
 
+# Prompt for Docker registry parameters (optional)
+echo -e "${BLUE}Docker Registry Configuration (optional)${NC}"
+DOCKER_REGISTRY_URL=$(prompt_with_default "Enter the Docker registry URL (leave empty for Docker Hub)" "" "DOCKER_REGISTRY_URL")
+DOCKER_USERNAME=$(prompt_with_default "Enter the Docker registry username (leave empty for anonymous access)" "" "DOCKER_USERNAME")
+DOCKER_PASSWORD=$(prompt_with_default "Enter the Docker registry password (leave empty for anonymous access)" "" "DOCKER_PASSWORD")
+
 # Create the environment variable file in the user's home directory
 echo -e "${YELLOW}Creating environment variable file...${NC}"
 cat > ~/.rocky-linux-env.sh << EOF
@@ -41,6 +47,11 @@ cat > ~/.rocky-linux-env.sh << EOF
 export ROCKY_LINUX_HOST="${ROCKY_LINUX_HOST}"
 export ROCKY_LINUX_USER="${ROCKY_LINUX_USER}"
 export ROCKY_LINUX_PASSWORD="${ROCKY_LINUX_PASSWORD}"
+
+# Docker registry configuration
+export DOCKER_REGISTRY_URL="${DOCKER_REGISTRY_URL}"
+export DOCKER_USERNAME="${DOCKER_USERNAME}"
+export DOCKER_PASSWORD="${DOCKER_PASSWORD}"
 EOF
 
 # Make the file executable
@@ -54,6 +65,14 @@ echo "The following variables are now available:"
 echo "  ROCKY_LINUX_HOST=${ROCKY_LINUX_HOST}"
 echo "  ROCKY_LINUX_USER=${ROCKY_LINUX_USER}"
 echo "  ROCKY_LINUX_PASSWORD=********"
+echo "  DOCKER_REGISTRY_URL=${DOCKER_REGISTRY_URL:-docker.io}"
+if [ -n "$DOCKER_USERNAME" ]; then
+  echo "  DOCKER_USERNAME=${DOCKER_USERNAME}"
+  echo "  DOCKER_PASSWORD=********"
+else
+  echo "  DOCKER_USERNAME=<not set>"
+  echo "  DOCKER_PASSWORD=<not set>"
+fi
 
 echo "To use these variables in any session, the following line will be added to your shell profile:"
 echo "  source ~/.rocky-linux-env.sh"
@@ -94,6 +113,9 @@ echo "  source ~/.rocky-linux-env.sh"
 export ROCKY_LINUX_HOST="${ROCKY_LINUX_HOST}"
 export ROCKY_LINUX_USER="${ROCKY_LINUX_USER}"
 export ROCKY_LINUX_PASSWORD="${ROCKY_LINUX_PASSWORD}"
+export DOCKER_REGISTRY_URL="${DOCKER_REGISTRY_URL}"
+export DOCKER_USERNAME="${DOCKER_USERNAME}"
+export DOCKER_PASSWORD="${DOCKER_PASSWORD}"
 
 # Verify the variables are set
 echo ""
@@ -101,5 +123,8 @@ echo "Verifying environment variables:"
 echo "ROCKY_LINUX_HOST: ${ROCKY_LINUX_HOST}"
 echo "ROCKY_LINUX_USER: ${ROCKY_LINUX_USER}"
 echo "ROCKY_LINUX_PASSWORD: ${ROCKY_LINUX_PASSWORD}"
+echo "DOCKER_REGISTRY_URL: ${DOCKER_REGISTRY_URL:-docker.io}"
+echo "DOCKER_USERNAME: ${DOCKER_USERNAME:-<not set>}"
+echo "DOCKER_PASSWORD: ${DOCKER_PASSWORD:+********}"
 
 exit 0

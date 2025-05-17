@@ -17,6 +17,47 @@ BRANCH=${1:-"feature/postgresql-session-management"}
 WORK_DIR=${2:-"$(pwd)"}
 TEST_PORT=${3:-15000}
 
+# Docker registry configuration
+DOCKER_REGISTRY_URL=""
+DOCKER_USERNAME=""
+DOCKER_PASSWORD=""
+
+# Parse command line arguments for Docker registry
+while [[ $# -gt 3 ]]; do
+  case $4 in
+    --docker-registry-url)
+      DOCKER_REGISTRY_URL="$5"
+      shift 2
+      ;;
+    --docker-username)
+      DOCKER_USERNAME="$5"
+      shift 2
+      ;;
+    --docker-password)
+      DOCKER_PASSWORD="$5"
+      shift 2
+      ;;
+    *)
+      # Skip unknown arguments
+      shift
+      ;;
+  esac
+done
+
+# Check if we're running in GitHub Actions
+if [ -n "$GITHUB_ACTIONS" ]; then
+  # Use GitHub secrets if available
+  if [ -n "$HARBORURL" ]; then
+    DOCKER_REGISTRY_URL="$HARBORURL"
+  fi
+  if [ -n "$HARBORUSERNAME" ]; then
+    DOCKER_USERNAME="$HARBORUSERNAME"
+  fi
+  if [ -n "$HARBORPASSWORD" ]; then
+    DOCKER_PASSWORD="$HARBORPASSWORD"
+  fi
+fi
+
 # Timeout settings
 SETUP_TIMEOUT=300  # 5 minutes timeout for setup.sh
 UPDATE_TIMEOUT=300  # 5 minutes timeout for update-server.sh
@@ -224,10 +265,41 @@ check_command "sed" || exit 1
 check_command "timeout" || exit 1
 check_command "script" || exit 1
 
-# Configure Podman to allow short names
-log "INFO" "Configuring Podman to allow short names..."
-mkdir -p ~/.config/containers
-cat > ~/.config/containers/registries.conf << EOL
+# Configure Docker registry access
+log "INFO" "Configuring Docker registry access..."
+log "INFO" "Docker Registry URL: ${DOCKER_REGISTRY_URL:-not set}"
+log "INFO" "Docker Username: ${DOCKER_USERNAME:-not set}"
+log "INFO" "Docker Password: ${DOCKER_PASSWORD:-masked}"
+
+# Build the command with any provided arguments
+DOCKER_AUTH_CMD="$(dirname "$0")/docker-auth.sh"
+if [ -n "$DOCKER_REGISTRY_URL" ]; then
+  DOCKER_AUTH_CMD="$DOCKER_AUTH_CMD --registry-url $DOCKER_REGISTRY_URL"
+fi
+if [ -n "$DOCKER_USERNAME" ]; then
+  DOCKER_AUTH_CMD="$DOCKER_AUTH_CMD --username $DOCKER_USERNAME"
+fi
+if [ -n "$DOCKER_PASSWORD" ]; then
+  DOCKER_AUTH_CMD="$DOCKER_AUTH_CMD --password $DOCKER_PASSWORD"
+fi
+
+# Run the Docker registry configuration script
+if [ -f "$(dirname "$0")/docker-auth.sh" ]; then
+  log "INFO" "Running Docker auth script: $DOCKER_AUTH_CMD"
+  chmod +x "$(dirname "$0")/docker-auth.sh"
+  eval "$DOCKER_AUTH_CMD"
+  if [ $? -eq 0 ]; then
+    log "GREEN" "Docker registry configuration successful."
+  else
+    log "RED" "Docker registry configuration failed."
+  fi
+else
+  log "RED" "Docker registry configuration script not found."
+  
+  # Fallback to basic configuration if script not found
+  log "INFO" "Falling back to basic Docker registry configuration..."
+  mkdir -p ~/.config/containers
+  cat > ~/.config/containers/registries.conf << EOL
 [registries.search]
 registries = ["docker.io", "quay.io"]
 
@@ -240,6 +312,7 @@ registries = []
 [engine]
 short-name-mode="permissive"
 EOL
+fi
 
 # Check if containers are already running and clean them up
 if check_running_containers; then
@@ -255,13 +328,64 @@ cleanup_env_files
 
 # Update docker-compose files to use fully qualified image names
 log "INFO" "Updating docker-compose files to use fully qualified image names..."
-sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpine/g' docker-compose.yml
-sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpine/g' docker-compose.test.yml
-sed -i 's/image: postgres:17-alpine/image: docker.io\/library\/postgres:17-alpine/g' docker-compose.prod.yml
+
+# Determine registry prefix
+REGISTRY_PREFIX="docker.io/library"
+if [ -n "$DOCKER_REGISTRY_URL" ]; then
+  REGISTRY_PREFIX="${DOCKER_REGISTRY_URL}/library"
+  log "INFO" "Using custom registry URL for docker-compose files: ${DOCKER_REGISTRY_URL}"
+fi
+
+# Check if we have a .docker-registry-url file from docker-auth.sh
+if [ -f "./.docker-registry-url" ]; then
+  REGISTRY_URL=$(cat ./.docker-registry-url)
+  if [ -n "$REGISTRY_URL" ] && [ -z "$DOCKER_REGISTRY_URL" ]; then
+    REGISTRY_PREFIX="${REGISTRY_URL}/library"
+    log "INFO" "Using registry URL from .docker-registry-url: ${REGISTRY_URL}"
+  fi
+fi
+
+# Update docker-compose files
+log "INFO" "Using registry prefix: ${REGISTRY_PREFIX}"
+sed -i "s|image: postgres:17-alpine|image: ${REGISTRY_PREFIX}/postgres:14-alpine|g" docker-compose.yml
+sed -i "s|image: postgres:17-alpine|image: ${REGISTRY_PREFIX}/postgres:14-alpine|g" docker-compose.test.yml
+sed -i "s|image: postgres:17-alpine|image: ${REGISTRY_PREFIX}/postgres:14-alpine|g" docker-compose.prod.yml
+
+# Also update any existing image references
+sed -i "s|image: docker.io/library/|image: ${REGISTRY_PREFIX}/|g" docker-compose.yml
+sed -i "s|image: docker.io/library/|image: ${REGISTRY_PREFIX}/|g" docker-compose.test.yml
+sed -i "s|image: docker.io/library/|image: ${REGISTRY_PREFIX}/|g" docker-compose.prod.yml
+
+# Update Dockerfiles
+if [ -f "./server/Dockerfile" ]; then
+  log "INFO" "Updating server/Dockerfile..."
+  sed -i "s|FROM docker.io/library/|FROM ${REGISTRY_PREFIX}/|g" ./server/Dockerfile
+fi
+
+if [ -f "./client/Dockerfile" ]; then
+  log "INFO" "Updating client/Dockerfile..."
+  sed -i "s|FROM docker.io/library/|FROM ${REGISTRY_PREFIX}/|g" ./client/Dockerfile
+fi
+
+# Prepare Docker registry parameters for setup.sh
+SETUP_DOCKER_PARAMS=""
+if [ -n "$DOCKER_REGISTRY_URL" ]; then
+  SETUP_DOCKER_PARAMS="$SETUP_DOCKER_PARAMS --docker-registry-url $DOCKER_REGISTRY_URL"
+  log "INFO" "Adding Docker registry URL parameter to setup.sh"
+fi
+if [ -n "$DOCKER_USERNAME" ]; then
+  SETUP_DOCKER_PARAMS="$SETUP_DOCKER_PARAMS --docker-username $DOCKER_USERNAME"
+  log "INFO" "Adding Docker username parameter to setup.sh"
+fi
+if [ -n "$DOCKER_PASSWORD" ]; then
+  SETUP_DOCKER_PARAMS="$SETUP_DOCKER_PARAMS --docker-password $DOCKER_PASSWORD"
+  log "INFO" "Adding Docker password parameter to setup.sh"
+fi
 
 # Start the application with memory storage
 log "INFO" "Starting the application with memory storage..."
-run_with_timeout "./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports y --use-https n --expose-ports y --frontend-port 15000 --backend-port 15001 --start" $SETUP_TIMEOUT "Running: ./setup.sh with memory storage"
+log "INFO" "Setup command: ./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports y --use-https n --expose-ports y --frontend-port 15000 --backend-port 15001 --start $SETUP_DOCKER_PARAMS"
+run_with_timeout "./setup.sh --memory --container-engine podman --hostname auto --use-custom-ports y --use-https n --expose-ports y --frontend-port 15000 --backend-port 15001 --start $SETUP_DOCKER_PARAMS" $SETUP_TIMEOUT "Running: ./setup.sh with memory storage"
 RESULT=$?
 log "INFO" "Setup script exited with code: $RESULT"
 if [ $RESULT -ne 0 ]; then
@@ -323,9 +447,25 @@ else
   exit 1
 fi
 
+# Prepare Docker registry parameters for update-server.sh
+UPDATE_DOCKER_PARAMS=""
+if [ -n "$DOCKER_REGISTRY_URL" ]; then
+  UPDATE_DOCKER_PARAMS="$UPDATE_DOCKER_PARAMS --docker-registry-url $DOCKER_REGISTRY_URL"
+  log "INFO" "Adding Docker registry URL parameter to update-server.sh"
+fi
+if [ -n "$DOCKER_USERNAME" ]; then
+  UPDATE_DOCKER_PARAMS="$UPDATE_DOCKER_PARAMS --docker-username $DOCKER_USERNAME"
+  log "INFO" "Adding Docker username parameter to update-server.sh"
+fi
+if [ -n "$DOCKER_PASSWORD" ]; then
+  UPDATE_DOCKER_PARAMS="$UPDATE_DOCKER_PARAMS --docker-password $DOCKER_PASSWORD"
+  log "INFO" "Adding Docker password parameter to update-server.sh"
+fi
+
 # Run the update-server script
 log "INFO" "Running the update-server script..."
-run_with_timeout "./update-server.sh" $UPDATE_TIMEOUT "Running: ./update-server.sh"
+log "INFO" "Update command: ./update-server.sh $UPDATE_DOCKER_PARAMS"
+run_with_timeout "./update-server.sh $UPDATE_DOCKER_PARAMS" $UPDATE_TIMEOUT "Running: ./update-server.sh"
 RESULT=$?
 if [ $RESULT -ne 0 ]; then
   log "ERROR" "Failed to update the server."
