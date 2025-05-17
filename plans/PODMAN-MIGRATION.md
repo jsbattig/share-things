@@ -10,12 +10,14 @@ Podman is a daemonless container engine for developing, managing, and running OC
 
 ### 1. Clean Up PostgreSQL Dependencies
 
-The application had leftover references to PostgreSQL in the compiled JavaScript files, which were causing issues when running with Podman. We took the following steps to clean up these dependencies:
+The application had leftover references to PostgreSQL in the compiled JavaScript files and package.json, which were causing issues when running with Podman. We took the following steps to clean up these dependencies:
 
 1. Identified that the server was trying to import a non-existent `SessionManagerFactory` module that referenced PostgreSQL
 2. Updated the `server.ts` file to directly use the in-memory `SessionManager` without any PostgreSQL dependencies
-3. Rebuilt the TypeScript code to generate new JavaScript files without PostgreSQL references
-4. Verified that the compiled code no longer had references to PostgreSQL
+3. Removed the `pg` package from the server's package.json file
+4. Updated the package-lock.json file by running `npm install` in the server directory
+5. Rebuilt the TypeScript code to generate new JavaScript files without PostgreSQL references
+6. Verified that the compiled code no longer had references to PostgreSQL
 
 ### 2. Container Cleanup
 

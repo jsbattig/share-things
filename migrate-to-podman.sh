@@ -69,9 +69,23 @@ if [ ! -f "podman-compose.test.yml" ]; then
     cp docker-compose.test.yml podman-compose.test.yml
 fi
 
+# Remove PostgreSQL dependencies from server
+echo -e "${YELLOW}Removing PostgreSQL dependencies from server...${NC}"
+cd server
+if grep -q '"pg":' package.json; then
+    echo "Removing pg package from package.json..."
+    $SED_CMD 's/"pg": ".*",//' package.json
+    echo "Running npm install to update package-lock.json..."
+    npm install
+    echo -e "${GREEN}PostgreSQL dependencies removed.${NC}"
+else
+    echo -e "${GREEN}No PostgreSQL dependencies found.${NC}"
+fi
+
 # Rebuild the server TypeScript code
-echo "Rebuilding server TypeScript code..."
-cd server && npm run build && cd ..
+echo -e "${YELLOW}Rebuilding server TypeScript code...${NC}"
+npm run build
+cd ..
 
 # Build and start the containers with Podman
 echo "Building and starting containers with Podman..."
