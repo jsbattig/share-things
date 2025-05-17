@@ -1,6 +1,17 @@
 #!/bin/bash
 
 # Test Setup Script for ShareThings on Rocky Linux
+
+# Helper function to fix double slash issues in URLs
+fix_double_slash() {
+  local url="$1"
+  # Remove https:// or http:// prefix
+  local url_no_scheme="${url#http://}"
+  url_no_scheme="${url_no_scheme#https://}"
+  # Replace any double slashes with single slashes
+  url_no_scheme=$(echo "$url_no_scheme" | sed 's|//|/|g')
+  echo "$url_no_scheme"
+}
 # This script tests the setup.sh script with both memory and PostgreSQL options
 # It is designed to be run directly on a Rocky Linux machine as part of CI/CD
 
@@ -488,23 +499,25 @@ if [ -n "$DOCKER_REGISTRY_URL_ARG" ]; then
   # Also update the original Dockerfiles
   log "INFO" "Updating original Dockerfiles with custom registry URL..."
   
-  # Remove https:// or http:// prefix for image reference
-  REGISTRY_URL_NO_SCHEME="${DOCKER_REGISTRY_URL_ARG#http://}"
-  REGISTRY_URL_NO_SCHEME="${REGISTRY_URL_NO_SCHEME#https://}"
+  # Use helper function to fix double slash issues
+  FIXED_DOCKER_REGISTRY_URL=$(fix_double_slash "${DOCKER_REGISTRY_URL_ARG}")
   
-  sed -i "s|FROM docker.io/library/|FROM ${REGISTRY_URL_NO_SCHEME}/library/|g" ./server/Dockerfile
-  sed -i "s|FROM docker.io/library/|FROM ${REGISTRY_URL_NO_SCHEME}/library/|g" ./client/Dockerfile
+  log "INFO" "Using fixed Docker registry URL: ${FIXED_DOCKER_REGISTRY_URL}"
+  
+  sed -i "s|FROM docker.io/library/|FROM ${FIXED_DOCKER_REGISTRY_URL}/library/|g" ./server/Dockerfile
+  sed -i "s|FROM docker.io/library/|FROM ${FIXED_DOCKER_REGISTRY_URL}/library/|g" ./client/Dockerfile
   
   # Update docker-compose files
   log "INFO" "Updating docker-compose files with custom registry URL..."
   
-  # Remove https:// or http:// prefix for image reference
-  REGISTRY_URL_NO_SCHEME="${DOCKER_REGISTRY_URL_ARG#http://}"
-  REGISTRY_URL_NO_SCHEME="${REGISTRY_URL_NO_SCHEME#https://}"
+  # Use helper function to fix double slash issues
+  FIXED_DOCKER_REGISTRY_URL=$(fix_double_slash "${DOCKER_REGISTRY_URL_ARG}")
   
-  sed -i "s|image: docker.io/library/|image: ${REGISTRY_URL_NO_SCHEME}/library/|g" docker-compose.yml
-  sed -i "s|image: docker.io/library/|image: ${REGISTRY_URL_NO_SCHEME}/library/|g" docker-compose.test.yml
-  sed -i "s|image: docker.io/library/|image: ${REGISTRY_URL_NO_SCHEME}/library/|g" docker-compose.prod.yml
+  log "INFO" "Using fixed Docker registry URL for docker-compose files: ${FIXED_DOCKER_REGISTRY_URL}"
+  
+  sed -i "s|image: docker.io/library/|image: ${FIXED_DOCKER_REGISTRY_URL}/library/|g" docker-compose.yml
+  sed -i "s|image: docker.io/library/|image: ${FIXED_DOCKER_REGISTRY_URL}/library/|g" docker-compose.test.yml
+  sed -i "s|image: docker.io/library/|image: ${FIXED_DOCKER_REGISTRY_URL}/library/|g" docker-compose.prod.yml
 fi
 
 # Check if we have a .docker-registry-url file from docker-auth.sh
@@ -715,19 +728,20 @@ sleep 2
 
 # Create a custom Dockerfile for the backend that doesn't rely on volume mounts
 log "INFO" "Creating a custom Dockerfile for the backend with PostgreSQL support..."
-# Remove https:// or http:// prefix for image reference
-REGISTRY_PREFIX_NO_SCHEME="${REGISTRY_PREFIX#http://}"
-REGISTRY_PREFIX_NO_SCHEME="${REGISTRY_PREFIX_NO_SCHEME#https://}"
+# Use helper function to fix double slash issues
+FIXED_REGISTRY_PREFIX=$(fix_double_slash "${REGISTRY_PREFIX}")
+
+log "INFO" "Using fixed registry prefix for Dockerfile: ${FIXED_REGISTRY_PREFIX}"
 
 cat > server/Dockerfile.test << EOL
-FROM ${REGISTRY_PREFIX_NO_SCHEME}/node:18-alpine AS builder
+FROM ${FIXED_REGISTRY_PREFIX}/node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
 RUN npm run build
 
-FROM ${REGISTRY_PREFIX_NO_SCHEME}/node:18-alpine
+FROM ${FIXED_REGISTRY_PREFIX}/node:18-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --only=production
@@ -761,9 +775,10 @@ log "INFO" "Running containers manually without volume mounts for PostgreSQL set
 # Run PostgreSQL
 log "INFO" "Starting PostgreSQL container..."
 
-# Remove https:// or http:// prefix for image reference
-REGISTRY_PREFIX_NO_SCHEME="${REGISTRY_PREFIX#http://}"
-REGISTRY_PREFIX_NO_SCHEME="${REGISTRY_PREFIX_NO_SCHEME#https://}"
+# Use helper function to fix double slash issues
+FIXED_REGISTRY_PREFIX=$(fix_double_slash "${REGISTRY_PREFIX}")
+
+log "INFO" "Using fixed registry prefix: ${FIXED_REGISTRY_PREFIX}"
 
 podman run --name=share-things-postgres -d \
   --network share-things-test_app_network \
@@ -771,7 +786,7 @@ podman run --name=share-things-postgres -d \
   -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=sharethings \
   -p 5432:5432 \
-  ${REGISTRY_PREFIX_NO_SCHEME}/postgres:14-alpine || log "ERROR" "Failed to start PostgreSQL container."
+  ${FIXED_REGISTRY_PREFIX}/postgres:14-alpine || log "ERROR" "Failed to start PostgreSQL container."
 
 # Wait for PostgreSQL to start
 log "INFO" "Waiting for PostgreSQL to start..."
