@@ -3,6 +3,7 @@ import http from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import path from 'path';
 import { setupSocketHandlers } from './socket';
 import { setupRoutes } from './routes';
 import { SessionManager } from './services/SessionManager';
@@ -38,20 +39,18 @@ const io = new Server(server, {
   maxHttpBufferSize: 1e8 // 100MB
 });
 
-// Determine session storage type (always use memory since PostgreSQL is not available)
-const storageType = 'memory';
-console.log(`Using session storage type: ${storageType}`);
+// Get database path from environment or use default
+const dbPath = process.env.SQLITE_DB_PATH || path.join(process.cwd(), 'data', 'sessions.db');
+console.log(`Using SQLite database at: ${dbPath}`);
 
-// Create session manager with in-memory storage
+// Create session manager with SQLite storage
 const sessionManager = new SessionManager({
-  sessionTimeout: parseInt(process.env.SESSION_TIMEOUT || '600000') // Default 10 minutes
+  sessionTimeout: parseInt(process.env.SESSION_TIMEOUT || '600000'), // Default 10 minutes
+  dbPath
 });
 
 // Set up routes
 setupRoutes(app);
-
-// Set up socket handlers with session manager
-setupSocketHandlers(io, sessionManager);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -66,27 +65,44 @@ app.get('/health', (req, res) => {
   res.status(200).json(healthData);
 });
 
-// Start server
-server.listen({
-  port: Number(PORT),
-  host: '0.0.0.0'
-}, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Server binding to all network interfaces (0.0.0.0) - accessible from external machines`);
-});
+// Initialize session manager and start server
+async function startServer() {
+  try {
+    // Initialize session manager
+    await sessionManager.initialize();
+    
+    // Set up socket handlers with session manager
+    setupSocketHandlers(io, sessionManager);
+    
+    // Start server
+    server.listen({
+      port: Number(PORT),
+      host: '0.0.0.0'
+    }, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log(`Server binding to all network interfaces (0.0.0.0) - accessible from external machines`);
+    });
+    
+    // Handle graceful shutdown
+    process.on('SIGTERM', async () => {
+      console.log('SIGTERM signal received: closing HTTP server');
+      
+      // Stop session manager
+      await sessionManager.stop();
+      
+      server.close(() => {
+        console.log('HTTP server closed');
+        process.exit(0);
+      });
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+}
 
-// Handle graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM signal received: closing HTTP server');
-  
-  // Stop session manager
-  sessionManager.stop();
-  
-  server.close(() => {
-    console.log('HTTP server closed');
-    process.exit(0);
-  });
-});
+// Start the server
+startServer();
 
 // Export for testing
 export { app, server, io, sessionManager };

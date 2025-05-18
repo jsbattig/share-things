@@ -19,7 +19,6 @@ services:
     volumes:
       - ./server:/app:Z
       - volume-backend-node-modules:/app/node_modules
-      - ./data:/app/data:Z  # Mount data directory for SQLite database persistence
     networks:
       app_network:
         aliases:
@@ -53,9 +52,7 @@ networks:
   app_network:
     driver: bridge
 
-# Named volumes for node_modules and data persistence
+# Named volumes for node_modules
 volumes:
   volume-backend-node-modules:
   volume-frontend-node-modules:
-  # Note: The data directory is mounted directly from the host
-  # This ensures the SQLite database persists across container restarts

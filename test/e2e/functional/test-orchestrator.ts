@@ -1,7 +1,10 @@
 import { ServerController } from './server-controller';
 import { ClientEmulator } from './client-emulator';
 import { ContentGenerator } from './content-generator';
-import * as assert from 'assert';
+import { strict as assert } from 'assert';
+import * as path from 'path';
+import * as fs from 'fs';
+import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Orchestrates functional tests
@@ -177,6 +180,80 @@ export class TestOrchestrator {
       return;
     } catch (error) {
       console.error('Drag and drop functionality test failed:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Tests session persistence between server restarts
+   */
+  async testSessionPersistence(): Promise<void> {
+    console.log('Running session persistence test...');
+    
+    try {
+      // Set up test database
+      const testDbPath = path.join(process.cwd(), 'data', `test-sessions-${Date.now()}.db`);
+      
+      // Ensure data directory exists
+      const dataDir = path.dirname(testDbPath);
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+      
+      console.log(`Using test database at: ${testDbPath}`);
+      
+      // Configure server to use test database
+      this.serverController.setDbPath(testDbPath);
+      
+      // Generate unique session ID
+      const sessionId = `test-session-${uuidv4().substring(0, 8)}`;
+      const correctPassphrase = 'correct-passphrase';
+      const wrongPassphrase = 'wrong-passphrase';
+      
+      // Get client
+      const client = this.clientEmulators[0];
+      
+      // 1. Join session with correct passphrase
+      console.log('Step 1: Creating session with correct passphrase');
+      const joinResult = await client.joinSessionWithResult(sessionId, correctPassphrase);
+      assert(joinResult.success, 'Should successfully join session');
+      
+      // Disconnect client
+      client.disconnect();
+      
+      // 2. Stop server
+      console.log('Step 2: Stopping server');
+      await this.serverController.stopServer();
+      
+      // 3. Start server again
+      console.log('Step 3: Starting server again');
+      await this.serverController.startServer();
+      
+      // Reconnect client
+      await client.connect(this.serverController.getServerUrl());
+      
+      // 4. Try to reconnect with wrong passphrase
+      console.log('Step 4: Trying to join with wrong passphrase');
+      const wrongResult = await client.joinSessionWithResult(sessionId, wrongPassphrase);
+      assert(!wrongResult.success, 'Should fail to join with wrong passphrase');
+      assert(wrongResult.error?.includes('Invalid passphrase'), 'Error should mention invalid passphrase');
+      
+      // 5. Try to reconnect with correct passphrase
+      console.log('Step 5: Trying to join with correct passphrase');
+      const correctResult = await client.joinSessionWithResult(sessionId, correctPassphrase);
+      assert(correctResult.success, 'Should successfully join with correct passphrase');
+      
+      // Clean up test database
+      try {
+        fs.unlinkSync(testDbPath);
+        console.log(`Removed test database: ${testDbPath}`);
+      } catch (error) {
+        console.error(`Failed to remove test database: ${error}`);
+      }
+      
+      console.log('Session persistence test passed');
+    } catch (error) {
+      console.error('Session persistence test failed:', error);
       throw error;
     }
   }

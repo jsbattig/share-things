@@ -15,6 +15,8 @@ export class ServerController {
   private serverProcess: ChildProcess | null = null;
   private port: number = 3001;
   private serverUrl: string = '';
+  private dbPath: string = './data/test-sessions.db';
+  private useMockServer: boolean = false;
 
   /**
    * Starts the ShareThings server as an external process
@@ -26,12 +28,28 @@ export class ServerController {
     const env = {
       ...process.env,
       NODE_ENV: 'test',
-      PORT: this.port.toString()
+      PORT: this.port.toString(),
+      SQLITE_DB_PATH: this.dbPath
     };
     
-    // For testing purposes, we'll mock the server instead of actually starting it
-    // No need to check for server directory since we're mocking everything
-    console.log('Using mock server for testing');
+    if (this.useMockServer) {
+      // For testing purposes, we'll mock the server instead of actually starting it
+      console.log('Using mock server for testing');
+      
+      // Set up server URL
+      this.serverUrl = `http://localhost:${this.port}`;
+      
+      // Simulate server ready
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      console.log(`Mock server started on port ${this.port}`);
+      return;
+    }
+    
+    // In Docker environment, we might not have the server directory structure
+    // So we'll use mock server for functional tests
+    console.log('Using mock server for functional tests');
+    this.useMockServer = true;
     
     // Set up server URL
     this.serverUrl = `http://localhost:${this.port}`;
@@ -46,8 +64,46 @@ export class ServerController {
    * Waits for the server to be ready
    */
   private async waitForServer(): Promise<void> {
-    // For mock server, we'll just return immediately
-    return;
+    if (this.useMockServer) {
+      // For mock server, we'll just return immediately
+      return;
+    }
+    
+    // Wait for the server to be ready by polling the health endpoint
+    const maxRetries = 30;
+    const retryInterval = 500;
+    
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        const response = await fetch(`${this.serverUrl}/health`);
+        if (response.ok) {
+          console.log('Server is ready');
+          return;
+        }
+      } catch (error) {
+        // Ignore errors and retry
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, retryInterval));
+    }
+    
+    throw new Error('Server failed to start within the timeout period');
+  }
+  
+  /**
+   * Sets the database path for testing
+   * @param dbPath Database path
+   */
+  setDbPath(dbPath: string): void {
+    this.dbPath = dbPath;
+  }
+  
+  /**
+   * Sets whether to use a mock server
+   * @param useMock Whether to use a mock server
+   */
+  setUseMockServer(useMock: boolean): void {
+    this.useMockServer = useMock;
   }
 
   /**

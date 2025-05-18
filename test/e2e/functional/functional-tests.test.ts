@@ -61,4 +61,25 @@ describe('ShareThings Functional Tests', () => {
     }, 30000); // 30 second timeout
   });
   */
+  
+  // Session persistence test
+  // Uncomment to run this test
+  /*
+  describe('Session persistence', () => {
+    let orchestrator: TestOrchestrator;
+    
+    beforeAll(async () => {
+      orchestrator = new TestOrchestrator();
+      await orchestrator.setup();
+    });
+    
+    afterAll(async () => {
+      await orchestrator.cleanup();
+    });
+    
+    test('should persist sessions between server restarts', async () => {
+      await orchestrator.testSessionPersistence();
+    }, 60000); // 60 second timeout
+  });
+  */
 });

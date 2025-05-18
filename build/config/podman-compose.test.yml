@@ -11,6 +11,8 @@ services:
       - NODE_ENV=test
     ports:
       - "${BACKEND_PORT}:3001"
+    volumes:
+      - ./data:/app/data:Z  # Mount data directory for SQLite database persistence
     networks:
       app_network:
         aliases:

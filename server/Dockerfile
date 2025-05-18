@@ -1,7 +1,16 @@
 # Build stage
-FROM linner.ddns.net:4443/docker.io.proxy/node:18-alpine as builder
+FROM linner.ddns.net:4443/docker.io.proxy/node:18 as builder
 
 WORKDIR /app
+
+# Install SQLite dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    sqlite3 \
+    libsqlite3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files and install dependencies
 COPY package*.json ./
@@ -14,9 +23,15 @@ COPY . .
 RUN npm run build
 
 # Production stage
-FROM linner.ddns.net:4443/docker.io.proxy/node:18-alpine
+FROM linner.ddns.net:4443/docker.io.proxy/node:18
 
 WORKDIR /app
+
+# Install SQLite dependencies
+RUN apt-get update && apt-get install -y \
+    sqlite3 \
+    libsqlite3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy package files and install production dependencies only
 COPY package*.json ./
