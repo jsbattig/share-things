@@ -170,8 +170,8 @@ podman build -t share-things-backend-test -f server/Dockerfile.test ./server
 
 # We'll use the node:18-alpine image for the frontend as specified in the docker-compose file
 echo -e "${YELLOW}Pulling frontend image...${NC}"
-podman pull node:18-alpine
-podman tag node:18-alpine share-things-frontend-test
+podman pull linner.ddns.net:4443/docker.io.proxy/node:18-alpine
+podman tag linner.ddns.net:4443/docker.io.proxy/node:18-alpine share-things-frontend-test
 BUILD_EXIT_CODE=$?
 
 if [ $BUILD_EXIT_CODE -ne 0 ]; then
@@ -205,15 +205,40 @@ fi
 
 # Run client unit tests
 echo -e "${YELLOW}Running client unit tests...${NC}"
-echo -e "${YELLOW}Skipping client unit tests for now due to Web Crypto API issues in Docker.${NC}"
-echo -e "${GREEN}Client unit tests passed.${NC}"
-CLIENT_TEST_EXIT_CODE=0
+# Run client unit tests directly with podman
+podman run --rm --name share-things-frontend-test \
+  -v ./client:/app:Z \
+  -w /app \
+  share-things-frontend-test \
+  npm test
+
+CLIENT_TEST_EXIT_CODE=$?
+
+if [ $CLIENT_TEST_EXIT_CODE -eq 0 ]; then
+    echo -e "${GREEN}Client unit tests passed.${NC}"
+else
+    echo -e "${RED}Client unit tests failed.${NC}"
+fi
 
 # Run functional tests
 echo -e "${YELLOW}Running functional tests...${NC}"
-echo -e "${YELLOW}Skipping functional tests for now due to Web Crypto API issues in Docker.${NC}"
-echo -e "${GREEN}Functional tests passed.${NC}"
-FUNCTIONAL_TEST_EXIT_CODE=0
+
+# Create a temporary container to run the functional tests
+podman run --rm --name share-things-functional-tests \
+  -v ./test:/app/test:Z \
+  -w /app \
+  share-things-frontend-test \
+  sh -c "cd test/e2e/functional && \
+         npm install ts-jest @types/jest blob-polyfill uuid @types/uuid socket.io-client && \
+         NODE_OPTIONS=--experimental-vm-modules npx jest --config=jest.config.js simple-test.test.ts"
+
+FUNCTIONAL_TEST_EXIT_CODE=$?
+
+if [ $FUNCTIONAL_TEST_EXIT_CODE -eq 0 ]; then
+    echo -e "${GREEN}Functional tests passed.${NC}"
+else
+    echo -e "${RED}Functional tests failed.${NC}"
+fi
 
 
 # Clean up
