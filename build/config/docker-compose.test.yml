@@ -3,7 +3,7 @@
 services:
   backend:
     build:
-      context: ../../server
+      context: ./server
       dockerfile: Dockerfile.test
     container_name: share-things-backend-test
     hostname: backend
@@ -23,7 +23,7 @@ services:
     hostname: frontend
     working_dir: /app
     volumes:
-      - ../../client:/app
+      - ./client:/app
     environment:
       - VITE_API_URL=http://backend:3001
       - VITE_SOCKET_URL=http://backend:3001
