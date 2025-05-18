@@ -224,15 +224,13 @@ fi
 echo -e "${YELLOW}Running functional tests...${NC}"
 
 # Create a temporary container to run the functional tests
-# Set npm cache directory to a location within the mounted directory to avoid permission issues
+# Use the --cache flag to specify a cache directory within the mounted volume
 podman run --rm --name share-things-functional-tests \
   -v ./test:/app/test:Z \
-  -w /app \
+  -w /app/test/e2e/functional \
   share-things-frontend-test \
-  sh -c "cd test/e2e/functional && \
-         mkdir -p .npm-cache && \
-         npm config set cache ./test/e2e/functional/.npm-cache && \
-         npm install ts-jest @types/jest blob-polyfill uuid @types/uuid socket.io-client && \
+  sh -c "mkdir -p .npm-cache && \
+         npm install --cache=./.npm-cache ts-jest @types/jest blob-polyfill uuid @types/uuid socket.io-client && \
          NODE_OPTIONS=--experimental-vm-modules npx jest --config=jest.config.js simple-test.test.ts"
 
 FUNCTIONAL_TEST_EXIT_CODE=$?
