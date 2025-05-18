@@ -9,7 +9,9 @@ test-results/
 playwright-report/
 
 # Production
-build/
+build/*
+!build/scripts/
+!build/config/
 dist/
 out/
 

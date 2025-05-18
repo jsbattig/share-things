@@ -1,0 +1,63 @@
+# Temporary development configuration for ShareThings Podman Compose
+
+services:
+  backend:
+    build:
+      context: ../../server
+      dockerfile: Dockerfile
+      args:
+        - PORT=15101
+    container_name: share-things-backend
+    hostname: backend
+    environment:
+      - NODE_ENV=development
+      - PORT=15101
+    ports:
+      - "15101:15101"
+    restart: always
+    networks:
+      app_network:
+        aliases:
+          - backend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    build:
+      context: ../../client
+      dockerfile: Dockerfile
+      args:
+        - API_URL=auto
+        - SOCKET_URL=auto
+        - API_PORT=15101
+        - VITE_API_PORT=15101
+    container_name: share-things-frontend
+    environment:
+      - API_PORT=15101
+    ports:
+      - "15100:80"
+    restart: always
+    depends_on:
+      - backend
+    networks:
+      app_network:
+        aliases:
+          - frontend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Explicit network configuration
+networks:
+  app_network:
+    driver: bridge
+
+# Named volumes for node_modules
+volumes:
+  volume-backend-node-modules:
+  volume-frontend-node-modules:

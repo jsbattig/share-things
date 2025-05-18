@@ -1,0 +1,262 @@
+name: ShareThings CI/CD Pipeline
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: [self-hosted, Rocky Linux]
+    
+    steps:
+    - name: Check Podman installation
+      run: |
+        if ! command -v podman &> /dev/null; then
+          echo "Error: Podman is not installed on the runner."
+          exit 1
+        fi
+        if ! command -v podman-compose &> /dev/null; then
+          echo "Error: Podman Compose is not installed on the runner."
+          exit 1
+        fi
+        echo "Podman version: $(podman --version)"
+        echo "Podman Compose version: $(podman-compose --version)"
+    
+    - uses: actions/checkout@v3
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install root dependencies
+      run: npm ci
+    
+    - name: Install client dependencies
+      run: cd client && npm ci && npm install crypto-js @types/crypto-js
+    
+    - name: Install server dependencies
+      run: cd server && npm ci
+    
+    - name: Lint server
+      run: |
+        echo "Running server lint with detailed output..."
+        cd server && npm run lint -- --format stylish
+    
+    - name: Lint client
+      run: |
+        echo "Running client lint with detailed output..."
+        cd client && npm run lint -- --format stylish
+
+  build:
+    name: Build and Test
+    needs: [lint]
+    runs-on: [self-hosted, Rocky Linux]
+    
+    steps:
+    - name: Check Podman installation
+      run: |
+        if ! command -v podman &> /dev/null; then
+          echo "Error: Podman is not installed on the runner."
+          exit 1
+        fi
+        if ! command -v podman-compose &> /dev/null; then
+          echo "Error: Podman Compose is not installed on the runner."
+          exit 1
+        fi
+        echo "Podman version: $(podman --version)"
+        echo "Podman Compose version: $(podman-compose --version)"
+    
+    - uses: actions/checkout@v3
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Install root dependencies
+      run: npm ci
+    
+    - name: Install client dependencies
+      run: cd client && npm ci && npm install crypto-js @types/crypto-js
+    
+    - name: Install server dependencies
+      run: cd server && npm ci
+    
+    - name: Build server
+      run: cd server && npm run build
+    
+    - name: Build client
+      run: cd client && npm run build
+    
+    - name: Test server
+      run: cd server && npm test
+    
+    - name: Test client
+      run: cd client && npm test
+    
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: |
+          server/dist
+          client/dist
+
+  test-setup:
+    name: Test Setup Script
+    needs: [build]
+    runs-on: [self-hosted, Rocky Linux]
+    
+    steps:
+    - name: Check Podman installation
+      run: |
+        if ! command -v podman &> /dev/null; then
+          echo "Error: Podman is not installed on the runner."
+          exit 1
+        fi
+        if ! command -v podman-compose &> /dev/null; then
+          echo "Error: Podman Compose is not installed on the runner."
+          exit 1
+        fi
+        echo "Podman version: $(podman --version)"
+        echo "Podman Compose version: $(podman-compose --version)"
+    
+    - uses: actions/checkout@v3
+    
+    - name: Make test-setup script executable
+      run: chmod +x test-setup.sh
+    
+    - name: Debug environment
+      run: |
+        echo "GitHub Actions environment:"
+        echo "Working directory: $(pwd)"
+        ls -la
+        echo "Podman version:"
+        podman --version
+        echo "Podman Compose version:"
+        podman-compose --version
+        echo "Podman info:"
+        podman info
+        echo "Available disk space:"
+        df -h
+    
+    - name: Run test-setup script
+      run: ./test-setup.sh
+      env:
+        CI: true
+        PODMAN_USERNS: keep-id
+
+  integration:
+    name: Dockered Build and Tests
+    needs: [build]
+    runs-on: [self-hosted, Rocky Linux]
+    
+    steps:
+    - name: Check Podman installation
+      run: |
+        if ! command -v podman &> /dev/null; then
+          echo "Error: Podman is not installed on the runner."
+          exit 1
+        fi
+        if ! command -v podman-compose &> /dev/null; then
+          echo "Error: Podman Compose is not installed on the runner."
+          exit 1
+        fi
+        echo "Podman version: $(podman --version)"
+        echo "Podman Compose version: $(podman-compose --version)"
+    
+    - uses: actions/checkout@v3
+    
+    - name: Make build-and-test script executable
+      run: chmod +x build-and-test.sh
+    
+    - name: Debug environment
+      run: |
+        echo "GitHub Actions environment:"
+        echo "Working directory: $(pwd)"
+        ls -la
+        echo "Podman version:"
+        podman --version
+        echo "Podman Compose version:"
+        podman-compose --version
+        echo "Podman info:"
+        podman info
+        echo "Available disk space:"
+        df -h
+    
+    - name: Build and run tests with verbose output
+      run: bash -x ./build-and-test.sh
+      env:
+        CI: true
+        PODMAN_USERNS: keep-id
+    
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results
+        path: test-results/
+
+  # The build-production job has been removed as we're relying on the test-setup job
+  # to verify production readiness
+
+  deploy-production:
+    name: Deploy to Production
+    needs: [test-setup, integration]
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    runs-on: [self-hosted, Rocky Linux]
+    
+    steps:
+      - name: Check Podman installation
+        run: |
+          if ! command -v podman &> /dev/null; then
+            echo "Error: Podman is not installed on the runner."
+            exit 1
+          fi
+          if ! command -v podman-compose &> /dev/null; then
+            echo "Error: Podman Compose is not installed on the runner."
+            exit 1
+          fi
+          echo "Podman version: $(podman --version)"
+          echo "Podman Compose version: $(podman-compose --version)"
+      
+      - name: Deploy to production server
+        # Use sshpass to handle password authentication
+        run: |
+          # Install sshpass if not already installed
+          if ! command -v sshpass &> /dev/null; then
+            sudo yum install -y sshpass
+          fi
+          
+          # Function to check if setup.sh --update is running
+          check_update_script_running() {
+            sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "pgrep -f 'setup.sh --update'" > /dev/null
+            return $?
+          }
+          
+          # Wait until any existing setup.sh --update process completes
+          echo "Checking if setup.sh --update is already running on the production server..."
+          while check_update_script_running; do
+            echo "setup.sh --update is currently running. Waiting 30 seconds before checking again..."
+            sleep 30
+          done
+          
+          echo "No running setup.sh --update process detected. Proceeding with deployment..."
+          
+          # Set up SSH connection and run the update script, capturing the exit code
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && ./setup.sh --update --non-interactive"
+          DEPLOY_EXIT_CODE=$?
+          
+          # Check if the deployment was successful
+          if [ $DEPLOY_EXIT_CODE -ne 0 ]; then
+            echo "Deployment failed with exit code $DEPLOY_EXIT_CODE"
+            exit $DEPLOY_EXIT_CODE
+          else
+            echo "Deployment completed successfully"
+          fi

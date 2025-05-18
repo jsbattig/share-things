@@ -1,0 +1,98 @@
+global
+    log /dev/log local0
+    log /dev/log local1 notice
+    maxconn 4096
+    user haproxy
+    group haproxy
+    daemon
+    
+    # SSL settings
+    ssl-default-bind-options no-sslv3 no-tlsv10 no-tlsv11
+    ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256
+
+defaults
+    log global
+    mode http
+    option httplog
+    option dontlognull
+    
+    # Standard timeouts
+    timeout connect 5s
+    timeout client 50s
+    timeout server 50s
+    
+    # WebSocket specific timeouts
+    timeout tunnel 3600s
+    timeout http-keep-alive 1s
+    timeout http-request 10s
+    timeout client-fin 10s
+    timeout server-fin 10s
+
+# Frontend for client app (port 15000)
+frontend client_front
+    # For SSL termination:
+    # bind *:15000 ssl crt /etc/ssl/private/combined-cert.pem
+    bind *:15000
+    
+    # Forward client IP
+    option forwardfor
+    http-request set-header X-Forwarded-Proto http
+    # For SSL:
+    # http-request set-header X-Forwarded-Proto https
+    
+    # Route all traffic to frontend container
+    default_backend sharethings_front
+
+# Frontend for API (port 15001)
+frontend api_front
+    # For SSL termination:
+    # bind *:15001 ssl crt /etc/ssl/private/combined-cert.pem
+    bind *:15001
+    
+    # Forward client IP
+    option forwardfor
+    http-request set-header X-Forwarded-Proto http
+    # For SSL:
+    # http-request set-header X-Forwarded-Proto https
+    
+    # WebSocket detection for Socket.IO
+    acl is_websocket hdr(Upgrade) -i WebSocket
+    acl is_socketio path_beg /socket.io/
+    
+    # Route all traffic to backend container
+    default_backend sharethings_back
+
+backend sharethings_front
+    balance roundrobin
+    option httpchk GET /
+    
+    # Server definition - point to frontend container
+    # Replace docker-host with your Docker host IP or hostname
+    # and 8080 with the port you've exposed for the frontend
+    server frontend docker-host:8080 check
+
+backend sharethings_back
+    balance roundrobin
+    option httpchk GET /health
+    
+    # WebSocket handling
+    option http-server-close
+    http-reuse safe
+    
+    # Sticky sessions
+    stick-table type ip size 200k expire 30m
+    stick on src
+    
+    # Server definition - point to backend container
+    # Replace docker-host with your Docker host IP or hostname
+    # and 3001 with the port you've exposed for the backend
+    server backend docker-host:3001 check
+
+# Statistics page (optional)
+listen stats
+    bind *:8404
+    stats enable
+    stats uri /stats
+    stats refresh 10s
+    stats admin if LOCALHOST
+    stats auth admin:your-secure-password
