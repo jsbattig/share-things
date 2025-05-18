@@ -146,7 +146,7 @@ podman logs share-things-frontend
 podman logs share-things-backend
 
 # Restart containers
-cd /path/to/share-things && podman-compose -f build/config/podman-compose.yml down && podman-compose -f build/config/podman-compose.yml up -d
+cd /path/to/share-things && podman-compose down && podman-compose up -d
 ```
 
 ### Troubleshooting
@@ -206,7 +206,8 @@ share-things/
 │   └── unit/              # Unit tests
 ├── setup/                 # Setup modules
 ├── plans/                 # Project planning documents
-│   └── ...                # Planning documents and implementation plans
+│   ├── file-reorganization-implementation-plan.md
+│   └── ...                # Other planning documents
 ├── memory-bank/           # Project knowledge base
 │   ├── architecture/      # Architecture documentation
 │   ├── technical/         # Technical documentation

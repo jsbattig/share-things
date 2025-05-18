@@ -83,7 +83,7 @@ perform_installation() {
     echo "  podman logs share-things-backend"
     echo ""
     echo "To restart the containers:"
-    echo "  cd $(pwd) && podman-compose down && podman-compose up -d"
+    echo "  cd $(pwd) && podman-compose -f build/config/podman-compose.yml down && podman-compose -f build/config/podman-compose.yml up -d"
     
     # Clean up any backup files created by sed
     cleanup_backup_files
@@ -101,12 +101,12 @@ perform_update() {
     capture_current_configuration
     
     # Determine which compose file to use
-    if [ -f podman-compose.prod.yml ]; then
-        COMPOSE_FILE="podman-compose.prod.yml"
-    elif [ -f podman-compose.prod.temp.yml ]; then
-        COMPOSE_FILE="podman-compose.prod.temp.yml"
+    if [ -f build/config/podman-compose.prod.yml ]; then
+        COMPOSE_FILE="$(pwd)/build/config/podman-compose.prod.yml"
+    elif [ -f build/config/podman-compose.prod.temp.yml ]; then
+        COMPOSE_FILE="$(pwd)/build/config/podman-compose.prod.temp.yml"
     else
-        COMPOSE_FILE="podman-compose.yml"
+        COMPOSE_FILE="$(pwd)/build/config/podman-compose.yml"
     fi
     
     # Stop containers
@@ -135,7 +135,7 @@ perform_update() {
     log_info "Creating a comprehensive podman-compose file for update..."
     log_info "Using ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}, API=${API_PORT}"
     # Create a temporary but complete docker-compose file specifically for the update
-    cat > podman-compose.update.yml << EOL
+    cat > build/config/podman-compose.update.yml << EOL
 # Update configuration for ShareThings Podman Compose
 
 services:
@@ -201,7 +201,7 @@ volumes:
   volume-backend-node-modules:
   volume-frontend-node-modules:
 EOL
-    log_success "Comprehensive podman-compose.update.yml created."
+    log_success "Comprehensive build/config/podman-compose.update.yml created."
     
     # Export API_PORT as VITE_API_PORT to ensure it's available during build
     export VITE_API_PORT="${API_PORT}"
@@ -209,13 +209,13 @@ EOL
     
     # Build and run containers with explicitly passed environment variables
     log_info "Building containers with comprehensive configuration..."
-    podman-compose -f podman-compose.update.yml build
+    podman-compose -f "$(pwd)/build/config/podman-compose.update.yml" build
     
     log_info "Starting containers with explicit environment variables..."
     # Directly pass environment variables to the compose command
-    FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT podman-compose -f podman-compose.update.yml up -d
+    FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT podman-compose -f "$(pwd)/build/config/podman-compose.update.yml" up -d
     
-    COMPOSE_FILE="podman-compose.update.yml"
+    COMPOSE_FILE="$(pwd)/build/config/podman-compose.update.yml"
     
     # Add additional debugging for port configuration
     log_info "Verifying port configuration..."
@@ -254,11 +254,11 @@ EOL
     verify_containers
     
     # Clean up any temporary files created during the update
-    if [ -f podman-compose.update.yml ]; then
+    if [ -f build/config/podman-compose.update.yml ]; then
         log_info "Cleaning up temporary files..."
         # Keep the file for reference in case of issues
-        mv podman-compose.update.yml podman-compose.update.yml.bak
-        log_success "podman-compose.update.yml saved as podman-compose.update.yml.bak for reference."
+        mv build/config/podman-compose.update.yml build/config/podman-compose.update.yml.bak
+        log_success "build/config/podman-compose.update.yml saved as build/config/podman-compose.update.yml.bak for reference."
     fi
     
     # Clean up any backup files created by sed
@@ -289,14 +289,14 @@ perform_uninstall() {
     log_info "Uninstalling ShareThings..."
     
     # Determine which compose file to use
-    if [ -f podman-compose.prod.yml ]; then
-        COMPOSE_FILE="podman-compose.prod.yml"
-    elif [ -f podman-compose.prod.temp.yml ]; then
-        COMPOSE_FILE="podman-compose.prod.temp.yml"
-    elif [ -f podman-compose.update.yml ]; then
-        COMPOSE_FILE="podman-compose.update.yml"
+    if [ -f build/config/podman-compose.prod.yml ]; then
+        COMPOSE_FILE="$(pwd)/build/config/podman-compose.prod.yml"
+    elif [ -f build/config/podman-compose.prod.temp.yml ]; then
+        COMPOSE_FILE="$(pwd)/build/config/podman-compose.prod.temp.yml"
+    elif [ -f build/config/podman-compose.update.yml ]; then
+        COMPOSE_FILE="$(pwd)/build/config/podman-compose.update.yml"
     else
-        COMPOSE_FILE="podman-compose.yml"
+        COMPOSE_FILE="$(pwd)/build/config/podman-compose.yml"
     fi
     
     # Stop and remove containers
@@ -311,7 +311,7 @@ perform_uninstall() {
         if [[ $REMOVE_CONFIG =~ ^[Yy]$ ]]; then
             log_info "Removing configuration files..."
             rm -f .env client/.env server/.env
-            rm -f podman-compose.prod.yml podman-compose.prod.temp.yml podman-compose.update.yml
+            rm -f "$(pwd)/build/config/podman-compose.prod.yml" "$(pwd)/build/config/podman-compose.prod.temp.yml" "$(pwd)/build/config/podman-compose.update.yml"
             log_success "Configuration files removed."
         fi
     fi

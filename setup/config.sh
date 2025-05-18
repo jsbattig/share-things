@@ -211,9 +211,9 @@ backup_configuration() {
     cp server/.env $BACKUP_DIR/server.env 2>/dev/null || echo "No server/.env file to backup"
     
     # Backup compose files if they exist
-    cp podman-compose.yml $BACKUP_DIR/podman-compose.yml 2>/dev/null || echo "No podman-compose.yml file to backup"
-    cp podman-compose.prod.yml $BACKUP_DIR/podman-compose.prod.yml 2>/dev/null || echo "No podman-compose.prod.yml file to backup"
-    cp podman-compose.prod.temp.yml $BACKUP_DIR/podman-compose.prod.temp.yml 2>/dev/null || echo "No podman-compose.prod.temp.yml file to backup"
+    cp build/config/podman-compose.yml $BACKUP_DIR/podman-compose.yml 2>/dev/null || echo "No build/config/podman-compose.yml file to backup"
+    cp build/config/podman-compose.prod.yml $BACKUP_DIR/podman-compose.prod.yml 2>/dev/null || echo "No build/config/podman-compose.prod.yml file to backup"
+    cp build/config/podman-compose.prod.temp.yml $BACKUP_DIR/podman-compose.prod.temp.yml 2>/dev/null || echo "No build/config/podman-compose.prod.temp.yml file to backup"
     
     log_success "Configuration backed up to ${BACKUP_DIR}"
 }
@@ -242,7 +242,7 @@ capture_current_configuration() {
     API_PORT_ARG=$(grep "API_PORT=" .env | sed -E 's|API_PORT=([0-9]+)|\1|')
     
     # Capture production mode
-    if [ -f podman-compose.prod.yml ] || [ -f podman-compose.prod.temp.yml ]; then
+    if [ -f build/config/podman-compose.prod.yml ] || [ -f build/config/podman-compose.prod.temp.yml ]; then
         PRODUCTION_MODE="true"
     else
         PRODUCTION_MODE="false"

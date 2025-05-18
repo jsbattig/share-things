@@ -174,7 +174,7 @@ jobs:
     - uses: actions/checkout@v3
     
     - name: Make build-and-test script executable
-      run: chmod +x build/scripts/build-and-test.sh
+      run: chmod +x build-and-test.sh
     
     - name: Debug environment
       run: |
@@ -191,7 +191,7 @@ jobs:
         df -h
     
     - name: Build and run tests with verbose output
-      run: bash -x ./build/scripts/build-and-test.sh
+      run: bash -x ./build-and-test.sh
       env:
         CI: true
         PODMAN_USERNS: keep-id
