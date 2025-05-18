@@ -40,7 +40,7 @@ The badge links to the GitHub Actions workflow page where users can see detailed
 ### Related Files
 
 - [README.md](../../../README.md) - Contains the CI/CD badge
-- [build/config/share-things-ci-cd.yml](../../../build/config/share-things-ci-cd.yml) - GitHub Actions workflow file
+- [.github/workflows/share-things-ci-cd.yml](../../../.github/workflows/share-things-ci-cd.yml) - GitHub Actions workflow file
 - [plans/badge-simplification-plan.md](../../../plans/badge-simplification-plan.md) - Detailed plan for badge simplification
 
 ## validate-badges.js (Historical)

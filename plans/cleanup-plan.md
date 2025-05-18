@@ -1,214 +1,154 @@
-# Docker to Podman Migration Cleanup Plan
+# Repository Cleanup Plan
 
-This document outlines the specific steps to replace Docker with Podman in the ShareThings project. This plan focuses on immediate, actionable tasks to complete the migration.
+This document outlines a comprehensive plan for cleaning up redundant and backup files in the share-things repository.
 
-## 1. Verify Environment
+## 1. Duplicate Configuration Files
 
-- [x] Confirm Podman is installed and working
-- [ ] Confirm Podman Compose is installed and working
-- [ ] Ensure Podman machine is running (macOS)
+### 1.1. GitHub Actions Workflow File
 
-## 2. Script Updates
+**Issue:** There are multiple versions of the share-things-ci-cd.yml file:
+- `.github/workflows/share-things-ci-cd.yml` (active file)
+- `build/config/share-things-ci-cd.yml` (outdated copy)
+- `file-reorg-backup/share-things-ci-cd.yml` (backup)
 
-### 2.1 Update build-and-test.sh
+**Action:** Keep only the active file in `.github/workflows/` and remove the others.
 
-- [ ] Replace Docker command checks with Podman
-  ```bash
-  # Replace
-  if ! command -v docker &> /dev/null; then
-      echo -e "${RED}Error: Docker is not installed.${NC}"
-      exit 1
-  fi
-  
-  # With
-  if ! command -v podman &> /dev/null; then
-      echo -e "${RED}Error: Podman is not installed.${NC}"
-      exit 1
-  fi
-  ```
+```bash
+rm build/config/share-things-ci-cd.yml
+# file-reorg-backup directory will be removed entirely in a later step
+```
 
-- [ ] Update Docker Compose command detection
-  ```bash
-  # Replace
-  if command -v docker-compose &> /dev/null; then
-      DOCKER_COMPOSE_CMD="docker-compose"
-  elif docker compose version &> /dev/null; then
-      DOCKER_COMPOSE_CMD="docker compose"
-  
-  # With
-  if command -v podman-compose &> /dev/null; then
-      DOCKER_COMPOSE_CMD="podman-compose"
-  ```
+### 1.2. Jest Configuration Files
 
-- [ ] Replace Docker daemon check
-  ```bash
-  # Replace
-  if ! docker info &> /dev/null; then
-      echo -e "${RED}Error: Docker daemon is not running.${NC}"
-      exit 1
-  fi
-  
-  # With
-  if ! podman info &> /dev/null; then
-      echo -e "${RED}Error: Podman is not running.${NC}"
-      exit 1
-  fi
-  ```
+**Issue:** There are multiple Jest configuration files:
+- `client/jest.config.cjs` (client-specific config)
+- `server/jest.config.js` (server-specific config)
+- `test/config/jest.config.js` (global config)
+- `file-reorg-backup/jest.config.js` (backup)
 
-### 2.2 Update build-production.sh
+**Action:** Keep the three active configuration files and remove the backup.
 
-- [ ] Replace Docker command checks with Podman (similar to build-and-test.sh)
-- [ ] Update Docker Compose command detection to use Podman Compose
-- [ ] Update container health checks for Podman compatibility
-  ```bash
-  # Replace
-  BACKEND_RUNNING=$($DOCKER_COMPOSE_CMD -f docker-compose.prod.temp.yml ps | grep backend | grep -c "Up")
-  
-  # With
-  BACKEND_RUNNING=$($DOCKER_COMPOSE_CMD -f podman-compose.prod.temp.yml ps | grep backend | grep -c "Up")
-  ```
+### 1.3. Docker/Podman Compose Files
 
-### 2.3 Update setup.sh
+**Issue:** There are duplicate Docker and Podman compose files in multiple locations:
+- Active files in `build/config/`
+- Backup files in `file-reorg-backup/`
+- Multiple timestamped backups in `backups/`
 
-- [ ] Set Podman as the default container engine
-  ```bash
-  # Replace
-  DEFAULT_ENGINE="docker"
-  
-  # With
-  DEFAULT_ENGINE="podman"
-  ```
+**Action:** Keep only the active configuration files in `build/config/` and remove all backups.
 
-- [ ] Update container management commands to use Podman
+### 1.4. HAProxy Configuration Template
 
-## 3. Docker Compose File Updates
+**Issue:** There are duplicate HAProxy configuration templates:
+- `build/config/haproxy.cfg.template` (active)
+- `file-reorg-backup/haproxy.cfg.template` (backup)
 
-### 3.0 Update Registry References
+**Action:** Keep only the active template in `build/config/` and remove the backup.
 
-- [ ] Replace all references to docker.io with linner.ddns.net:4443/docker.io.proxy in Dockerfiles
-  ```bash
-  # For client/Dockerfile
-  $SED_CMD 's|FROM node:18-alpine|FROM linner.ddns.net:4443/docker.io.proxy/node:18-alpine|g' client/Dockerfile
-  $SED_CMD 's|FROM nginx:alpine|FROM linner.ddns.net:4443/docker.io.proxy/nginx:alpine|g' client/Dockerfile
-  
-  # For server/Dockerfile
-  $SED_CMD 's|FROM node:18-alpine|FROM linner.ddns.net:4443/docker.io.proxy/node:18-alpine|g' server/Dockerfile
-  ```
+## 2. Backup Directories
 
-- [ ] Update image references in docker-compose files
-  ```bash
-  # For docker-compose.test.yml
-  $SED_CMD 's|image: node:18-alpine|image: linner.ddns.net:4443/docker.io.proxy/node:18-alpine|g' docker-compose.test.yml
-  ```
+### 2.1. /backups Directory
 
-### 3.1 Create podman-compose.yml
+**Issue:** The `/backups` directory contains multiple timestamped backups of configuration files that are no longer needed.
 
-- [ ] Copy docker-compose.yml to podman-compose.yml
-- [ ] Update volume mount syntax for Podman compatibility
-  ```yaml
-  # Replace
-  volumes:
-    - ./server:/app
-    - /app/node_modules
-  
-  # With
-  volumes:
-    - ./server:/app:Z
-    - volume-backend-node-modules:/app/node_modules:Z
-  ```
-- [ ] Add named volumes section
-  ```yaml
-  volumes:
-    volume-backend-node-modules:
-    volume-frontend-node-modules:
-  ```
+**Action:** Remove the entire backups directory and all its contents.
 
-### 3.2 Create podman-compose.test.yml
+```bash
+rm -rf backups/
+```
 
-- [ ] Copy docker-compose.test.yml to podman-compose.test.yml
-- [ ] Update volume mount syntax for Podman compatibility
-- [ ] Update test-specific configurations for Podman
+### 2.2. docker-backup-* Directory
 
-### 3.3 Create podman-compose.prod.yml
+**Issue:** The `docker-backup-*` directories contain old Docker configuration backups.
 
-- [ ] Copy docker-compose.prod.yml to podman-compose.prod.yml
-- [ ] Update production-specific configurations for Podman
+**Action:** Remove all docker-backup-* directories.
 
-## 4. Testing
+```bash
+rm -rf docker-backup-*/
+```
 
-### 4.1 Development Environment
+### 2.3. file-reorg-backup Directory
 
-- [ ] Test building and running in development mode
-  ```bash
-  podman-compose -f podman-compose.yml build
-  podman-compose -f podman-compose.yml up -d
-  ```
-- [ ] Verify frontend and backend containers are running
-  ```bash
-  podman-compose -f podman-compose.yml ps
-  ```
-- [ ] Test application functionality in browser
+**Issue:** The `file-reorg-backup` directory contains backups created during the file reorganization process.
 
-### 4.2 Test Environment
+**Action:** Remove the entire file-reorg-backup directory and all its contents.
 
-- [ ] Test building and running in test mode
-  ```bash
-  podman-compose -f podman-compose.test.yml build
-  podman-compose -f podman-compose.test.yml up -d
-  ```
-- [ ] Run tests
-  ```bash
-  podman-compose -f podman-compose.test.yml run --rm backend npm test
-  ```
+```bash
+rm -rf file-reorg-backup/
+```
 
-### 4.3 Production Environment
+## 3. Environment Files
 
-- [ ] Test building and running in production mode
-  ```bash
-  podman-compose -f podman-compose.yml -f podman-compose.prod.yml build
-  podman-compose -f podman-compose.yml -f podman-compose.prod.yml up -d
-  ```
-- [ ] Verify production containers are running
-  ```bash
-  podman-compose -f podman-compose.yml -f podman-compose.prod.yml ps
-  ```
+**Issue:** There are multiple environment file backups in the backups directory.
 
-## 5. Documentation Updates
+**Action:** Keep only the active environment files and remove all backups:
+- `.env.example` (root)
+- `client/.env.example`
+- `client/.env.backend`
+- `server/.env.example`
 
-- [ ] Update README.md with Podman instructions
-- [ ] Rename DOCKER.md to CONTAINERS.md and update content
-- [ ] Update any other documentation referencing Docker
+## 4. Documentation Updates
 
-## 6. Final Steps
+### 4.1. Update References
 
-- [ ] Remove Docker-specific files (if no longer needed)
-- [ ] Create aliases or shell functions for common commands
-  ```bash
-  # Add to ~/.bashrc or ~/.zshrc
-  alias docker='podman'
-  alias docker-compose='podman-compose'
-  ```
-- [ ] Document any Podman-specific issues or workarounds encountered
+**Action:** Search for and update any documentation that references the removed files or directories.
 
-## 7. Troubleshooting Guide
+```bash
+# Example search command to find references
+grep -r "backups/" --include="*.md" .
+grep -r "file-reorg-backup" --include="*.md" .
+grep -r "docker-backup" --include="*.md" .
+```
 
-### 7.1 Volume Mounting Issues
+### 4.2. Add Cleanup Documentation
 
-If you encounter volume mounting issues:
-- Ensure SELinux contexts are properly set with `:Z` or `:z` suffix
-- Use named volumes for persistent data
-- Check Podman machine configuration (on macOS)
+**Action:** Add a note to the project README or relevant documentation about the cleanup that was performed.
 
-### 7.2 Network Issues
+## 5. Implementation Steps
 
-If containers can't communicate:
-- Verify network configuration in podman-compose.yml
-- Check that network aliases are properly set
-- Ensure hostname resolution is working between containers
+1. Create a backup branch before making changes (optional safety measure)
+   ```bash
+   git checkout -b backup-before-cleanup
+   git push origin backup-before-cleanup
+   git checkout master
+   ```
 
-### 7.3 Port Binding Issues
+2. Remove the duplicate GitHub Actions workflow file
+   ```bash
+   rm build/config/share-things-ci-cd.yml
+   ```
 
-If ports aren't binding correctly:
-- Check for port conflicts
-- Verify port syntax in podman-compose files
-- Ensure Podman has permission to bind to low ports (if using ports < 1024)
+3. Remove backup directories
+   ```bash
+   rm -rf backups/
+   rm -rf docker-backup-*/
+   rm -rf file-reorg-backup/
+   ```
+
+4. Update documentation as needed
+   ```bash
+   # Update memory-bank/technical/ci-cd/README.md to remove references to build/config/share-things-ci-cd.yml
+   ```
+
+5. Commit changes
+   ```bash
+   git add -A
+   git commit -m "Clean up redundant files and backup directories"
+   git push origin master
+   ```
+
+## 6. Verification
+
+After completing the cleanup:
+
+1. Verify that the GitHub Actions workflow still runs correctly
+2. Ensure all documentation is consistent
+3. Confirm that no essential files were accidentally removed
+
+## 7. Future Recommendations
+
+1. Implement a more structured approach to backups
+2. Use git branches for experimental changes instead of creating backup directories
+3. Document the purpose of any backup files that need to be kept
+4. Regularly review and clean up temporary or backup files
+5. Consider implementing a .gitignore rule for temporary backup files

@@ -152,7 +152,11 @@ echo -e "${GREEN}Docker Compose test configuration created.${NC}"
 echo -e "${YELLOW}Cleaning up existing containers...${NC}"
 # Change to the root directory
 cd $(dirname "$0")/../..
-$DOCKER_COMPOSE_CMD -f build/config/docker-compose.test.yml down
+# Use absolute path for docker-compose.test.yml
+SCRIPT_DIR=$(dirname "$0")
+PROJECT_ROOT=$(cd "$SCRIPT_DIR/../.." && pwd)
+CONFIG_FILE="$PROJECT_ROOT/build/config/docker-compose.test.yml"
+$DOCKER_COMPOSE_CMD -f "$CONFIG_FILE" down
 echo -e "${GREEN}Cleanup complete.${NC}"
 
 # Build the containers
