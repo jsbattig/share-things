@@ -1,10 +1,6 @@
 # ShareThings
 
-[![Lint](https://img.shields.io/github/actions/workflow/status/jsbattig/share-things/share-things-ci-cd.yml?label=Lint&job=lint)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
-[![Build and Test](https://img.shields.io/github/actions/workflow/status/jsbattig/share-things/share-things-ci-cd.yml?label=Build%20and%20Test&job=build)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
-[![Integration Tests](https://img.shields.io/github/actions/workflow/status/jsbattig/share-things/share-things-ci-cd.yml?label=Integration%20Tests&job=integration)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
-[![Test Setup](https://img.shields.io/github/actions/workflow/status/jsbattig/share-things/share-things-ci-cd.yml?label=Test%20Setup&job=test-setup)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
-[![Deploy to Production](https://img.shields.io/github/actions/workflow/status/jsbattig/share-things/share-things-ci-cd.yml?label=Deploy%20to%20Production&job=deploy-production)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/jsbattig/share-things/share-things-ci-cd.yml?label=Build%20Status)](https://github.com/jsbattig/share-things/actions/workflows/share-things-ci-cd.yml)
 
 A real-time content sharing application with end-to-end encryption.
 
@@ -225,13 +221,15 @@ When working on this project, please refer to:
 
 ## Continuous Integration and Deployment
 
-ShareThings uses GitHub Actions for continuous integration and deployment:
+ShareThings uses GitHub Actions for continuous integration and deployment. The build status badge at the top of this README shows the overall status of the CI/CD pipeline, which includes:
 
 1. **Lint**: Runs linting checks on the codebase
 2. **Build and Test**: Builds the application and runs unit tests
 3. **Dockered Build and Tests**: Runs tests in Docker containers (Integration tests)
 4. **Test Setup**: Verifies the setup script works correctly in various scenarios
 5. **Deploy to Production**: Automatically deploys to the production server when all other workflows succeed
+
+The badge will show green only if all steps succeed, and red if any step fails. Click on the badge to see detailed status of each step.
 
 The deployment workflow uses a self-hosted runner on Rocky Linux to connect to the production server via SSH and run the update script.
 
