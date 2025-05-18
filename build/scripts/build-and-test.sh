@@ -159,8 +159,15 @@ echo -e "${GREEN}Cleanup complete.${NC}"
 echo -e "${YELLOW}Building containers...${NC}"
 # Add environment variable for rootless Podman
 export PODMAN_USERNS=keep-id
-# We're already in the root directory
-$DOCKER_COMPOSE_CMD -f build/config/docker-compose.test.yml build
+
+# Build the backend container directly with podman
+echo -e "${YELLOW}Building backend container...${NC}"
+podman build -t share-things-backend-test -f server/Dockerfile.test ./server
+
+# We'll use the node:18-alpine image for the frontend as specified in the docker-compose file
+echo -e "${YELLOW}Pulling frontend image...${NC}"
+podman pull node:18-alpine
+podman tag node:18-alpine share-things-frontend-test
 BUILD_EXIT_CODE=$?
 
 if [ $BUILD_EXIT_CODE -ne 0 ]; then
@@ -175,15 +182,16 @@ mkdir -p test-results
 
 # Run server unit tests
 echo -e "${YELLOW}Running server unit tests...${NC}"
-# We're already in the root directory
-$DOCKER_COMPOSE_CMD -f build/config/docker-compose.test.yml build backend
-$DOCKER_COMPOSE_CMD -f build/config/docker-compose.test.yml run --rm backend npm test
+# Run server unit tests directly with podman
+echo -e "${YELLOW}Running server unit tests...${NC}"
+podman run --rm --name share-things-backend-test -e NODE_ENV=test share-things-backend-test npm test
 SERVER_TEST_EXIT_CODE=$?
 
 # Ensure client has crypto-js installed
 echo -e "${YELLOW}Ensuring client has crypto-js installed...${NC}"
-# We're already in the root directory
-$DOCKER_COMPOSE_CMD -f build/config/docker-compose.test.yml run --rm frontend npm install crypto-js @types/crypto-js
+# Ensure client has crypto-js installed directly with podman
+echo -e "${YELLOW}Ensuring client has crypto-js installed...${NC}"
+podman run --rm --name share-things-frontend-test -v ./client:/app:Z -w /app share-things-frontend-test npm install crypto-js @types/crypto-js
 
 if [ $SERVER_TEST_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}Server unit tests passed.${NC}"
@@ -206,8 +214,9 @@ FUNCTIONAL_TEST_EXIT_CODE=0
 
 # Clean up
 echo -e "${YELLOW}Cleaning up containers...${NC}"
-# We're already in the root directory
-$DOCKER_COMPOSE_CMD -f build/config/docker-compose.test.yml down
+# Clean up containers
+echo -e "${YELLOW}Cleaning up containers...${NC}"
+podman rm -f share-things-backend-test share-things-frontend-test 2>/dev/null || true
 echo -e "${GREEN}Cleanup complete.${NC}"
 
 # Report results
