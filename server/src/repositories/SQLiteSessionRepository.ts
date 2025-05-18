@@ -2,7 +2,6 @@ import sqlite3 from 'sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { SessionRepository, SessionAuthRecord } from './SessionRepository';
-import { PassphraseFingerprint } from '../services/SessionManager';
 import { promisify } from 'util';
 
 /**
@@ -10,7 +9,7 @@ import { promisify } from 'util';
  */
 export class SQLiteSessionRepository implements SessionRepository {
   private db: sqlite3.Database | null = null;
-  private initialized: boolean = false;
+  private initialized = false;
   
   /**
    * Creates a new SQLite session repository
@@ -39,9 +38,10 @@ export class SQLiteSessionRepository implements SessionRepository {
       
       this.initialized = true;
       console.log(`SQLite session repository initialized at ${this.dbPath}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to initialize SQLite repository:', error);
-      throw new Error(`Database initialization failed: ${error.message || String(error)}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Database initialization failed: ${errorMessage}`);
     }
   }
   
@@ -68,7 +68,7 @@ export class SQLiteSessionRepository implements SessionRepository {
         return new Promise((resolve, reject) => {
           if (!this.db) return reject(new Error('Database not initialized'));
           
-          this.db.get('SELECT MAX(version) as version FROM schema_version', (err, row: any) => {
+          this.db.get('SELECT MAX(version) as version FROM schema_version', (err, row: { version?: number }) => {
             if (err) return reject(err);
             resolve(row?.version || 0);
           });
@@ -108,9 +108,10 @@ export class SQLiteSessionRepository implements SessionRepository {
       } else {
         console.log('Database schema is up to date');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error migrating schema:', error);
-      throw new Error(`Schema migration failed: ${error.message || String(error)}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Schema migration failed: ${errorMessage}`);
     }
   }
   
@@ -137,7 +138,13 @@ export class SQLiteSessionRepository implements SessionRepository {
       this.db.get(
         'SELECT * FROM sessions WHERE session_id = ?',
         [sessionId],
-        (err, row: any) => {
+        (err, row: {
+          session_id: string;
+          fingerprint_iv: Buffer;
+          fingerprint_data: Buffer;
+          created_at: string;
+          last_activity: string;
+        } | undefined) => {
           if (err) {
             console.error(`Error finding session ${sessionId}:`, err);
             return reject(new Error(`Error finding session ${sessionId}: ${err.message}`));
@@ -263,7 +270,13 @@ export class SQLiteSessionRepository implements SessionRepository {
       
       this.db.all(
         'SELECT * FROM sessions',
-        (err, rows: any[]) => {
+        (err, rows: {
+          session_id: string;
+          fingerprint_iv: Buffer;
+          fingerprint_data: Buffer;
+          created_at: string;
+          last_activity: string;
+        }[]) => {
           if (err) {
             console.error('Error finding all sessions:', err);
             return reject(new Error(`Error finding all sessions: ${err.message}`));
@@ -301,7 +314,7 @@ export class SQLiteSessionRepository implements SessionRepository {
       this.db.all(
         'SELECT session_id FROM sessions WHERE last_activity < ?',
         [cutoffTime],
-        (err, rows: any[]) => {
+        (err, rows: { session_id: string }[]) => {
           if (err) {
             console.error('Error finding expired sessions:', err);
             return reject(new Error(`Error finding expired sessions: ${err.message}`));

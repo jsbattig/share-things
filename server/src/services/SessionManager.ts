@@ -106,9 +106,10 @@ export class SessionManager {
       await this.loadSessionsFromRepository();
       
       console.log('Session manager initialized successfully');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to initialize session manager:', error);
-      throw new Error(`Session manager initialization failed: ${error.message || String(error)}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Session manager initialization failed: ${errorMessage}`);
     }
   }
   
@@ -121,9 +122,10 @@ export class SessionManager {
       console.log(`Loaded ${sessionRecords.length} sessions from repository`);
       
       // We don't need to create Session objects here since they'll be created when clients join
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error loading sessions from repository:', error);
-      throw new Error(`Error loading sessions from repository: ${error.message || String(error)}`);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Error loading sessions from repository: ${errorMessage}`);
     }
   }
   
@@ -217,7 +219,7 @@ export class SessionManager {
       console.log(`Updated clients in session: ${Array.from(session.clients.keys()).join(', ')}`);
       
       return { success: true, token };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(`Error joining session ${sessionId}:`, error);
       return { success: false, error: 'Internal server error' };
     }
@@ -274,7 +276,7 @@ export class SessionManager {
       }
       
       return true;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error(`Error removing client ${clientId} from session ${sessionId}:`, error);
       return false;
     }
@@ -356,7 +358,7 @@ export class SessionManager {
         
         console.log(`[SessionManager] Successfully removed expired session ${sessionId}`);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[SessionManager] Error cleaning up expired sessions:', error);
     }
   }
