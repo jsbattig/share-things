@@ -13,7 +13,6 @@ import {
   Text,
   useToast,
   VStack,
-  HStack,
   Icon,
   InputGroup,
   InputRightElement,
@@ -35,8 +34,7 @@ const HomePage: React.FC = () => {
   const [clientName, setClientName] = useState<string>('');
   const [passphrase, setPassphrase] = useState<string>('');
   const [showPassphrase, setShowPassphrase] = useState<boolean>(false);
-  const [isCreating, setIsCreating] = useState<boolean>(false);
-  const [isJoining, setIsJoining] = useState<boolean>(false);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   
   // Hooks
@@ -73,12 +71,12 @@ const HomePage: React.FC = () => {
   };
   
   /**
-   * Creates a new session
+   * Enters a session (creates if it doesn't exist, joins if it does)
    */
-  const createSession = async () => {
+  const enterSession = async () => {
     if (!validateForm()) return;
     
-    setIsCreating(true);
+    setIsProcessing(true);
     setError('');
     
     try {
@@ -93,36 +91,9 @@ const HomePage: React.FC = () => {
       // Navigate to session page
       navigate(`/session/${sessionId}`);
     } catch (error) {
-      console.error('Error creating session:', error);
-      setError(error instanceof Error ? error.message : 'Failed to create session');
-      setIsCreating(false);
-    }
-  };
-  
-  /**
-   * Joins an existing session
-   */
-  const joinExistingSession = async () => {
-    if (!validateForm()) return;
-    
-    setIsJoining(true);
-    setError('');
-    
-    try {
-      // Join session with Socket.IO
-      await joinSession(sessionId, clientName, passphrase);
-      
-      // Store session info in localStorage
-      localStorage.setItem('sessionId', sessionId);
-      localStorage.setItem('clientName', clientName);
-      localStorage.setItem('passphrase', passphrase);
-      
-      // Navigate to session page
-      navigate(`/session/${sessionId}`);
-    } catch (error) {
-      console.error('Error joining session:', error);
-      setError(error instanceof Error ? error.message : 'Failed to join session');
-      setIsJoining(false);
+      console.error('Error entering session:', error);
+      setError(error instanceof Error ? error.message : 'Failed to enter session');
+      setIsProcessing(false);
     }
   };
   
@@ -170,7 +141,7 @@ const HomePage: React.FC = () => {
   // Handle form submission (Enter key press)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    createSession();
+    enterSession();
   };
 
   return (
@@ -263,30 +234,17 @@ const HomePage: React.FC = () => {
                 The server never sees your unencrypted content.
               </Text>
               
-              <HStack spacing={4}>
-                <Button
-                  type="submit"
-                  colorScheme="blue"
-                  leftIcon={<FaShare />}
-                  onClick={createSession}
-                  isLoading={isCreating}
-                  loadingText="Creating..."
-                  flex={1}
-                >
-                  Create Session
-                </Button>
-                
-                <Button
-                  variant="outline"
-                  colorScheme="blue"
-                  onClick={joinExistingSession}
-                  isLoading={isJoining}
-                  loadingText="Joining..."
-                  flex={1}
-                >
-                  Join Session
-                </Button>
-              </HStack>
+              <Button
+                type="submit"
+                colorScheme="blue"
+                leftIcon={<FaShare />}
+                onClick={enterSession}
+                isLoading={isProcessing}
+                loadingText="Entering..."
+                width="100%"
+              >
+                Enter Session
+              </Button>
             </Stack>
           </form>
         </Box>
