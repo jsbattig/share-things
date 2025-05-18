@@ -96,7 +96,7 @@ EOL
 echo -e "${GREEN}Environment files created.${NC}"
 
 # Create docker-compose.test.yml
-cat > ../config/docker-compose.test.yml << EOL
+cat > $(dirname "$0")/../config/docker-compose.test.yml << EOL
 # Test configuration for ShareThings Docker Compose
 
 services:
@@ -150,14 +150,14 @@ echo -e "${GREEN}Docker Compose test configuration created.${NC}"
 
 # Clean up any existing containers
 echo -e "${YELLOW}Cleaning up existing containers...${NC}"
-$DOCKER_COMPOSE_CMD -f ../config/docker-compose.test.yml down
+$DOCKER_COMPOSE_CMD -f $(dirname "$0")/../config/docker-compose.test.yml down
 echo -e "${GREEN}Cleanup complete.${NC}"
 
 # Build the containers
 echo -e "${YELLOW}Building containers...${NC}"
 # Add environment variable for rootless Podman
 export PODMAN_USERNS=keep-id
-$DOCKER_COMPOSE_CMD -f ../config/docker-compose.test.yml build
+$DOCKER_COMPOSE_CMD -f $(dirname "$0")/../config/docker-compose.test.yml build
 BUILD_EXIT_CODE=$?
 
 if [ $BUILD_EXIT_CODE -ne 0 ]; then
@@ -172,13 +172,13 @@ mkdir -p test-results
 
 # Run server unit tests
 echo -e "${YELLOW}Running server unit tests...${NC}"
-$DOCKER_COMPOSE_CMD -f ../config/docker-compose.test.yml build backend
-$DOCKER_COMPOSE_CMD -f ../config/docker-compose.test.yml run --rm backend npm test
+$DOCKER_COMPOSE_CMD -f $(dirname "$0")/../config/docker-compose.test.yml build backend
+$DOCKER_COMPOSE_CMD -f $(dirname "$0")/../config/docker-compose.test.yml run --rm backend npm test
 SERVER_TEST_EXIT_CODE=$?
 
 # Ensure client has crypto-js installed
 echo -e "${YELLOW}Ensuring client has crypto-js installed...${NC}"
-$DOCKER_COMPOSE_CMD -f ../config/docker-compose.test.yml run --rm frontend npm install crypto-js @types/crypto-js
+$DOCKER_COMPOSE_CMD -f $(dirname "$0")/../config/docker-compose.test.yml run --rm frontend npm install crypto-js @types/crypto-js
 
 if [ $SERVER_TEST_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}Server unit tests passed.${NC}"
@@ -201,7 +201,7 @@ FUNCTIONAL_TEST_EXIT_CODE=0
 
 # Clean up
 echo -e "${YELLOW}Cleaning up containers...${NC}"
-$DOCKER_COMPOSE_CMD -f ../config/docker-compose.test.yml down
+$DOCKER_COMPOSE_CMD -f $(dirname "$0")/../config/docker-compose.test.yml down
 echo -e "${GREEN}Cleanup complete.${NC}"
 
 # Report results
