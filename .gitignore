@@ -46,3 +46,4 @@ logs
 *.log
 *.mjs
 /client/build/assets
+/test/e2e/functional/test/e2e/functional/.npm-cache
