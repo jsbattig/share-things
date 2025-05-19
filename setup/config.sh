@@ -236,10 +236,18 @@ capture_current_configuration() {
         HTTPS_ARG="false"
     fi
     
-    # Capture ports
-    FRONTEND_PORT_ARG=$(grep "FRONTEND_PORT=" .env | sed -E 's|FRONTEND_PORT=([0-9]+)|\1|')
-    BACKEND_PORT_ARG=$(grep "BACKEND_PORT=" .env | sed -E 's|BACKEND_PORT=([0-9]+)|\1|')
-    API_PORT_ARG=$(grep "API_PORT=" .env | sed -E 's|API_PORT=([0-9]+)|\1|')
+    # Capture ports with safer extraction
+    FRONTEND_PORT_LINE=$(grep "FRONTEND_PORT=" .env || echo "FRONTEND_PORT=15000")
+    BACKEND_PORT_LINE=$(grep "BACKEND_PORT=" .env || echo "BACKEND_PORT=15001")
+    API_PORT_LINE=$(grep "API_PORT=" .env || echo "API_PORT=15001")
+    
+    # Extract the port numbers with simpler pattern matching
+    FRONTEND_PORT_ARG=$(echo "$FRONTEND_PORT_LINE" | grep -o '[0-9]\+' || echo "15000")
+    BACKEND_PORT_ARG=$(echo "$BACKEND_PORT_LINE" | grep -o '[0-9]\+' || echo "15001")
+    API_PORT_ARG=$(echo "$API_PORT_LINE" | grep -o '[0-9]\+' || echo "15001")
+    
+    # Log the extracted values for debugging
+    log_info "Extracted ports: Frontend=$FRONTEND_PORT_ARG, Backend=$BACKEND_PORT_ARG, API=$API_PORT_ARG"
     
     # Capture production mode
     if [ -f build/config/podman-compose.prod.yml ] || [ -f build/config/podman-compose.prod.temp.yml ]; then

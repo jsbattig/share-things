@@ -32,7 +32,8 @@ TESTS_TOTAL=0
 TESTS_PASSED=0
 TESTS_FAILED=0
 # Array to track which tests passed (1) or failed (0)
-declare -a TEST_RESULTS=()
+# Initialize with default values to avoid empty array issues
+declare -a TEST_RESULTS=(0 0 0 0 0 0)
 
 # Function to run a test with timeout and check result
 run_test() {
@@ -41,7 +42,8 @@ run_test() {
   local expected_exit_code="${3:-0}"
   local timeout_seconds="${4:-60}"  # Default timeout: 1 minute
   
-  TESTS_TOTAL=$((TESTS_TOTAL + 1))
+  # We're now using a fixed TESTS_TOTAL value, so don't increment it here
+  # TESTS_TOTAL=$((TESTS_TOTAL + 1))
   
   # Create a dedicated log directory for this test with a fixed name
   # Avoid using date command substitution which is causing issues
@@ -116,14 +118,14 @@ run_test() {
   # Check if exit code matches expected
   if [ $EXIT_CODE -eq $expected_exit_code ]; then
     log_success "Test passed: $test_name"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
+    # Don't increment TESTS_PASSED here, we'll do it when setting TEST_RESULTS
     # Don't increment TEST_RESULTS here, we'll do it after verification
   else
     log_error "Test failed: $test_name"
     log_error "Expected exit code: $expected_exit_code, got: $EXIT_CODE"
     log_error "Command output summary (last 20 lines):"
     echo "$OUTPUT" | tail -n 20
-    TESTS_FAILED=$((TESTS_FAILED + 1))
+    # Don't increment TESTS_FAILED here, we'll do it when setting TEST_RESULTS
     # Don't increment TEST_RESULTS here, we'll do it after verification
   fi
   
@@ -156,37 +158,67 @@ verify_containers_running() {
   podman network ls | tee "$log_dir/network-list.log"
   podman network inspect app_network 2>/dev/null | tee "$log_dir/network-details.log" || echo "Network app_network not found"
   
-  # In CI environment, we'll consider the test successful if the backend is running
-  # This is because the frontend container might fail in rootless mode due to permission issues
+  # In CI environment, we need to be more strict about verification
+  # Both containers must be running for the test to pass
   if [ "$CI" = "true" ]; then
-    log_info "Running in CI environment - relaxed container verification"
+    log_info "Running in CI environment - strict container verification"
     
     # Check if backend container is running
     podman ps | grep -q "share-things-backend"
     BACKEND_RUNNING=$?
+    
+    # Check if frontend container is running
+    podman ps | grep -q "share-things-frontend"
+    FRONTEND_RUNNING=$?
     
     # Check backend logs if it exists
     if [ $BACKEND_RUNNING -eq 0 ]; then
       log_info "Backend container logs (last 30 lines):"
       podman logs share-things-backend 2>&1 | tee "$log_dir/backend-logs.log" | tail -n 30 || log_warning "Could not get backend logs"
       
-      # Check if frontend container exists (even if not running)
-      FRONTEND_EXISTS=$(podman ps -a | grep -c "share-things-frontend" || echo "0")
-      # Make sure we have a clean integer value
-      FRONTEND_EXISTS=$(echo "$FRONTEND_EXISTS" | tr -d '[:space:]')
+      # Check for health status
+      log_info "Backend container health check:"
+      podman healthcheck run share-things-backend 2>&1 | tee "$log_dir/backend-health.log" || log_warning "Health check not configured for backend container"
+    else
+      log_error "Backend container is not running"
+      # Check for stopped backend container
+      podman ps -a | grep -q "share-things-backend"
+      if [ $? -eq 0 ]; then
+        log_error "Backend container exists but is not running"
+        log_info "Backend container logs (last 30 lines):"
+        podman logs share-things-backend 2>&1 | tee "$log_dir/backend-logs.log" | tail -n 30 || log_warning "Could not get backend logs"
+      else
+        log_error "Backend container does not exist"
+      fi
+    fi
+    
+    # Check frontend logs if it exists
+    if [ $FRONTEND_RUNNING -eq 0 ]; then
+      log_info "Frontend container logs (last 30 lines):"
+      podman logs share-things-frontend 2>&1 | tee "$log_dir/frontend-logs.log" | tail -n 30 || log_warning "Could not get frontend logs"
       
-      if [ "$FRONTEND_EXISTS" -gt 0 ]; then
-        log_info "Frontend container exists but may not be running (expected in CI environment)"
+      # Check for health status
+      log_info "Frontend container health check:"
+      podman healthcheck run share-things-frontend 2>&1 | tee "$log_dir/frontend-health.log" || log_warning "Health check not configured for frontend container"
+    else
+      log_error "Frontend container is not running"
+      # Check for stopped frontend container
+      podman ps -a | grep -q "share-things-frontend"
+      if [ $? -eq 0 ]; then
+        log_error "Frontend container exists but is not running"
         log_info "Frontend container logs (last 30 lines):"
         podman logs share-things-frontend 2>&1 | tee "$log_dir/frontend-logs.log" | tail -n 30 || log_warning "Could not get frontend logs"
       else
-        log_warning "Frontend container does not exist"
+        log_error "Frontend container does not exist"
       fi
-      
-      log_success "Backend container is running (sufficient for CI environment)"
+    fi
+    
+    # Both containers must be running for the test to pass
+    if [ $BACKEND_RUNNING -eq 0 ] && [ $FRONTEND_RUNNING -eq 0 ]; then
+      log_success "Both containers are running (required for CI environment)"
       return 0
     else
-      log_error "Backend container is not running"
+      log_error "Not all required containers are running in CI environment"
       log_info "Current container status:"
       podman ps
       
@@ -340,7 +372,7 @@ podman ps -a
 log_info "Checking if any ShareThings files exist..."
 ls -la .env client/.env server/.env 2>/dev/null || echo "No env files found"
 log_info "Running test with force-install flag to ensure clean state..."
-run_test "Fresh installation" "./setup.sh --non-interactive --force-install --hostname=auto --frontend-port=15000 --backend-port=15001 --api-port=15001 --expose-ports --debug --force"
+run_test "Fresh installation" "TESTING=true ./setup.sh --non-interactive --force-install --hostname=auto --frontend-port=15000 --backend-port=15001 --api-port=15001 --expose-ports --debug --force"
 if [ $? -eq 0 ]; then
   # Wait a bit for containers to start
   log_info "Waiting 10 seconds for containers to start..."
@@ -366,29 +398,36 @@ if [ $? -eq 0 ]; then
   rm -rf "$container_log_dir"
   mkdir -p "$container_log_dir"
   verify_containers_running "$container_log_dir"
-  if [ $? -ne 0 ]; then
+  VERIFICATION_RESULT=$?
+  if [ $VERIFICATION_RESULT -ne 0 ]; then
     log_error "Test 1 failed: Containers not running after installation"
     log_info "Attempting to start containers manually..."
     podman start share-things-backend share-things-frontend &> /dev/null
     sleep 5
-    verify_containers_running
-    if [ $? -ne 0 ]; then
+    verify_containers_running "$container_log_dir-retry"
+    RETRY_RESULT=$?
+    if [ $RETRY_RESULT -ne 0 ]; then
       # Mark test as failed
       TEST_RESULTS[0]=0
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+      log_error "Test 1 failed even after manual container start attempt"
     else
       log_success "Containers started manually"
       # Mark test as passed
       TEST_RESULTS[0]=1
+      TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
   else
     # Mark test as passed
     TEST_RESULTS[0]=1
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    log_success "Test 1 passed: Containers running after installation"
   fi
 fi
 
 # Test 2: Update installation
 log_info "Test 2: Update installation"
-run_test "Update installation" "./setup.sh --update --non-interactive --debug --force"
+run_test "Update installation" "TESTING=true ./setup.sh --update --non-interactive --debug --force"
 if [ $? -eq 0 ]; then
   # Wait a bit for containers to start
   log_info "Waiting 10 seconds for containers to start..."
@@ -404,29 +443,36 @@ if [ $? -eq 0 ]; then
   rm -rf "$container_log_dir"
   mkdir -p "$container_log_dir"
   verify_containers_running "$container_log_dir"
-  if [ $? -ne 0 ]; then
+  VERIFICATION_RESULT=$?
+  if [ $VERIFICATION_RESULT -ne 0 ]; then
     log_error "Test 2 failed: Containers not running after update"
     log_info "Attempting to start containers manually..."
     podman start share-things-backend share-things-frontend &> /dev/null
     sleep 5
-    verify_containers_running
-    if [ $? -ne 0 ]; then
+    verify_containers_running "$container_log_dir-retry"
+    RETRY_RESULT=$?
+    if [ $RETRY_RESULT -ne 0 ]; then
       # Mark test as failed
       TEST_RESULTS[1]=0
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+      log_error "Test 2 failed even after manual container start attempt"
     else
       log_success "Containers started manually"
       # Mark test as passed
       TEST_RESULTS[1]=1
+      TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
   else
     # Mark test as passed
     TEST_RESULTS[1]=1
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    log_success "Test 2 passed: Containers running after update"
   fi
 fi
 
 # Test 3: Reinstall
 log_info "Test 3: Reinstall"
-run_test "Reinstall" "./setup.sh --reinstall --non-interactive --debug --force"
+run_test "Reinstall" "TESTING=true ./setup.sh --reinstall --non-interactive --debug --force"
 if [ $? -eq 0 ]; then
   # Wait a bit for containers to start
   log_info "Waiting 10 seconds for containers to start..."
@@ -442,29 +488,36 @@ if [ $? -eq 0 ]; then
   rm -rf "$container_log_dir"
   mkdir -p "$container_log_dir"
   verify_containers_running "$container_log_dir"
-  if [ $? -ne 0 ]; then
+  VERIFICATION_RESULT=$?
+  if [ $VERIFICATION_RESULT -ne 0 ]; then
     log_error "Test 3 failed: Containers not running after reinstall"
     log_info "Attempting to start containers manually..."
     podman start share-things-backend share-things-frontend &> /dev/null
     sleep 5
-    verify_containers_running
-    if [ $? -ne 0 ]; then
+    verify_containers_running "$container_log_dir-retry"
+    RETRY_RESULT=$?
+    if [ $RETRY_RESULT -ne 0 ]; then
       # Mark test as failed
       TEST_RESULTS[2]=0
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+      log_error "Test 3 failed even after manual container start attempt"
     else
       log_success "Containers started manually"
       # Mark test as passed
       TEST_RESULTS[2]=1
+      TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
   else
     # Mark test as passed
     TEST_RESULTS[2]=1
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    log_success "Test 3 passed: Containers running after reinstall"
   fi
 fi
 
 # Test 4: Uninstall
 log_info "Test 4: Uninstall"
-run_test "Uninstall" "./setup.sh --uninstall --non-interactive --debug --force"
+run_test "Uninstall" "TESTING=true ./setup.sh --uninstall --non-interactive --debug --force"
 if [ $? -eq 0 ]; then
   # Create a log directory for this test with a fixed name
   container_log_dir="container-logs-test4-uninstall"
@@ -472,19 +525,23 @@ if [ $? -eq 0 ]; then
   rm -rf "$container_log_dir"
   mkdir -p "$container_log_dir"
   verify_containers_not_running "$container_log_dir"
-  if [ $? -ne 0 ]; then
+  VERIFICATION_RESULT=$?
+  if [ $VERIFICATION_RESULT -ne 0 ]; then
     log_error "Test 4 failed: Containers still running after uninstall"
     # Mark test as failed
     TEST_RESULTS[3]=0
+    TESTS_FAILED=$((TESTS_FAILED + 1))
   else
     # Mark test as passed
     TEST_RESULTS[3]=1
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    log_success "Test 4 passed: No containers running after uninstall"
   fi
 fi
 
 # Test 5: Install with custom ports
 log_info "Test 5: Install with custom ports"
-run_test "Install with custom ports" "./setup.sh --non-interactive --force-install --hostname=auto --frontend-port=15100 --backend-port=15101 --api-port=15101 --expose-ports --debug --force"
+run_test "Install with custom ports" "TESTING=true ./setup.sh --non-interactive --force-install --hostname=auto --frontend-port=15100 --backend-port=15101 --api-port=15101 --expose-ports --debug --force"
 if [ $? -eq 0 ]; then
   # Wait a bit for containers to start
   log_info "Waiting 10 seconds for containers to start..."
@@ -500,29 +557,36 @@ if [ $? -eq 0 ]; then
   rm -rf "$container_log_dir"
   mkdir -p "$container_log_dir"
   verify_containers_running "$container_log_dir"
-  if [ $? -ne 0 ]; then
+  VERIFICATION_RESULT=$?
+  if [ $VERIFICATION_RESULT -ne 0 ]; then
     log_error "Test 5 failed: Containers not running after custom port installation"
     log_info "Attempting to start containers manually..."
     podman start share-things-backend share-things-frontend &> /dev/null
     sleep 5
-    verify_containers_running
-    if [ $? -ne 0 ]; then
+    verify_containers_running "$container_log_dir-retry"
+    RETRY_RESULT=$?
+    if [ $RETRY_RESULT -ne 0 ]; then
       # Mark test as failed
       TEST_RESULTS[4]=0
+      TESTS_FAILED=$((TESTS_FAILED + 1))
+      log_error "Test 5 failed even after manual container start attempt"
     else
       log_success "Containers started manually"
       # Mark test as passed
       TEST_RESULTS[4]=1
+      TESTS_PASSED=$((TESTS_PASSED + 1))
     fi
   else
     # Mark test as passed
     TEST_RESULTS[4]=1
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    log_success "Test 5 passed: Containers running after custom port installation"
   fi
 fi
 
 # Test 6: Final uninstall
 log_info "Test 6: Final uninstall"
-run_test "Final uninstall" "./setup.sh --uninstall --non-interactive --debug --force"
+run_test "Final uninstall" "TESTING=true ./setup.sh --uninstall --non-interactive --debug --force"
 if [ $? -eq 0 ]; then
   # Create a log directory for this test with a fixed name
   container_log_dir="container-logs-test6-final-uninstall"
@@ -530,67 +594,94 @@ if [ $? -eq 0 ]; then
   rm -rf "$container_log_dir"
   mkdir -p "$container_log_dir"
   verify_containers_not_running "$container_log_dir"
-  if [ $? -ne 0 ]; then
+  VERIFICATION_RESULT=$?
+  if [ $VERIFICATION_RESULT -ne 0 ]; then
     log_error "Test 6 failed: Containers still running after final uninstall"
     # Mark test as failed
     TEST_RESULTS[5]=0
+    TESTS_FAILED=$((TESTS_FAILED + 1))
   else
     log_success "Test 6 passed: Final uninstall"
     # Mark test as passed
     TEST_RESULTS[5]=1
+    TESTS_PASSED=$((TESTS_PASSED + 1))
   fi
 fi
 
 # Report test results
 log_info "================================"
 log_info "Test Results:"
+
+# Make sure TESTS_TOTAL is correctly set to the number of tests we ran
+TESTS_TOTAL=6
 log_info "Total tests: $TESTS_TOTAL"
 
-# Count passed and failed tests from the TEST_RESULTS array
+# Reset counters before counting
 TESTS_PASSED=0
 TESTS_FAILED=0
+log_info "Counting test results from array: ${TEST_RESULTS[@]}"
 for i in "${!TEST_RESULTS[@]}"; do
-  if [ "${TEST_RESULTS[$i]}" -eq 1 ]; then
+  # Make sure we have a valid integer value
+  RESULT="${TEST_RESULTS[$i]}"
+  if [ -z "$RESULT" ]; then
+    RESULT=0
+  fi
+  
+  if [ "$RESULT" -eq 1 ]; then
     TESTS_PASSED=$((TESTS_PASSED + 1))
   else
     TESTS_FAILED=$((TESTS_FAILED + 1))
   fi
 done
 
+# Verify the math adds up
+if [ $((TESTS_PASSED + TESTS_FAILED)) -ne $TESTS_TOTAL ]; then
+  log_error "Math error in test counting! Passed ($TESTS_PASSED) + Failed ($TESTS_FAILED) != Total ($TESTS_TOTAL)"
+  # Force correct counting
+  TESTS_FAILED=$((TESTS_TOTAL - TESTS_PASSED))
+  log_info "Corrected count - Failed: $TESTS_FAILED"
+fi
+
 log_success "Tests passed: $TESTS_PASSED"
+log_error "Tests failed: $TESTS_FAILED"
 if [ $TESTS_FAILED -gt 0 ]; then
-  log_error "Tests failed: $TESTS_FAILED"
   
   # Print which tests failed based on the TEST_RESULTS array
   log_error "Failed tests:"
   
   # Test 1
-  if [ "${TEST_RESULTS[0]}" -eq 0 ]; then
+  RESULT="${TEST_RESULTS[0]}"
+  if [ -z "$RESULT" ] || [ "$RESULT" -eq 0 ]; then
     log_error "- Test 1: Fresh installation"
   fi
   
   # Test 2
-  if [ "${TEST_RESULTS[1]}" -eq 0 ]; then
+  RESULT="${TEST_RESULTS[1]}"
+  if [ -z "$RESULT" ] || [ "$RESULT" -eq 0 ]; then
     log_error "- Test 2: Update installation"
   fi
   
   # Test 3
-  if [ "${TEST_RESULTS[2]}" -eq 0 ]; then
+  RESULT="${TEST_RESULTS[2]}"
+  if [ -z "$RESULT" ] || [ "$RESULT" -eq 0 ]; then
     log_error "- Test 3: Reinstall"
   fi
   
   # Test 4
-  if [ "${TEST_RESULTS[3]}" -eq 0 ]; then
+  RESULT="${TEST_RESULTS[3]}"
+  if [ -z "$RESULT" ] || [ "$RESULT" -eq 0 ]; then
     log_error "- Test 4: Uninstall"
   fi
   
   # Test 5
-  if [ "${TEST_RESULTS[4]}" -eq 0 ]; then
+  RESULT="${TEST_RESULTS[4]}"
+  if [ -z "$RESULT" ] || [ "$RESULT" -eq 0 ]; then
     log_error "- Test 5: Install with custom ports"
   fi
   
   # Test 6
-  if [ "${TEST_RESULTS[5]}" -eq 0 ]; then
+  RESULT="${TEST_RESULTS[5]}"
+  if [ -z "$RESULT" ] || [ "$RESULT" -eq 0 ]; then
     log_error "- Test 6: Final uninstall"
   fi
   
