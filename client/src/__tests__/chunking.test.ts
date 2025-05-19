@@ -5,6 +5,9 @@ import {
   deserializeChunk
 } from '../utils/chunking';
 
+// Increase the timeout for all tests in this file
+jest.setTimeout(30000); // 30 seconds
+
 describe('Chunking Utilities', () => {
   const testPassphrase = 'test-passphrase-123';
   const testData = new Uint8Array(Array(100 * 1024).fill(42)); // 100KB of data

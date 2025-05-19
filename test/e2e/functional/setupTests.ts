@@ -1,3 +1,12 @@
+// Add XMLHttpRequest mock for blob-polyfill
+if (typeof global.XMLHttpRequest === 'undefined') {
+  global.XMLHttpRequest = class XMLHttpRequest {
+    open() {}
+    send() {}
+    setRequestHeader() {}
+  } as any;
+}
+
 import 'blob-polyfill';
 
 // Enhanced mock for Web Crypto API in test environment

@@ -6,7 +6,6 @@
 export function formatFileSize(bytes: number | undefined): string {
   // Check if bytes is valid
   if (bytes === undefined || bytes === null || isNaN(bytes)) {
-    console.warn(`Invalid size value: ${bytes}`);
     return '0 Bytes'; // Return fallback value
   }
   
@@ -19,7 +18,6 @@ export function formatFileSize(bytes: number | undefined): string {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   } catch (error) {
-    console.error('Error formatting file size:', error);
     return '0 Bytes'; // Return fallback value on error
   }
 }
@@ -32,7 +30,6 @@ export function formatFileSize(bytes: number | undefined): string {
 export function formatDate(timestamp: number | undefined): string {
   // Check if timestamp is valid
   if (timestamp === undefined || timestamp === null || isNaN(timestamp)) {
-    console.warn(`Invalid timestamp value: ${timestamp}`);
     return formatTime(new Date()); // Return current time as fallback
   }
   
@@ -40,7 +37,6 @@ export function formatDate(timestamp: number | undefined): string {
   
   // Check if date is valid
   if (isNaN(date.getTime())) {
-    console.warn(`Invalid date created from timestamp: ${timestamp}`);
     return formatTime(new Date()); // Return current time as fallback
   }
   

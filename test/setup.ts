@@ -266,20 +266,6 @@ class DragEventMock extends Event {
 // Add DragEvent constructor to global
 global.DragEvent = DragEventMock as any;
 
-// Add File constructor to global if not present
-if (!global.File) {
-  global.File = class File extends Blob {
-    name: string;
-    lastModified: number;
-    
-    constructor(bits: BlobPart[], name: string, options?: FilePropertyBag) {
-      super(bits, options);
-      this.name = name;
-      this.lastModified = options?.lastModified || Date.now();
-    }
-  } as any;
-}
-
 // Add Blob constructor to global if not present
 if (!global.Blob) {
   global.Blob = class Blob {
@@ -301,6 +287,20 @@ if (!global.Blob) {
     
     slice(start?: number, end?: number, contentType?: string): Blob {
       return new Blob([], { type: contentType });
+    }
+  } as any;
+}
+
+// Add File constructor to global if not present
+if (!global.File) {
+  global.File = class File extends Blob {
+    name: string;
+    lastModified: number;
+    
+    constructor(bits: BlobPart[], name: string, options?: FilePropertyBag) {
+      super(bits, options);
+      this.name = name;
+      this.lastModified = options?.lastModified || Date.now();
     }
   } as any;
 }

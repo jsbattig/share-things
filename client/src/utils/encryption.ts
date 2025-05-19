@@ -22,8 +22,6 @@ interface CryptoKey {
  */
 export async function deriveKeyFromPassphrase(passphrase: string): Promise<CryptoKey> {
   try {
-    console.log('Deriving key from passphrase using CryptoJS');
-    
     // Use a fixed salt for deterministic key derivation
     const salt = CryptoJS.enc.Utf8.parse('ShareThings-Salt-2025');
     
@@ -43,7 +41,6 @@ export async function deriveKeyFromPassphrase(passphrase: string): Promise<Crypt
       extractable: true
     };
   } catch (error) {
-    console.error('Error deriving key from passphrase:', error);
     throw new Error(`Failed to derive key: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
@@ -56,8 +53,6 @@ export async function deriveKeyFromPassphrase(passphrase: string): Promise<Crypt
  */
 async function generateDeterministicIV(passphrase: string, data: ArrayBuffer | Uint8Array): Promise<Uint8Array> {
   try {
-    console.log('Generating deterministic IV using CryptoJS');
-    
     // Convert data to array
     const dataArray = new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer);
     
@@ -95,7 +90,6 @@ async function generateDeterministicIV(passphrase: string, data: ArrayBuffer | U
     
     return hashBytes.slice(0, 12);
   } catch (error) {
-    console.error('Error generating deterministic IV:', error);
     throw new Error(`Failed to generate IV: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
@@ -113,8 +107,6 @@ export async function encryptData(
   passphrase: string
 ): Promise<{ encryptedData: ArrayBuffer; iv: Uint8Array }> {
   try {
-    console.log('Encrypting data using CryptoJS');
-    
     // Generate IV
     const iv = await generateDeterministicIV(passphrase, data);
     
@@ -164,7 +156,6 @@ export async function encryptData(
     
     return { encryptedData: encryptedBytes.buffer, iv };
   } catch (error) {
-    console.error('Error encrypting data:', error);
     throw new Error(`Encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
@@ -184,8 +175,7 @@ export interface PassphraseFingerprint {
 
 export async function generateFingerprint(passphrase: string): Promise<PassphraseFingerprint> {
   try {
-    console.log('Generating fingerprint using CryptoJS');
-    
+
     // Use a fixed IV for fingerprint generation
     const fixedIv = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     
@@ -212,7 +202,6 @@ export async function generateFingerprint(passphrase: string): Promise<Passphras
       data: Array.from(dataBytes)
     };
   } catch (error) {
-    console.error('Error generating fingerprint:', error);
     throw new Error(`Failed to generate fingerprint: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
@@ -230,8 +219,6 @@ export async function decryptData(
   iv: Uint8Array
 ): Promise<ArrayBuffer> {
   try {
-    console.log('Decrypting data using CryptoJS');
-    
     // Convert encryptedData to WordArray
     const encryptedArray = new Uint8Array(encryptedData instanceof ArrayBuffer ? encryptedData : encryptedData.buffer);
     const encryptedWords = [];
@@ -289,7 +276,6 @@ export async function decryptData(
     
     return decryptedBytes.buffer;
   } catch (error) {
-    console.error('Error decrypting data:', error);
     throw new Error(`Decryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
@@ -330,7 +316,6 @@ export async function encryptText(
     
     return { encryptedText, iv: ivBase64 };
   } catch (error) {
-    console.error('Error encrypting text:', error);
     throw new Error(`Text encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
@@ -378,7 +363,6 @@ export async function decryptText(
     
     return text;
   } catch (error) {
-    console.error('Error decrypting text:', error);
     throw new Error(`Text decryption failed: ${error instanceof Error ? error.message : 'Wrong passphrase or corrupted data'}`);
   }
 }
@@ -408,7 +392,6 @@ export async function encryptBlob(
     
     return { encryptedBlob, iv };
   } catch (error) {
-    console.error('Error encrypting blob:', error);
     throw new Error(`Blob encryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
@@ -442,7 +425,6 @@ export async function decryptBlob(
     
     return decryptedBlob;
   } catch (error) {
-    console.error('Error decrypting blob:', error);
     throw new Error(`Blob decryption failed: ${error instanceof Error ? error.message : 'Wrong passphrase or corrupted data'}`);
   }
 }
