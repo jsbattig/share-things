@@ -2,6 +2,10 @@
 
 # Container management functions for ShareThings setup scripts
 
+# Always use the private registry URL
+# This registry is accessible both internally and externally
+REGISTRY_URL="linner.ddns.net:4443/docker.io.proxy"
+
 # Stop and remove containers
 stop_containers() {
     log_info "Stopping running containers..."
@@ -186,9 +190,9 @@ build_and_start_containers() {
         # Create a temporary docker-compose file for production without volume mounts
         mkdir -p build/config
         
-        # Get absolute paths to server and client directories
-        SERVER_DIR="$(cd "$REPO_ROOT/server" 2>/dev/null && pwd || echo "/home/jsbattig/Dev/share-things/server")"
-        CLIENT_DIR="$(cd "$REPO_ROOT/client" 2>/dev/null && pwd || echo "/home/jsbattig/Dev/share-things/client")"
+        # Use relative paths to server and client directories
+        SERVER_DIR="$REPO_ROOT/server"
+        CLIENT_DIR="$REPO_ROOT/client"
         
         # Create the production compose file using a here document
         cat > build/config/podman-compose.prod.temp.yml << EOF
@@ -287,6 +291,13 @@ EOF
             podman-compose -f "$ABSOLUTE_PROD_COMPOSE_PATH" build --no-cache
         fi
         
+        # Check if build was successful
+        if [ $? -ne 0 ]; then
+            log_error "Container build failed in production mode"
+            log_error "Cannot continue with installation. Please fix the build errors and try again."
+            exit 1
+        fi
+        
         log_info "Starting containers in production mode with ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}"
         
         # For podman-compose, we need to explicitly pass the environment variables
@@ -333,9 +344,9 @@ EOF
         log_info "Using config directory: $CONFIG_DIR"
         log_info "Using compose file path: $DEV_COMPOSE_PATH"
         
-        # Get absolute paths to server and client directories
-        SERVER_DIR="$(cd "$REPO_ROOT/server" 2>/dev/null && pwd || echo "/home/jsbattig/Dev/share-things/server")"
-        CLIENT_DIR="$(cd "$REPO_ROOT/client" 2>/dev/null && pwd || echo "/home/jsbattig/Dev/share-things/client")"
+        # Use relative paths to server and client directories
+        SERVER_DIR="$REPO_ROOT/server"
+        CLIENT_DIR="$REPO_ROOT/client"
         
         # Create the development compose file using a here document
         cat > "$DEV_COMPOSE_PATH" << EOF
@@ -449,7 +460,8 @@ EOF
         
         if [ $BUILD_EXIT_CODE -ne 0 ]; then
             log_error "Container build failed with exit code $BUILD_EXIT_CODE"
-            log_info "Attempting to continue with existing images..."
+            log_error "Cannot continue with installation. Please fix the build errors and try again."
+            exit 1
         else
             log_success "Container build completed successfully"
         fi

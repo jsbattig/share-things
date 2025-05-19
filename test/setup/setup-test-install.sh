@@ -32,6 +32,9 @@ else
   REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 fi
 
+# Export REPO_ROOT so it's available to all scripts
+export REPO_ROOT
+
 echo "Repository root: $REPO_ROOT"
 echo "Current working directory: $(pwd)"
 echo "Files in current directory:"
@@ -140,6 +143,12 @@ if [ "$CI" = "true" ]; then
   # Set appropriate permissions
   log_info "Setting appropriate permissions"
   chmod -R 755 build
+  
+  # Copy the CI-specific podman-compose file if it exists
+  if [ -f "$REPO_ROOT/build/config/podman-compose.test.ci.yml" ]; then
+    log_info "Using CI-specific podman-compose configuration"
+    cp "$REPO_ROOT/build/config/podman-compose.test.ci.yml" "$REPO_ROOT/build/config/podman-compose.yml"
+  fi
 fi
 
 # Do a full installation test

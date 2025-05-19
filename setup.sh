@@ -7,6 +7,10 @@
 # Script name for logging
 SCRIPT_NAME=$(basename "$0")
 
+# Determine repository root
+REPO_ROOT=$(dirname "$(readlink -f "$0")")
+export REPO_ROOT
+
 # Default values
 INSTALL_MODE="install"
 NON_INTERACTIVE="false"
