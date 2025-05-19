@@ -1,3 +1,4 @@
+# Standard test configuration for ShareThings with host networking
 version: '3'
 services:
   frontend:
@@ -8,7 +9,26 @@ services:
     restart: always
     environment:
       - PORT=15000
-    command: ["sh", "-c", "mkdir -p /usr/share/nginx/html/health && echo '{\"status\":\"ok\"}' > /usr/share/nginx/html/health/index.json && nginx -g 'daemon off;'"]
+    # Create a custom nginx.conf that listens on port 15000 instead of 80
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /usr/share/nginx/html/health &&
+        echo '{"status":"ok"}' > /usr/share/nginx/html/health/index.json &&
+        echo 'server {
+          listen 15000;
+          server_name localhost;
+          location / {
+            root /usr/share/nginx/html;
+            index index.html index.htm;
+          }
+          location /health {
+            default_type application/json;
+            return 200 "{\"status\":\"ok\"}";
+          }
+        }' > /etc/nginx/conf.d/default.conf &&
+        nginx -g 'daemon off;'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:15000/health"]
       interval: 5s

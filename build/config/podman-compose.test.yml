@@ -1,4 +1,4 @@
-# Test configuration for ShareThings Docker Compose
+# Test configuration for ShareThings with host networking
 
 services:
   backend:
@@ -6,43 +6,27 @@ services:
       context: ./server
       dockerfile: Dockerfile.test
     container_name: share-things-backend-test
-    hostname: backend
+    network_mode: "host"  # Use host networking instead of bridge
     environment:
       - NODE_ENV=test
-    ports:
-      - "${BACKEND_PORT}:3001"
+      - PORT=15001
     volumes:
       - ./data:/app/data:Z  # Mount data directory for SQLite database persistence
-    networks:
-      app_network:
-        aliases:
-          - backend
 
   # Use a simple Node.js container for the frontend instead of a multi-stage build
   frontend:
     image: linner.ddns.net:4443/docker.io.proxy/node:18-alpine
     container_name: share-things-frontend-test
-    hostname: frontend
+    network_mode: "host"  # Use host networking instead of bridge
     working_dir: /app
     volumes:
       - ./client:/app:Z
     environment:
-      - VITE_API_URL=http://backend:3001
-      - VITE_SOCKET_URL=http://backend:3001
+      - VITE_API_URL=http://localhost:15001
+      - VITE_SOCKET_URL=http://localhost:15001
       - VITE_ENABLE_ANALYTICS=false
       - VITE_ENABLE_LOGGING=true
-    ports:
-      - "${FRONTEND_PORT}:3000"
-    depends_on:
-      - backend
-    networks:
-      app_network:
-        aliases:
-          - frontend
-    command: sh -c "npm install && npm run preview -- --host 0.0.0.0 --port 3000"
+      - PORT=15000
+    command: sh -c "npm install && npm run preview -- --host 0.0.0.0 --port 15000"
 
-
-# Explicit network configuration
-networks:
-  app_network:
-    driver: bridge
+# No networks needed with host networking

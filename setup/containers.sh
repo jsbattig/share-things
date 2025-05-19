@@ -194,7 +194,8 @@ build_and_start_containers() {
         SERVER_DIR="$REPO_ROOT/server"
         CLIENT_DIR="$REPO_ROOT/client"
         
-        # Create the production compose file using a here document
+        # Create the production compose file with host networking
+        log_info "Creating production compose file with host networking..."
         cat > build/config/podman-compose.prod.temp.yml << EOF
 # Temporary production configuration for ShareThings Podman Compose
 
@@ -206,17 +207,11 @@ services:
       args:
         - PORT=${API_PORT:-15001}
     container_name: share-things-backend
-    hostname: backend
+    network_mode: "host"  # Use host networking instead of bridge
     environment:
       - NODE_ENV=production
       - PORT=${API_PORT:-15001}
-    ports:
-      - "${BACKEND_PORT:-15001}:${API_PORT:-15001}"
     restart: always
-    networks:
-      app_network:
-        aliases:
-          - backend
     logging:
       driver: "json-file"
       options:
@@ -233,27 +228,37 @@ services:
         - API_PORT=${API_PORT:-15001}
         - VITE_API_PORT=${API_PORT:-15001}
     container_name: share-things-frontend
+    network_mode: "host"  # Use host networking instead of bridge
     environment:
       - API_PORT=${API_PORT:-15001}
-    ports:
-      - "${FRONTEND_PORT:-15000}:80"
+    # Create a custom nginx.conf that listens on port 15000 instead of 80
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /usr/share/nginx/html/health &&
+        echo '{"status":"ok"}' > /usr/share/nginx/html/health/index.json &&
+        echo 'server {
+          listen 15000;
+          server_name localhost;
+          location / {
+            root /usr/share/nginx/html;
+            index index.html index.htm;
+          }
+          location /health {
+            default_type application/json;
+            return 200 "{\"status\":\"ok\"}";
+          }
+        }' > /etc/nginx/conf.d/default.conf &&
+        nginx -g 'daemon off;'
     restart: always
-    depends_on:
-      - backend
-    networks:
-      app_network:
-        aliases:
-          - frontend
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
 
-# Explicit network configuration
-networks:
-  app_network:
-    driver: bridge
+# No networks needed with host networking
 
 # Named volumes for node_modules
 volumes:
@@ -348,7 +353,8 @@ EOF
         SERVER_DIR="$REPO_ROOT/server"
         CLIENT_DIR="$REPO_ROOT/client"
         
-        # Create the development compose file using a here document
+        # Create the development compose file with host networking
+        log_info "Creating development compose file with host networking..."
         cat > "$DEV_COMPOSE_PATH" << EOF
 # Temporary development configuration for ShareThings Podman Compose
 
@@ -360,17 +366,11 @@ services:
       args:
         - PORT=${API_PORT:-15001}
     container_name: share-things-backend
-    hostname: backend
+    network_mode: "host"  # Use host networking instead of bridge
     environment:
       - NODE_ENV=development
       - PORT=${API_PORT:-15001}
-    ports:
-      - "${BACKEND_PORT:-15001}:${API_PORT:-15001}"
     restart: always
-    networks:
-      app_network:
-        aliases:
-          - backend
     logging:
       driver: "json-file"
       options:
@@ -387,27 +387,37 @@ services:
         - API_PORT=${API_PORT:-15001}
         - VITE_API_PORT=${API_PORT:-15001}
     container_name: share-things-frontend
+    network_mode: "host"  # Use host networking instead of bridge
     environment:
       - API_PORT=${API_PORT:-15001}
-    ports:
-      - "${FRONTEND_PORT:-15000}:80"
+    # Create a custom nginx.conf that listens on port 15000 instead of 80
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /usr/share/nginx/html/health &&
+        echo '{"status":"ok"}' > /usr/share/nginx/html/health/index.json &&
+        echo 'server {
+          listen 15000;
+          server_name localhost;
+          location / {
+            root /usr/share/nginx/html;
+            index index.html index.htm;
+          }
+          location /health {
+            default_type application/json;
+            return 200 "{\"status\":\"ok\"}";
+          }
+        }' > /etc/nginx/conf.d/default.conf &&
+        nginx -g 'daemon off;'
     restart: always
-    depends_on:
-      - backend
-    networks:
-      app_network:
-        aliases:
-          - frontend
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
 
-# Explicit network configuration
-networks:
-  app_network:
-    driver: bridge
+# No networks needed with host networking
 
 # Named volumes for node_modules
 volumes:
