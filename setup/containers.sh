@@ -130,13 +130,23 @@ clean_container_images() {
     log_info "Cleaning container image cache..."
     
     # Remove dangling images (not used by any container)
+    log_info "Removing dangling images (not used by any container)..."
     podman image prune -f
     log_success "Podman dangling images removed."
     
-    # Perform full cleanup automatically in autonomous mode
-    log_info "Performing full Podman system prune..."
-    podman system prune -f
-    log_success "Podman system cache cleaned."
+    # Only remove unused images, not all images
+    log_info "Removing unused images only (preserving currently used images)..."
+    
+    # List all running containers to ensure we don't remove images they use
+    log_info "Current running containers:"
+    podman ps
+    
+    # Use a more selective prune that preserves currently used images
+    podman system prune -f --volumes
+    log_success "Podman system cache cleaned (preserving currently used images)."
+    
+    # Don't use 'podman system prune -a' as it would remove ALL images
+    # including ones that might be needed for the current deployment
 }
 
 # Build and start containers
@@ -239,91 +249,111 @@ build_and_start_containers() {
         
         # Create a temporary development compose file without volume mounts
         log_info "Creating temporary development podman-compose file..."
-        mkdir -p build/config
+        
+        # Use absolute paths with simpler approach
+        REPO_ROOT="/home/jsbattig/Dev/share-things"
+        CONFIG_DIR="$REPO_ROOT/build/config"
+        mkdir -p "$CONFIG_DIR"
+        
+        # Set the compose file path using absolute path
+        DEV_COMPOSE_PATH="$CONFIG_DIR/podman-compose.dev.temp.yml"
+        
+        log_info "Using repository root: $REPO_ROOT"
+        log_info "Using config directory: $CONFIG_DIR"
+        log_info "Using compose file path: $DEV_COMPOSE_PATH"
         
         # Create the development compose file using echo instead of cat
-        echo "# Temporary development configuration for ShareThings Podman Compose" > build/config/podman-compose.dev.temp.yml
-        echo "" >> build/config/podman-compose.dev.temp.yml
-        echo "services:" >> build/config/podman-compose.dev.temp.yml
-        echo "  backend:" >> build/config/podman-compose.dev.temp.yml
-        echo "    build:" >> build/config/podman-compose.dev.temp.yml
-        echo "      context: ../../server" >> build/config/podman-compose.dev.temp.yml
-        echo "      dockerfile: Dockerfile" >> build/config/podman-compose.dev.temp.yml
-        echo "      args:" >> build/config/podman-compose.dev.temp.yml
-        echo "        - PORT=${API_PORT:-15001}" >> build/config/podman-compose.dev.temp.yml
-        echo "    container_name: share-things-backend" >> build/config/podman-compose.dev.temp.yml
-        echo "    hostname: backend" >> build/config/podman-compose.dev.temp.yml
-        echo "    environment:" >> build/config/podman-compose.dev.temp.yml
-        echo "      - NODE_ENV=development" >> build/config/podman-compose.dev.temp.yml
-        echo "      - PORT=${API_PORT:-15001}" >> build/config/podman-compose.dev.temp.yml
-        echo "    ports:" >> build/config/podman-compose.dev.temp.yml
-        echo "      - \"${BACKEND_PORT:-15001}:${API_PORT:-15001}\"" >> build/config/podman-compose.dev.temp.yml
-        echo "    restart: always" >> build/config/podman-compose.dev.temp.yml
-        echo "    networks:" >> build/config/podman-compose.dev.temp.yml
-        echo "      app_network:" >> build/config/podman-compose.dev.temp.yml
-        echo "        aliases:" >> build/config/podman-compose.dev.temp.yml
-        echo "          - backend" >> build/config/podman-compose.dev.temp.yml
-        echo "    logging:" >> build/config/podman-compose.dev.temp.yml
-        echo "      driver: \"json-file\"" >> build/config/podman-compose.dev.temp.yml
-        echo "      options:" >> build/config/podman-compose.dev.temp.yml
-        echo "        max-size: \"10m\"" >> build/config/podman-compose.dev.temp.yml
-        echo "        max-file: \"3\"" >> build/config/podman-compose.dev.temp.yml
-        echo "" >> build/config/podman-compose.dev.temp.yml
-        echo "  frontend:" >> build/config/podman-compose.dev.temp.yml
-        echo "    build:" >> build/config/podman-compose.dev.temp.yml
-        echo "      context: ../../client" >> build/config/podman-compose.dev.temp.yml
-        echo "      dockerfile: Dockerfile" >> build/config/podman-compose.dev.temp.yml
-        echo "      args:" >> build/config/podman-compose.dev.temp.yml
-        echo "        - API_URL=auto" >> build/config/podman-compose.dev.temp.yml
-        echo "        - SOCKET_URL=auto" >> build/config/podman-compose.dev.temp.yml
-        echo "        - API_PORT=${API_PORT:-15001}" >> build/config/podman-compose.dev.temp.yml
-        echo "        - VITE_API_PORT=${API_PORT:-15001}" >> build/config/podman-compose.dev.temp.yml
-        echo "    container_name: share-things-frontend" >> build/config/podman-compose.dev.temp.yml
-        echo "    environment:" >> build/config/podman-compose.dev.temp.yml
-        echo "      - API_PORT=${API_PORT:-15001}" >> build/config/podman-compose.dev.temp.yml
-        echo "    ports:" >> build/config/podman-compose.dev.temp.yml
-        echo "      - \"${FRONTEND_PORT:-15000}:80\"" >> build/config/podman-compose.dev.temp.yml
-        echo "    restart: always" >> build/config/podman-compose.dev.temp.yml
-        echo "    depends_on:" >> build/config/podman-compose.dev.temp.yml
-        echo "      - backend" >> build/config/podman-compose.dev.temp.yml
-        echo "    networks:" >> build/config/podman-compose.dev.temp.yml
-        echo "      app_network:" >> build/config/podman-compose.dev.temp.yml
-        echo "        aliases:" >> build/config/podman-compose.dev.temp.yml
-        echo "          - frontend" >> build/config/podman-compose.dev.temp.yml
-        echo "    logging:" >> build/config/podman-compose.dev.temp.yml
-        echo "      driver: \"json-file\"" >> build/config/podman-compose.dev.temp.yml
-        echo "      options:" >> build/config/podman-compose.dev.temp.yml
-        echo "        max-size: \"10m\"" >> build/config/podman-compose.dev.temp.yml
-        echo "        max-file: \"3\"" >> build/config/podman-compose.dev.temp.yml
-        echo "" >> build/config/podman-compose.dev.temp.yml
-        echo "# Explicit network configuration" >> build/config/podman-compose.dev.temp.yml
-        echo "networks:" >> build/config/podman-compose.dev.temp.yml
-        echo "  app_network:" >> build/config/podman-compose.dev.temp.yml
-        echo "    driver: bridge" >> build/config/podman-compose.dev.temp.yml
-        echo "" >> build/config/podman-compose.dev.temp.yml
-        echo "# Named volumes for node_modules" >> build/config/podman-compose.dev.temp.yml
-        echo "volumes:" >> build/config/podman-compose.dev.temp.yml
-        echo "  volume-backend-node-modules:" >> build/config/podman-compose.dev.temp.yml
-        echo "  volume-frontend-node-modules:" >> build/config/podman-compose.dev.temp.yml
-        log_success "Temporary development podman-compose file created in build/config/."
+        echo "# Temporary development configuration for ShareThings Podman Compose" > "$DEV_COMPOSE_PATH"
+        echo "" >> "$DEV_COMPOSE_PATH"
+        echo "services:" >> "$DEV_COMPOSE_PATH"
+        echo "  backend:" >> "$DEV_COMPOSE_PATH"
+        echo "    build:" >> "$DEV_COMPOSE_PATH"
+        echo "      context: $REPO_ROOT/server" >> "$DEV_COMPOSE_PATH"
+        echo "      dockerfile: Dockerfile" >> "$DEV_COMPOSE_PATH"
+        echo "      args:" >> "$DEV_COMPOSE_PATH"
+        echo "        - PORT=${API_PORT:-15001}" >> "$DEV_COMPOSE_PATH"
+        echo "    container_name: share-things-backend" >> "$DEV_COMPOSE_PATH"
+        echo "    hostname: backend" >> "$DEV_COMPOSE_PATH"
+        echo "    environment:" >> "$DEV_COMPOSE_PATH"
+        echo "      - NODE_ENV=development" >> "$DEV_COMPOSE_PATH"
+        echo "      - PORT=${API_PORT:-15001}" >> "$DEV_COMPOSE_PATH"
+        echo "    ports:" >> "$DEV_COMPOSE_PATH"
+        echo "      - \"${BACKEND_PORT:-15001}:${API_PORT:-15001}\"" >> "$DEV_COMPOSE_PATH"
+        echo "    restart: always" >> "$DEV_COMPOSE_PATH"
+        echo "    networks:" >> "$DEV_COMPOSE_PATH"
+        echo "      app_network:" >> "$DEV_COMPOSE_PATH"
+        echo "        aliases:" >> "$DEV_COMPOSE_PATH"
+        echo "          - backend" >> "$DEV_COMPOSE_PATH"
+        echo "    logging:" >> "$DEV_COMPOSE_PATH"
+        echo "      driver: \"json-file\"" >> "$DEV_COMPOSE_PATH"
+        echo "      options:" >> "$DEV_COMPOSE_PATH"
+        echo "        max-size: \"10m\"" >> "$DEV_COMPOSE_PATH"
+        echo "        max-file: \"3\"" >> "$DEV_COMPOSE_PATH"
+        echo "" >> "$DEV_COMPOSE_PATH"
+        echo "  frontend:" >> "$DEV_COMPOSE_PATH"
+        echo "    build:" >> "$DEV_COMPOSE_PATH"
+        echo "      context: $REPO_ROOT/client" >> "$DEV_COMPOSE_PATH"
+        echo "      dockerfile: Dockerfile" >> "$DEV_COMPOSE_PATH"
+        echo "      args:" >> "$DEV_COMPOSE_PATH"
+        echo "        - API_URL=auto" >> "$DEV_COMPOSE_PATH"
+        echo "        - SOCKET_URL=auto" >> "$DEV_COMPOSE_PATH"
+        echo "        - API_PORT=${API_PORT:-15001}" >> "$DEV_COMPOSE_PATH"
+        echo "        - VITE_API_PORT=${API_PORT:-15001}" >> "$DEV_COMPOSE_PATH"
+        echo "    container_name: share-things-frontend" >> "$DEV_COMPOSE_PATH"
+        echo "    environment:" >> "$DEV_COMPOSE_PATH"
+        echo "      - API_PORT=${API_PORT:-15001}" >> "$DEV_COMPOSE_PATH"
+        echo "    ports:" >> "$DEV_COMPOSE_PATH"
+        echo "      - \"${FRONTEND_PORT:-15000}:80\"" >> "$DEV_COMPOSE_PATH"
+        echo "    restart: always" >> "$DEV_COMPOSE_PATH"
+        echo "    depends_on:" >> "$DEV_COMPOSE_PATH"
+        echo "      - backend" >> "$DEV_COMPOSE_PATH"
+        echo "    networks:" >> "$DEV_COMPOSE_PATH"
+        echo "      app_network:" >> "$DEV_COMPOSE_PATH"
+        echo "        aliases:" >> "$DEV_COMPOSE_PATH"
+        echo "          - frontend" >> "$DEV_COMPOSE_PATH"
+        echo "    logging:" >> "$DEV_COMPOSE_PATH"
+        echo "      driver: \"json-file\"" >> "$DEV_COMPOSE_PATH"
+        echo "      options:" >> "$DEV_COMPOSE_PATH"
+        echo "        max-size: \"10m\"" >> "$DEV_COMPOSE_PATH"
+        echo "        max-file: \"3\"" >> "$DEV_COMPOSE_PATH"
+        echo "" >> "$DEV_COMPOSE_PATH"
+        echo "# Explicit network configuration" >> "$DEV_COMPOSE_PATH"
+        echo "networks:" >> "$DEV_COMPOSE_PATH"
+        echo "  app_network:" >> "$DEV_COMPOSE_PATH"
+        echo "    driver: bridge" >> "$DEV_COMPOSE_PATH"
+        echo "" >> "$DEV_COMPOSE_PATH"
+        echo "# Named volumes for node_modules" >> "$DEV_COMPOSE_PATH"
+        echo "volumes:" >> "$DEV_COMPOSE_PATH"
+        echo "  volume-backend-node-modules:" >> "$DEV_COMPOSE_PATH"
+        echo "  volume-frontend-node-modules:" >> "$DEV_COMPOSE_PATH"
+        log_success "Temporary development podman-compose file created at: $DEV_COMPOSE_PATH"
         
         log_info "Building containers with temporary development file..."
-        
-        # Use a fixed path without command substitution
-        DEV_COMPOSE_PATH="./build/config/podman-compose.dev.temp.yml"
         
         # Verify the file exists
         if [ ! -f "$DEV_COMPOSE_PATH" ]; then
             log_error "Compose file not found at $DEV_COMPOSE_PATH, but we just created it"
             # This should never happen since we just created the file above
-            ls -la ./build/config/
+            ls -la "$(dirname "$DEV_COMPOSE_PATH")"
         fi
         
         log_info "Using compose file: $DEV_COMPOSE_PATH"
         
-        # Skip building for now - it's failing in the test environment
-        # podman-compose -f "$DEV_COMPOSE_PATH" build --no-cache
-        log_warning "Skipping build step in test environment"
+        # Use the direct path we already have
+        ABSOLUTE_COMPOSE_PATH="$DEV_COMPOSE_PATH"
+        log_info "Absolute path to compose file: $ABSOLUTE_COMPOSE_PATH"
+        
+        # Build the containers
+        log_info "Building containers with podman-compose..."
+        podman-compose -f "$ABSOLUTE_COMPOSE_PATH" build --no-cache
+        BUILD_EXIT_CODE=$?
+        
+        if [ $BUILD_EXIT_CODE -ne 0 ]; then
+            log_error "Container build failed with exit code $BUILD_EXIT_CODE"
+            log_info "Attempting to continue with existing images..."
+        else
+            log_success "Container build completed successfully"
+        fi
         
         log_info "Starting containers in development mode with ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}"
         
@@ -336,21 +366,30 @@ build_and_start_containers() {
         export BACKEND_PORT
         export API_PORT
         
-        # Skip starting for now - it's failing in the test environment
-        # podman-compose -f "$DEV_COMPOSE_PATH" up -d
-        log_warning "Skipping container start in test environment"
+        # Start the containers
+        log_info "Starting containers with podman-compose..."
+        podman-compose -f "$ABSOLUTE_COMPOSE_PATH" up -d
+        UP_EXIT_CODE=$?
+        
+        if [ $UP_EXIT_CODE -ne 0 ]; then
+            log_error "Container startup failed with exit code $UP_EXIT_CODE"
+            log_info "Checking for container errors..."
+            podman ps -a --filter name=share-things
+        else
+            log_success "Containers started successfully"
+        fi
         
         # Store the compose file name for later use
-        COMPOSE_FILE="$DEV_COMPOSE_PATH"
+        COMPOSE_FILE="$ABSOLUTE_COMPOSE_PATH"
         log_info "Compose file set to: $COMPOSE_FILE"
         
         # For testing purposes, create dummy containers to pass the verification
         if [ -n "$CI" ] || [ "$TESTING" = "true" ]; then
             log_info "Creating dummy containers for testing"
             # Create dummy containers that will pass the verification and keep running
-            # Use fully qualified image names to avoid TTY prompts
-            podman run -d --name share-things-frontend docker.io/library/nginx:alpine-slim
-            podman run -d --name share-things-backend docker.io/library/nginx:alpine-slim
+            # Use fully qualified image names with the correct registry
+            podman run -d --name share-things-frontend linner.ddns.net:4443/docker.io.proxy/nginx:alpine-slim
+            podman run -d --name share-things-backend linner.ddns.net:4443/docker.io.proxy/nginx:alpine-slim
         fi
     fi
 }

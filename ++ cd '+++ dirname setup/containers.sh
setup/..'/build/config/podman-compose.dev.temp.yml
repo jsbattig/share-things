@@ -3,7 +3,8 @@
 services:
   backend:
     build:
-      context: /home/jsbattig/Dev/share-things/server
+      context: ++ cd '+++ dirname setup/containers.sh
+setup/..'/server
       dockerfile: Dockerfile
       args:
         - PORT=15101
@@ -27,7 +28,8 @@ services:
 
   frontend:
     build:
-      context: /home/jsbattig/Dev/share-things/client
+      context: ++ cd '+++ dirname setup/containers.sh
+setup/..'/client
       dockerfile: Dockerfile
       args:
         - API_URL=auto
