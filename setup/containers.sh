@@ -349,8 +349,8 @@ build_and_start_containers() {
             log_info "Creating dummy containers for testing"
             # Create dummy containers that will pass the verification and keep running
             # Use fully qualified image names to avoid TTY prompts
-            podman run -d --name share-things-frontend docker.io/library/nginx:alpine
-            podman run -d --name share-things-backend docker.io/library/nginx:alpine
+            podman run -d --name share-things-frontend docker.io/library/nginx:alpine-slim
+            podman run -d --name share-things-backend docker.io/library/nginx:alpine-slim
         fi
     fi
 }

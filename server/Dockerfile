@@ -68,5 +68,9 @@ RUN echo 'const http = require("http"); \
 # Expose the port
 EXPOSE ${PORT}
 
+# Healthcheck
+HEALTHCHECK --interval=5s --timeout=3s --retries=3 \
+  CMD curl -f http://localhost:${PORT}/health || exit 1
+
 # Start the server
 CMD ["node", "dist/index.js"]

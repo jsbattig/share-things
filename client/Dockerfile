@@ -56,6 +56,10 @@ RUN chmod +x /usr/local/bin/custom-entrypoint.sh
 # Expose port
 EXPOSE 80
 
+# Healthcheck
+HEALTHCHECK --interval=5s --timeout=3s --retries=3 \
+  CMD curl -f http://localhost:80 || exit 1
+
 # Use custom entrypoint
 ENTRYPOINT ["/usr/local/bin/custom-entrypoint.sh"]
 CMD ["nginx", "-g", "daemon off;"]

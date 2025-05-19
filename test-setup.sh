@@ -163,117 +163,66 @@ verify_containers_running() {
   if [ "$CI" = "true" ]; then
     log_info "Running in CI environment - strict container verification"
     
-    # Check if backend container is running
-    podman ps | grep -q "share-things-backend"
-    BACKEND_RUNNING=$?
-    
-    # Check if frontend container is running
-    podman ps | grep -q "share-things-frontend"
-    FRONTEND_RUNNING=$?
-    
-    # Check backend logs if it exists
-    if [ $BACKEND_RUNNING -eq 0 ]; then
-      log_info "Backend container logs (last 30 lines):"
-      podman logs share-things-backend 2>&1 | tee "$log_dir/backend-logs.log" | tail -n 30 || log_warning "Could not get backend logs"
-      
-      # Check for health status
-      log_info "Backend container health check:"
-      podman healthcheck run share-things-backend 2>&1 | tee "$log_dir/backend-health.log" || log_warning "Health check not configured for backend container"
-    else
-      log_error "Backend container is not running"
-      # Check for stopped backend container
-      podman ps -a | grep -q "share-things-backend"
-      if [ $? -eq 0 ]; then
-        log_error "Backend container exists but is not running"
-        log_info "Backend container logs (last 30 lines):"
-        podman logs share-things-backend 2>&1 | tee "$log_dir/backend-logs.log" | tail -n 30 || log_warning "Could not get backend logs"
-      else
-        log_error "Backend container does not exist"
-      fi
-    fi
-    
-    # Check frontend logs if it exists
-    if [ $FRONTEND_RUNNING -eq 0 ]; then
-      log_info "Frontend container logs (last 30 lines):"
-      podman logs share-things-frontend 2>&1 | tee "$log_dir/frontend-logs.log" | tail -n 30 || log_warning "Could not get frontend logs"
-      
-      # Check for health status
-      log_info "Frontend container health check:"
-      podman healthcheck run share-things-frontend 2>&1 | tee "$log_dir/frontend-health.log" || log_warning "Health check not configured for frontend container"
-    else
-      log_error "Frontend container is not running"
-      # Check for stopped frontend container
-      podman ps -a | grep -q "share-things-frontend"
-      if [ $? -eq 0 ]; then
-        log_error "Frontend container exists but is not running"
-        log_info "Frontend container logs (last 30 lines):"
-        podman logs share-things-frontend 2>&1 | tee "$log_dir/frontend-logs.log" | tail -n 30 || log_warning "Could not get frontend logs"
-      else
-        log_error "Frontend container does not exist"
-      fi
-    fi
-    
-    # Both containers must be running for the test to pass
-    if [ $BACKEND_RUNNING -eq 0 ] && [ $FRONTEND_RUNNING -eq 0 ]; then
-      log_success "Both containers are running (required for CI environment)"
-      return 0
-    else
-      log_error "Not all required containers are running in CI environment"
-      log_info "Current container status:"
-      podman ps
-      
-      # Check for stopped containers
-      log_info "Checking for stopped containers:"
-      podman ps -a --filter status=exited
-      
-      # Check podman system info
-      log_info "Podman system info:"
-      podman info --format "{{.Host.RemoteSocket.Path}}" || log_warning "Could not get podman socket info"
-      
-      return 1
-    fi
-  else
-    # Standard verification for non-CI environments
-    # Check if frontend container is running
-    podman ps | grep -q "share-things-frontend"
-    FRONTEND_RUNNING=$?
-    
-    # Check if backend container is running
-    podman ps | grep -q "share-things-backend"
-    BACKEND_RUNNING=$?
-    
+    # Check if backend container is running and healthy
+    log_info "Checking backend container health..."
+    podman healthcheck run share-things-backend 2>&1 | tee "$log_dir/backend-health.log"
+    BACKEND_HEALTH=$?
+
+    # Check if frontend container is running and healthy
+    log_info "Checking frontend container health..."
+    podman healthcheck run share-things-frontend 2>&1 | tee "$log_dir/frontend-health.log"
+    FRONTEND_HEALTH=$?
+
     # Check container logs if they exist
-    if [ $FRONTEND_RUNNING -eq 0 ]; then
-      log_info "Frontend container logs (last 30 lines):"
-      podman logs share-things-frontend 2>&1 | tee "$log_dir/frontend-logs.log" | tail -n 30 || log_warning "Could not get frontend logs"
+    log_info "Checking container logs for errors..."
+    echo "Backend container logs:"
+    podman logs share-things-backend --tail 30 2>&1 | tee "$log_dir/backend-logs.log" || echo "No logs available for backend container"
+
+    echo "Frontend container logs:"
+    podman logs share-things-frontend --tail 30 2>&1 | tee "$log_dir/frontend-logs.log" || echo "No logs available for frontend container"
+
+    # In CI environment, both containers must be healthy for the test to pass
+    if [ "$CI" = "true" ]; then
+      log_info "Running in CI environment - strict container health verification"
+      if [ $BACKEND_HEALTH -eq 0 ] && [ $FRONTEND_HEALTH -eq 0 ]; then
+        log_success "Both containers are healthy (required for CI environment)"
+        return 0
+      else
+        log_error "Not all required containers are healthy in CI environment"
+        log_info "Current container status:"
+        podman ps
+
+        # Check for stopped containers
+        log_info "Checking for stopped containers:"
+        podman ps -a --filter status=exited
+
+        # Check podman system info
+        log_info "Podman system info:"
+        podman info --format "{{.Host.RemoteSocket.Path}}" || log_warning "Could not get podman socket info"
+
+        return 1
+      fi
     else
-      log_error "Frontend container is not running"
-    fi
-    
-    if [ $BACKEND_RUNNING -eq 0 ]; then
-      log_info "Backend container logs (last 30 lines):"
-      podman logs share-things-backend 2>&1 | tee "$log_dir/backend-logs.log" | tail -n 30 || log_warning "Could not get backend logs"
-    else
-      log_error "Backend container is not running"
-    fi
-    
-    if [ $FRONTEND_RUNNING -eq 0 ] && [ $BACKEND_RUNNING -eq 0 ]; then
-      log_success "Both containers are running"
-      return 0
-    else
-      log_error "Not all containers are running"
-      log_info "Current container status:"
-      podman ps
-      
-      # Check for stopped containers
-      log_info "Checking for stopped containers:"
-      podman ps -a --filter status=exited
-      
-      # Check podman system info
-      log_info "Podman system info:"
-      podman info --format "{{.Host.RemoteSocket.Path}}" || log_warning "Could not get podman socket info"
-      
-      return 1
+      # Standard verification for non-CI environments
+      if [ $BACKEND_HEALTH -eq 0 ] && [ $FRONTEND_HEALTH -eq 0 ]; then
+        log_success "Both containers are healthy"
+        return 0
+      else
+        log_error "Not all containers are healthy"
+        log_info "Current container status:"
+        podman ps
+
+        # Check for stopped containers
+        log_info "Checking for stopped containers:"
+        podman ps -a --filter status=exited
+
+        # Check podman system info
+        log_info "Podman system info:"
+        podman info --format "{{.Host.RemoteSocket.Path}}" || log_warning "Could not get podman socket info"
+
+        return 1
+        return 1
+      fi
     fi
   fi
 }
@@ -401,22 +350,9 @@ if [ $? -eq 0 ]; then
   VERIFICATION_RESULT=$?
   if [ $VERIFICATION_RESULT -ne 0 ]; then
     log_error "Test 1 failed: Containers not running after installation"
-    log_info "Attempting to start containers manually..."
-    podman start share-things-backend share-things-frontend &> /dev/null
-    sleep 5
-    verify_containers_running "$container_log_dir-retry"
-    RETRY_RESULT=$?
-    if [ $RETRY_RESULT -ne 0 ]; then
-      # Mark test as failed
-      TEST_RESULTS[0]=0
-      TESTS_FAILED=$((TESTS_FAILED + 1))
-      log_error "Test 1 failed even after manual container start attempt"
-    else
-      log_success "Containers started manually"
-      # Mark test as passed
-      TEST_RESULTS[0]=1
-      TESTS_PASSED=$((TESTS_PASSED + 1))
-    fi
+    # Mark test as failed
+    TEST_RESULTS[0]=0
+    TESTS_FAILED=$((TESTS_FAILED + 1))
   else
     # Mark test as passed
     TEST_RESULTS[0]=1
@@ -432,11 +368,11 @@ if [ $? -eq 0 ]; then
   # Wait a bit for containers to start
   log_info "Waiting 10 seconds for containers to start..."
   sleep 10
-  
+
   # Show all containers (running and stopped)
   log_info "All containers (including stopped ones):"
   podman ps -a
-  
+
   # Create a log directory for this test with a fixed name
   container_log_dir="container-logs-test2"
   # Remove any existing directory
@@ -446,22 +382,9 @@ if [ $? -eq 0 ]; then
   VERIFICATION_RESULT=$?
   if [ $VERIFICATION_RESULT -ne 0 ]; then
     log_error "Test 2 failed: Containers not running after update"
-    log_info "Attempting to start containers manually..."
-    podman start share-things-backend share-things-frontend &> /dev/null
-    sleep 5
-    verify_containers_running "$container_log_dir-retry"
-    RETRY_RESULT=$?
-    if [ $RETRY_RESULT -ne 0 ]; then
-      # Mark test as failed
-      TEST_RESULTS[1]=0
-      TESTS_FAILED=$((TESTS_FAILED + 1))
-      log_error "Test 2 failed even after manual container start attempt"
-    else
-      log_success "Containers started manually"
-      # Mark test as passed
-      TEST_RESULTS[1]=1
-      TESTS_PASSED=$((TESTS_PASSED + 1))
-    fi
+    # Mark test as failed
+    TEST_RESULTS[1]=0
+    TESTS_FAILED=$((TESTS_FAILED + 1))
   else
     # Mark test as passed
     TEST_RESULTS[1]=1
@@ -477,11 +400,11 @@ if [ $? -eq 0 ]; then
   # Wait a bit for containers to start
   log_info "Waiting 10 seconds for containers to start..."
   sleep 10
-  
+
   # Show all containers (running and stopped)
   log_info "All containers (including stopped ones):"
   podman ps -a
-  
+
   # Create a log directory for this test with a fixed name
   container_log_dir="container-logs-test3"
   # Remove any existing directory
@@ -491,22 +414,9 @@ if [ $? -eq 0 ]; then
   VERIFICATION_RESULT=$?
   if [ $VERIFICATION_RESULT -ne 0 ]; then
     log_error "Test 3 failed: Containers not running after reinstall"
-    log_info "Attempting to start containers manually..."
-    podman start share-things-backend share-things-frontend &> /dev/null
-    sleep 5
-    verify_containers_running "$container_log_dir-retry"
-    RETRY_RESULT=$?
-    if [ $RETRY_RESULT -ne 0 ]; then
-      # Mark test as failed
-      TEST_RESULTS[2]=0
-      TESTS_FAILED=$((TESTS_FAILED + 1))
-      log_error "Test 3 failed even after manual container start attempt"
-    else
-      log_success "Containers started manually"
-      # Mark test as passed
-      TEST_RESULTS[2]=1
-      TESTS_PASSED=$((TESTS_PASSED + 1))
-    fi
+    # Mark test as failed
+    TEST_RESULTS[2]=0
+    TESTS_FAILED=$((TESTS_FAILED + 1))
   else
     # Mark test as passed
     TEST_RESULTS[2]=1
@@ -546,11 +456,11 @@ if [ $? -eq 0 ]; then
   # Wait a bit for containers to start
   log_info "Waiting 10 seconds for containers to start..."
   sleep 10
-  
+
   # Show all containers (running and stopped)
   log_info "All containers (including stopped ones):"
   podman ps -a
-  
+
   # Create a log directory for this test with a fixed name
   container_log_dir="container-logs-test5"
   # Remove any existing directory
