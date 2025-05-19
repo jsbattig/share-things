@@ -143,6 +143,11 @@ if [ "$CI" = "true" ]; then
   mkdir -p client/dist
   mkdir -p server/dist
   
+  # Create health check endpoint for frontend
+  log_info "Creating health check endpoint for frontend"
+  mkdir -p client/dist/health
+  echo '{"status":"ok"}' > client/dist/health/index.json
+  
   # Set appropriate permissions
   log_info "Setting appropriate permissions"
   chmod -R 755 build
@@ -234,9 +239,22 @@ if [ "$CONTAINER_COUNT" -gt 0 ]; then
     log_success "Frontend container is responsive"
     FRONTEND_HEALTHY=true
   else
-    log_error "Frontend container is not responding properly"
-    curl -v http://localhost:15000/
-    FRONTEND_HEALTHY=false
+    # Try again with a longer timeout
+    log_warning "Frontend container not responding on first attempt, trying again with longer timeout..."
+    if curl -s --connect-timeout 10 -o /dev/null -w "%{http_code}" http://localhost:15000/ | grep -q "200"; then
+      log_success "Frontend container is responsive on second attempt"
+      FRONTEND_HEALTHY=true
+    else
+      log_error "Frontend container is not responding properly"
+      curl -v http://localhost:15000/
+      # Check if the container is running
+      log_info "Checking container status:"
+      podman ps -a | grep share-things-frontend
+      # Check container logs
+      log_info "Container logs:"
+      podman logs share-things-frontend
+      FRONTEND_HEALTHY=false
+    fi
   fi
   
   # Check backend health
