@@ -83,7 +83,7 @@ perform_installation() {
     echo "  podman logs share-things-backend"
     echo ""
     echo "To restart the containers:"
-    echo "  cd $(pwd) && podman-compose -f build/config/podman-compose.yml down && podman-compose -f build/config/podman-compose.yml up -d"
+    echo "  podman-compose -f build/config/podman-compose.yml down && podman-compose -f build/config/podman-compose.yml up -d"
     
     # Clean up any backup files created by sed
     cleanup_backup_files
@@ -117,11 +117,11 @@ perform_update() {
     
     # Determine which compose file to use
     if [ -f build/config/podman-compose.prod.yml ]; then
-        COMPOSE_FILE="$(pwd)/build/config/podman-compose.prod.yml"
+        COMPOSE_FILE="build/config/podman-compose.prod.yml"
     elif [ -f build/config/podman-compose.prod.temp.yml ]; then
-        COMPOSE_FILE="$(pwd)/build/config/podman-compose.prod.temp.yml"
+        COMPOSE_FILE="build/config/podman-compose.prod.temp.yml"
     else
-        COMPOSE_FILE="$(pwd)/build/config/podman-compose.yml"
+        COMPOSE_FILE="build/config/podman-compose.yml"
     fi
     
     # Stop containers
@@ -351,7 +351,7 @@ EOF
         log_success "Containers started successfully"
     fi
     
-    COMPOSE_FILE="$(pwd)/build/config/podman-compose.update.yml"
+    COMPOSE_FILE="build/config/podman-compose.update.yml"
     
     # Add additional debugging for port configuration
     log_info "Verifying port configuration..."
@@ -453,13 +453,13 @@ perform_uninstall() {
     
     # Determine which compose file to use
     if [ -f build/config/podman-compose.prod.yml ]; then
-        COMPOSE_FILE="$(pwd)/build/config/podman-compose.prod.yml"
+        COMPOSE_FILE="build/config/podman-compose.prod.yml"
     elif [ -f build/config/podman-compose.prod.temp.yml ]; then
-        COMPOSE_FILE="$(pwd)/build/config/podman-compose.prod.temp.yml"
+        COMPOSE_FILE="build/config/podman-compose.prod.temp.yml"
     elif [ -f build/config/podman-compose.update.yml ]; then
-        COMPOSE_FILE="$(pwd)/build/config/podman-compose.update.yml"
+        COMPOSE_FILE="build/config/podman-compose.update.yml"
     else
-        COMPOSE_FILE="$(pwd)/build/config/podman-compose.yml"
+        COMPOSE_FILE="build/config/podman-compose.yml"
     fi
     
     # Stop and remove containers

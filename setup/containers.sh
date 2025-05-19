@@ -158,70 +158,76 @@ build_and_start_containers() {
         # Create a temporary docker-compose file for production without volume mounts
         mkdir -p build/config
         
-        # Create the production compose file using echo instead of cat
-        echo "# Temporary production configuration for ShareThings Podman Compose" > build/config/podman-compose.prod.temp.yml
-        echo "" >> build/config/podman-compose.prod.temp.yml
-        echo "services:" >> build/config/podman-compose.prod.temp.yml
-        echo "  backend:" >> build/config/podman-compose.prod.temp.yml
-        echo "    build:" >> build/config/podman-compose.prod.temp.yml
-        echo "      context: ../../server" >> build/config/podman-compose.prod.temp.yml
-        echo "      dockerfile: Dockerfile" >> build/config/podman-compose.prod.temp.yml
-        echo "      args:" >> build/config/podman-compose.prod.temp.yml
-        echo "        - PORT=${API_PORT:-15001}" >> build/config/podman-compose.prod.temp.yml
-        echo "    container_name: share-things-backend" >> build/config/podman-compose.prod.temp.yml
-        echo "    hostname: backend" >> build/config/podman-compose.prod.temp.yml
-        echo "    environment:" >> build/config/podman-compose.prod.temp.yml
-        echo "      - NODE_ENV=production" >> build/config/podman-compose.prod.temp.yml
-        echo "      - PORT=${API_PORT:-15001}" >> build/config/podman-compose.prod.temp.yml
-        echo "    ports:" >> build/config/podman-compose.prod.temp.yml
-        echo "      - \"${BACKEND_PORT:-15001}:${API_PORT:-15001}\"" >> build/config/podman-compose.prod.temp.yml
-        echo "    restart: always" >> build/config/podman-compose.prod.temp.yml
-        echo "    networks:" >> build/config/podman-compose.prod.temp.yml
-        echo "      app_network:" >> build/config/podman-compose.prod.temp.yml
-        echo "        aliases:" >> build/config/podman-compose.prod.temp.yml
-        echo "          - backend" >> build/config/podman-compose.prod.temp.yml
-        echo "    logging:" >> build/config/podman-compose.prod.temp.yml
-        echo "      driver: \"json-file\"" >> build/config/podman-compose.prod.temp.yml
-        echo "      options:" >> build/config/podman-compose.prod.temp.yml
-        echo "        max-size: \"10m\"" >> build/config/podman-compose.prod.temp.yml
-        echo "        max-file: \"3\"" >> build/config/podman-compose.prod.temp.yml
-        echo "" >> build/config/podman-compose.prod.temp.yml
-        echo "  frontend:" >> build/config/podman-compose.prod.temp.yml
-        echo "    build:" >> build/config/podman-compose.prod.temp.yml
-        echo "      context: ../../client" >> build/config/podman-compose.prod.temp.yml
-        echo "      dockerfile: Dockerfile" >> build/config/podman-compose.prod.temp.yml
-        echo "      args:" >> build/config/podman-compose.prod.temp.yml
-        echo "        - API_URL=auto" >> build/config/podman-compose.prod.temp.yml
-        echo "        - SOCKET_URL=auto" >> build/config/podman-compose.prod.temp.yml
-        echo "        - API_PORT=${API_PORT:-15001}" >> build/config/podman-compose.prod.temp.yml
-        echo "        - VITE_API_PORT=${API_PORT:-15001}" >> build/config/podman-compose.prod.temp.yml
-        echo "    container_name: share-things-frontend" >> build/config/podman-compose.prod.temp.yml
-        echo "    environment:" >> build/config/podman-compose.prod.temp.yml
-        echo "      - API_PORT=${API_PORT:-15001}" >> build/config/podman-compose.prod.temp.yml
-        echo "    ports:" >> build/config/podman-compose.prod.temp.yml
-        echo "      - \"${FRONTEND_PORT:-15000}:80\"" >> build/config/podman-compose.prod.temp.yml
-        echo "    restart: always" >> build/config/podman-compose.prod.temp.yml
-        echo "    depends_on:" >> build/config/podman-compose.prod.temp.yml
-        echo "      - backend" >> build/config/podman-compose.prod.temp.yml
-        echo "    networks:" >> build/config/podman-compose.prod.temp.yml
-        echo "      app_network:" >> build/config/podman-compose.prod.temp.yml
-        echo "        aliases:" >> build/config/podman-compose.prod.temp.yml
-        echo "          - frontend" >> build/config/podman-compose.prod.temp.yml
-        echo "    logging:" >> build/config/podman-compose.prod.temp.yml
-        echo "      driver: \"json-file\"" >> build/config/podman-compose.prod.temp.yml
-        echo "      options:" >> build/config/podman-compose.prod.temp.yml
-        echo "        max-size: \"10m\"" >> build/config/podman-compose.prod.temp.yml
-        echo "        max-file: \"3\"" >> build/config/podman-compose.prod.temp.yml
-        echo "" >> build/config/podman-compose.prod.temp.yml
-        echo "# Explicit network configuration" >> build/config/podman-compose.prod.temp.yml
-        echo "networks:" >> build/config/podman-compose.prod.temp.yml
-        echo "  app_network:" >> build/config/podman-compose.prod.temp.yml
-        echo "    driver: bridge" >> build/config/podman-compose.prod.temp.yml
-        echo "" >> build/config/podman-compose.prod.temp.yml
-        echo "# Named volumes for node_modules" >> build/config/podman-compose.prod.temp.yml
-        echo "volumes:" >> build/config/podman-compose.prod.temp.yml
-        echo "  volume-backend-node-modules:" >> build/config/podman-compose.prod.temp.yml
-        echo "  volume-frontend-node-modules:" >> build/config/podman-compose.prod.temp.yml
+        # Get absolute paths to server and client directories
+        SERVER_DIR="$(cd "$REPO_ROOT/server" 2>/dev/null && pwd || echo "/home/jsbattig/Dev/share-things/server")"
+        CLIENT_DIR="$(cd "$REPO_ROOT/client" 2>/dev/null && pwd || echo "/home/jsbattig/Dev/share-things/client")"
+        
+        # Create the production compose file using a here document
+        cat > build/config/podman-compose.prod.temp.yml << EOF
+# Temporary production configuration for ShareThings Podman Compose
+
+services:
+  backend:
+    build:
+      context: $SERVER_DIR
+      dockerfile: Dockerfile
+      args:
+        - PORT=${API_PORT:-15001}
+    container_name: share-things-backend
+    hostname: backend
+    environment:
+      - NODE_ENV=production
+      - PORT=${API_PORT:-15001}
+    ports:
+      - "${BACKEND_PORT:-15001}:${API_PORT:-15001}"
+    restart: always
+    networks:
+      app_network:
+        aliases:
+          - backend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    build:
+      context: $CLIENT_DIR
+      dockerfile: Dockerfile
+      args:
+        - API_URL=auto
+        - SOCKET_URL=auto
+        - API_PORT=${API_PORT:-15001}
+        - VITE_API_PORT=${API_PORT:-15001}
+    container_name: share-things-frontend
+    environment:
+      - API_PORT=${API_PORT:-15001}
+    ports:
+      - "${FRONTEND_PORT:-15000}:80"
+    restart: always
+    depends_on:
+      - backend
+    networks:
+      app_network:
+        aliases:
+          - frontend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Explicit network configuration
+networks:
+  app_network:
+    driver: bridge
+
+# Named volumes for node_modules
+volumes:
+  volume-backend-node-modules:
+  volume-frontend-node-modules:
+EOF
         log_success "Temporary production podman-compose file created in build/config/."
         
         log_info "Building containers in production mode..."
@@ -230,16 +236,21 @@ build_and_start_containers() {
         export VITE_API_PORT="${API_PORT:-15001}"
         log_info "Setting explicit VITE_API_PORT=${VITE_API_PORT} for build"
         
-        podman-compose -f "$(pwd)/build/config/podman-compose.prod.temp.yml" build --no-cache
+        # Use a more reliable path construction
+        PROD_COMPOSE_PATH="build/config/podman-compose.prod.temp.yml"
+        ABSOLUTE_PROD_COMPOSE_PATH="$(cd "$(dirname "$PROD_COMPOSE_PATH")" && pwd)/$(basename "$PROD_COMPOSE_PATH")"
+        log_info "Using absolute compose file path: $ABSOLUTE_PROD_COMPOSE_PATH"
+        
+        podman-compose -f "$ABSOLUTE_PROD_COMPOSE_PATH" build --no-cache
         
         log_info "Starting containers in production mode with ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}"
         
         # For podman-compose, we need to explicitly pass the environment variables
         # Include API_PORT to ensure it's available during the container runtime
-        FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT podman-compose -f "$(pwd)/build/config/podman-compose.prod.temp.yml" up -d
+        FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT podman-compose -f "$ABSOLUTE_PROD_COMPOSE_PATH" up -d
         
         # Store the compose file name for later use
-        COMPOSE_FILE="build/config/podman-compose.prod.temp.yml"
+        COMPOSE_FILE="$ABSOLUTE_PROD_COMPOSE_PATH"
     else
         log_info "Building containers in development mode..."
         
@@ -250,82 +261,86 @@ build_and_start_containers() {
         # Create a temporary development compose file without volume mounts
         log_info "Creating temporary development podman-compose file..."
         
-        # Use absolute paths with simpler approach
-        REPO_ROOT="/home/jsbattig/Dev/share-things"
-        CONFIG_DIR="$REPO_ROOT/build/config"
+        # Use the detected repository root from the parent script
+        CONFIG_DIR="build/config"
         mkdir -p "$CONFIG_DIR"
         
-        # Set the compose file path using absolute path
+        # Set the compose file path using relative path
         DEV_COMPOSE_PATH="$CONFIG_DIR/podman-compose.dev.temp.yml"
         
-        log_info "Using repository root: $REPO_ROOT"
         log_info "Using config directory: $CONFIG_DIR"
         log_info "Using compose file path: $DEV_COMPOSE_PATH"
         
-        # Create the development compose file using echo instead of cat
-        echo "# Temporary development configuration for ShareThings Podman Compose" > "$DEV_COMPOSE_PATH"
-        echo "" >> "$DEV_COMPOSE_PATH"
-        echo "services:" >> "$DEV_COMPOSE_PATH"
-        echo "  backend:" >> "$DEV_COMPOSE_PATH"
-        echo "    build:" >> "$DEV_COMPOSE_PATH"
-        echo "      context: $REPO_ROOT/server" >> "$DEV_COMPOSE_PATH"
-        echo "      dockerfile: Dockerfile" >> "$DEV_COMPOSE_PATH"
-        echo "      args:" >> "$DEV_COMPOSE_PATH"
-        echo "        - PORT=${API_PORT:-15001}" >> "$DEV_COMPOSE_PATH"
-        echo "    container_name: share-things-backend" >> "$DEV_COMPOSE_PATH"
-        echo "    hostname: backend" >> "$DEV_COMPOSE_PATH"
-        echo "    environment:" >> "$DEV_COMPOSE_PATH"
-        echo "      - NODE_ENV=development" >> "$DEV_COMPOSE_PATH"
-        echo "      - PORT=${API_PORT:-15001}" >> "$DEV_COMPOSE_PATH"
-        echo "    ports:" >> "$DEV_COMPOSE_PATH"
-        echo "      - \"${BACKEND_PORT:-15001}:${API_PORT:-15001}\"" >> "$DEV_COMPOSE_PATH"
-        echo "    restart: always" >> "$DEV_COMPOSE_PATH"
-        echo "    networks:" >> "$DEV_COMPOSE_PATH"
-        echo "      app_network:" >> "$DEV_COMPOSE_PATH"
-        echo "        aliases:" >> "$DEV_COMPOSE_PATH"
-        echo "          - backend" >> "$DEV_COMPOSE_PATH"
-        echo "    logging:" >> "$DEV_COMPOSE_PATH"
-        echo "      driver: \"json-file\"" >> "$DEV_COMPOSE_PATH"
-        echo "      options:" >> "$DEV_COMPOSE_PATH"
-        echo "        max-size: \"10m\"" >> "$DEV_COMPOSE_PATH"
-        echo "        max-file: \"3\"" >> "$DEV_COMPOSE_PATH"
-        echo "" >> "$DEV_COMPOSE_PATH"
-        echo "  frontend:" >> "$DEV_COMPOSE_PATH"
-        echo "    build:" >> "$DEV_COMPOSE_PATH"
-        echo "      context: $REPO_ROOT/client" >> "$DEV_COMPOSE_PATH"
-        echo "      dockerfile: Dockerfile" >> "$DEV_COMPOSE_PATH"
-        echo "      args:" >> "$DEV_COMPOSE_PATH"
-        echo "        - API_URL=auto" >> "$DEV_COMPOSE_PATH"
-        echo "        - SOCKET_URL=auto" >> "$DEV_COMPOSE_PATH"
-        echo "        - API_PORT=${API_PORT:-15001}" >> "$DEV_COMPOSE_PATH"
-        echo "        - VITE_API_PORT=${API_PORT:-15001}" >> "$DEV_COMPOSE_PATH"
-        echo "    container_name: share-things-frontend" >> "$DEV_COMPOSE_PATH"
-        echo "    environment:" >> "$DEV_COMPOSE_PATH"
-        echo "      - API_PORT=${API_PORT:-15001}" >> "$DEV_COMPOSE_PATH"
-        echo "    ports:" >> "$DEV_COMPOSE_PATH"
-        echo "      - \"${FRONTEND_PORT:-15000}:80\"" >> "$DEV_COMPOSE_PATH"
-        echo "    restart: always" >> "$DEV_COMPOSE_PATH"
-        echo "    depends_on:" >> "$DEV_COMPOSE_PATH"
-        echo "      - backend" >> "$DEV_COMPOSE_PATH"
-        echo "    networks:" >> "$DEV_COMPOSE_PATH"
-        echo "      app_network:" >> "$DEV_COMPOSE_PATH"
-        echo "        aliases:" >> "$DEV_COMPOSE_PATH"
-        echo "          - frontend" >> "$DEV_COMPOSE_PATH"
-        echo "    logging:" >> "$DEV_COMPOSE_PATH"
-        echo "      driver: \"json-file\"" >> "$DEV_COMPOSE_PATH"
-        echo "      options:" >> "$DEV_COMPOSE_PATH"
-        echo "        max-size: \"10m\"" >> "$DEV_COMPOSE_PATH"
-        echo "        max-file: \"3\"" >> "$DEV_COMPOSE_PATH"
-        echo "" >> "$DEV_COMPOSE_PATH"
-        echo "# Explicit network configuration" >> "$DEV_COMPOSE_PATH"
-        echo "networks:" >> "$DEV_COMPOSE_PATH"
-        echo "  app_network:" >> "$DEV_COMPOSE_PATH"
-        echo "    driver: bridge" >> "$DEV_COMPOSE_PATH"
-        echo "" >> "$DEV_COMPOSE_PATH"
-        echo "# Named volumes for node_modules" >> "$DEV_COMPOSE_PATH"
-        echo "volumes:" >> "$DEV_COMPOSE_PATH"
-        echo "  volume-backend-node-modules:" >> "$DEV_COMPOSE_PATH"
-        echo "  volume-frontend-node-modules:" >> "$DEV_COMPOSE_PATH"
+        # Get absolute paths to server and client directories
+        SERVER_DIR="$(cd "$REPO_ROOT/server" 2>/dev/null && pwd || echo "/home/jsbattig/Dev/share-things/server")"
+        CLIENT_DIR="$(cd "$REPO_ROOT/client" 2>/dev/null && pwd || echo "/home/jsbattig/Dev/share-things/client")"
+        
+        # Create the development compose file using a here document
+        cat > "$DEV_COMPOSE_PATH" << EOF
+# Temporary development configuration for ShareThings Podman Compose
+
+services:
+  backend:
+    build:
+      context: $SERVER_DIR
+      dockerfile: Dockerfile
+      args:
+        - PORT=${API_PORT:-15001}
+    container_name: share-things-backend
+    hostname: backend
+    environment:
+      - NODE_ENV=development
+      - PORT=${API_PORT:-15001}
+    ports:
+      - "${BACKEND_PORT:-15001}:${API_PORT:-15001}"
+    restart: always
+    networks:
+      app_network:
+        aliases:
+          - backend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    build:
+      context: $CLIENT_DIR
+      dockerfile: Dockerfile
+      args:
+        - API_URL=auto
+        - SOCKET_URL=auto
+        - API_PORT=${API_PORT:-15001}
+        - VITE_API_PORT=${API_PORT:-15001}
+    container_name: share-things-frontend
+    environment:
+      - API_PORT=${API_PORT:-15001}
+    ports:
+      - "${FRONTEND_PORT:-15000}:80"
+    restart: always
+    depends_on:
+      - backend
+    networks:
+      app_network:
+        aliases:
+          - frontend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Explicit network configuration
+networks:
+  app_network:
+    driver: bridge
+
+# Named volumes for node_modules
+volumes:
+  volume-backend-node-modules:
+  volume-frontend-node-modules:
+EOF
         log_success "Temporary development podman-compose file created at: $DEV_COMPOSE_PATH"
         
         log_info "Building containers with temporary development file..."
@@ -339,12 +354,15 @@ build_and_start_containers() {
         
         log_info "Using compose file: $DEV_COMPOSE_PATH"
         
-        # Use the direct path we already have
-        ABSOLUTE_COMPOSE_PATH="$DEV_COMPOSE_PATH"
-        log_info "Absolute path to compose file: $ABSOLUTE_COMPOSE_PATH"
+        # Use the relative path
+        COMPOSE_PATH="$DEV_COMPOSE_PATH"
+        log_info "Compose file path: $COMPOSE_PATH"
         
         # Build the containers
         log_info "Building containers with podman-compose..."
+        # Use a more reliable path construction
+        ABSOLUTE_COMPOSE_PATH="$(cd "$(dirname "$COMPOSE_PATH")" && pwd)/$(basename "$COMPOSE_PATH")"
+        log_info "Using absolute compose file path: $ABSOLUTE_COMPOSE_PATH"
         podman-compose -f "$ABSOLUTE_COMPOSE_PATH" build --no-cache
         BUILD_EXIT_CODE=$?
         
@@ -368,6 +386,7 @@ build_and_start_containers() {
         
         # Start the containers
         log_info "Starting containers with podman-compose..."
+        # Use the same absolute path approach
         podman-compose -f "$ABSOLUTE_COMPOSE_PATH" up -d
         UP_EXIT_CODE=$?
         
@@ -450,7 +469,8 @@ verify_containers() {
         
         # Check for container creation errors
         echo "Checking for container creation errors:"
-        podman events --filter event=create --filter event=die --since 5m --format "{{.Time}} {{.Type}} {{.Action}} {{.Actor.Name}}" 2>/dev/null || echo "No recent container events"
+        # Use a timeout to prevent hanging
+        timeout 5 podman events --filter event=create --filter event=die --since 5m --format "{{.Time}} {{.Type}} {{.Action}} {{.Actor.Name}}" 2>/dev/null || echo "No recent container events"
     fi
     
     # Save logs to file if in debug mode

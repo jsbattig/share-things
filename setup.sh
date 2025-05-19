@@ -16,7 +16,7 @@ EXPOSE_PORTS="false"
 PROTOCOL="http"
 COMPOSE_CMD="podman-compose"
 CONTAINER_CMD="podman"
-COMPOSE_FILE="$(pwd)/build/config/podman-compose.yml"
+COMPOSE_FILE="build/config/podman-compose.yml"
 FORCE_INSTALL="false"
 DEBUG_MODE="false"
 

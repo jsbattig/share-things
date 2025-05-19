@@ -65,6 +65,8 @@ log_error() {
 
 # ===== MAIN TEST SEQUENCE =====
 
+# We'll check for containers after the uninstall step
+
 log_info "Starting minimal setup.sh verification"
 log_info "=============================="
 
@@ -152,9 +154,18 @@ log_info "Command: ./setup.sh --uninstall --non-interactive"
 UNINSTALL_EXIT_CODE=$?
 
 if [ $UNINSTALL_EXIT_CODE -eq 0 ]; then
-  log_success "Cleanup successful"
+  # Verify that all containers have been properly stopped and removed
+  if podman ps -a | grep -q "share-things"; then
+    log_error "Uninstall failed: containers still exist after uninstall"
+    log_error "Please check the following containers:"
+    podman ps -a | grep "share-things"
+    exit 1
+  else
+    log_success "Cleanup successful - all containers properly removed"
+  fi
 else
-  log_warning "Cleanup may not have been complete, but continuing"
+  log_error "Uninstall failed with exit code $UNINSTALL_EXIT_CODE"
+  exit 1
 fi
 
 # Now run the actual installation
@@ -197,31 +208,37 @@ if [ "$CONTAINER_COUNT" -gt 0 ]; then
   log_info "Checking if frontend container is responsive..."
   if curl -s -o /dev/null -w "%{http_code}" http://localhost:15000/ | grep -q "200"; then
     log_success "Frontend container is responsive"
+    FRONTEND_HEALTHY=true
   else
-    log_warning "Frontend container is not responding properly"
+    log_error "Frontend container is not responding properly"
     curl -v http://localhost:15000/
+    FRONTEND_HEALTHY=false
   fi
   
   # Check backend health
   log_info "Checking if backend container health endpoint is responsive..."
   if curl -s -o /dev/null -w "%{http_code}" http://localhost:15001/health | grep -q "200"; then
     log_success "Backend container health endpoint is responsive"
+    BACKEND_HEALTHY=true
   else
-    log_warning "Backend container health endpoint is not responding properly"
+    log_error "Backend container health endpoint is not responding properly"
     curl -v http://localhost:15001/health
+    BACKEND_HEALTHY=false
   fi
   
   # Overall health check result
-  if curl -s -o /dev/null -w "%{http_code}" http://localhost:15000/ | grep -q "200" && \
-     curl -s -o /dev/null -w "%{http_code}" http://localhost:15001/health | grep -q "200"; then
+  if [ "$FRONTEND_HEALTHY" = "true" ] && [ "$BACKEND_HEALTHY" = "true" ]; then
     log_success "All container health checks passed successfully"
   else
-    log_warning "Some container health checks failed"
+    log_error "Some container health checks failed"
+    exit 1
   fi
 else
-  log_warning "No containers found running after installation"
+  log_error "No containers found running after installation"
   log_info "Checking for stopped containers:"
   podman ps -a | grep "share-things" || echo "No containers found"
+  log_error "Installation failed: containers are not running"
+  exit 1
 fi
 
 # Clean up after the test
@@ -234,9 +251,18 @@ TEMP_LOG_FILE="setup-cleanup-output.log"
 CLEANUP_EXIT_CODE=$?
 
 if [ $CLEANUP_EXIT_CODE -eq 0 ]; then
-  log_success "Final cleanup successful"
+  # Verify that all containers have been properly stopped and removed
+  if podman ps -a | grep -q "share-things"; then
+    log_error "Final cleanup failed: containers still exist after cleanup"
+    log_error "Please check the following containers:"
+    podman ps -a | grep "share-things"
+    exit 1
+  else
+    log_success "Final cleanup successful - all containers properly removed"
+  fi
 else
-  log_warning "Final cleanup may not have been complete"
+  log_error "Final cleanup failed with exit code $CLEANUP_EXIT_CODE"
+  exit 1
 fi
 
 # Clean up the log file
@@ -246,5 +272,5 @@ rm -f "$TEMP_LOG_FILE"
 cd "$CURRENT_DIR"
 log_info "Changed back to original directory: $(pwd)"
 
-log_success "Test passed! setup.sh exists, is executable, and runs correctly with actual parameters."
+log_success "Test passed! setup.sh exists, is executable, and containers are running and healthy."
 exit 0
