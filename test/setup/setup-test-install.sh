@@ -125,258 +125,122 @@ else
   exit 1
 fi
 
-# CI environment setup - ensure directories exist and have correct permissions
+# Set environment variables for CI if needed
 if [ "$CI" = "true" ]; then
-  log_info "Setting up CI environment for full installation test"
-  
-  # Create necessary directories with proper permissions
-  log_info "Creating necessary directories in CI environment"
-  mkdir -p build/config
-  
-  # Set appropriate permissions
-  log_info "Setting appropriate permissions in CI environment"
-  chmod -R 755 build
-  
   # Set environment variables for CI
   export PODMAN_USERNS=keep-id
   log_info "Set PODMAN_USERNS=keep-id for CI environment"
+  
+  # Create necessary directories with proper permissions
+  log_info "Creating necessary directories if they don't exist"
+  mkdir -p build/config
+  
+  # Set appropriate permissions
+  log_info "Setting appropriate permissions"
+  chmod -R 755 build
 fi
 
-# Create a temporary config file for CI environment
-if [ "$CI" = "true" ]; then
-  log_info "Creating temporary config file for CI environment"
-  
-  # Create a temporary directory for the config file
-  TEMP_CONFIG_DIR="$REPO_ROOT/build/config"
-  mkdir -p "$TEMP_CONFIG_DIR"
-  
-  # Create a minimal podman-compose file for testing
-  TEMP_CONFIG_FILE="$TEMP_CONFIG_DIR/podman-compose.test.ci.yml"
-  
-  cat > "$TEMP_CONFIG_FILE" << EOF
-version: '3'
-services:
-  frontend:
-    image: nginx:alpine
-    ports:
-      - "15000:80"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
-  backend:
-    image: node:18-alpine
-    command: ["node", "-e", "const http=require('http');const server=http.createServer((req,res)=>{if(req.url==='/health'){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({status:'ok'}));}else{res.writeHead(404);res.end();}});server.listen(15001);console.log('Server listening on port 15001');"]
-    ports:
-      - "15001:15001"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:15001/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
-EOF
-  
-  log_success "Created temporary config file at $TEMP_CONFIG_FILE"
-  
-  # Do a simplified test in CI environment
-  log_info "Step 2: Testing with simplified containers in CI environment"
-  
-  # First, make sure any existing installation is removed
-  log_info "Step 2.1: Cleaning up any existing installation"
-  log_info "Command: podman-compose -f $TEMP_CONFIG_FILE down"
-  
-  # Run cleanup
-  podman-compose -f "$TEMP_CONFIG_FILE" down
-  UNINSTALL_EXIT_CODE=$?
-  
-  if [ $UNINSTALL_EXIT_CODE -eq 0 ]; then
-    log_success "Cleanup successful"
-  else
-    log_warning "Cleanup may not have been complete, but continuing"
-  fi
-  
-  # Now run the containers
-  log_info "Step 2.2: Starting test containers"
-  log_info "Command: podman-compose -f $TEMP_CONFIG_FILE up -d"
-  
-  # Start containers
-  podman-compose -f "$TEMP_CONFIG_FILE" up -d
-  SETUP_EXIT_CODE=$?
-  
-  # Check the exit code
-  if [ $SETUP_EXIT_CODE -eq 0 ]; then
-    log_success "Test containers started successfully"
-  else
-    log_error "Failed to start test containers with exit code $SETUP_EXIT_CODE"
-    exit 1
-  fi
+# Do a full installation test
+log_info "Step 2: Testing full installation with setup.sh"
+
+# First, make sure any existing installation is removed
+log_info "Step 2.1: Cleaning up any existing installation"
+log_info "Command: ./setup.sh --uninstall --non-interactive"
+
+# Run uninstall and show full output
+./setup.sh --uninstall --non-interactive
+UNINSTALL_EXIT_CODE=$?
+
+if [ $UNINSTALL_EXIT_CODE -eq 0 ]; then
+  log_success "Cleanup successful"
 else
-  # Do a full installation test in local environment
-  log_info "Step 2: Testing full installation with setup.sh"
-  
-  # First, make sure any existing installation is removed
-  log_info "Step 2.1: Cleaning up any existing installation"
-  log_info "Command: ./setup.sh --uninstall --non-interactive"
-  
-  # Run uninstall and show full output
-  ./setup.sh --uninstall --non-interactive
-  UNINSTALL_EXIT_CODE=$?
-  
-  if [ $UNINSTALL_EXIT_CODE -eq 0 ]; then
-    log_success "Cleanup successful"
-  else
-    log_warning "Cleanup may not have been complete, but continuing"
-  fi
-  
-  # Now run the actual installation
-  log_info "Step 2.2: Running full installation"
-  log_info "Command: ./setup.sh --non-interactive --force-install"
-  
-  # Run with a standard timeout
-  timeout 180 ./setup.sh --non-interactive --force-install
-  SETUP_EXIT_CODE=$?
-  
-  # Check the exit code
-  if [ $SETUP_EXIT_CODE -eq 0 ]; then
-    log_success "Full installation executed successfully"
-  elif [ $SETUP_EXIT_CODE -eq 124 ]; then
-    log_warning "Installation timed out, but may have partially succeeded"
-    exit 1
-  else
-    log_error "Installation failed with exit code $SETUP_EXIT_CODE"
-    exit 1
-  fi
+  log_warning "Cleanup may not have been complete, but continuing"
+fi
+
+# Now run the actual installation
+log_info "Step 2.2: Running full installation"
+log_info "Command: ./setup.sh --non-interactive --force-install"
+
+# Run with a standard timeout
+timeout 300 ./setup.sh --non-interactive --force-install
+SETUP_EXIT_CODE=$?
+
+# Check the exit code
+if [ $SETUP_EXIT_CODE -eq 0 ]; then
+  log_success "Full installation executed successfully"
+elif [ $SETUP_EXIT_CODE -eq 124 ]; then
+  log_warning "Installation timed out, but may have partially succeeded"
+  exit 1
+else
+  log_error "Installation failed with exit code $SETUP_EXIT_CODE"
+  exit 1
 fi
 
 # Verify the installation by checking if containers are running and healthy
 log_info "Step 2.3: Verifying installation by checking containers"
 
-if [ "$CI" = "true" ]; then
-  # In CI, check for any running containers
-  CONTAINER_COUNT=$(podman ps | wc -l)
-  # Subtract 1 for the header line
-  CONTAINER_COUNT=$((CONTAINER_COUNT - 1))
+# Check for share-things containers
+CONTAINER_COUNT=$(podman ps | grep -c "share-things" || echo "0")
+
+if [ "$CONTAINER_COUNT" -gt 0 ]; then
+  log_success "Installation verified: $CONTAINER_COUNT containers are running"
+  podman ps | grep "share-things"
   
-  if [ "$CONTAINER_COUNT" -gt 0 ]; then
-    log_success "Installation verified: $CONTAINER_COUNT containers are running"
-    podman ps
-    
-    # Perform health checks on the containers
-    log_info "Step 2.4: Performing health checks on containers"
-    
-    # Wait a moment for containers to fully initialize
-    log_info "Waiting for containers to fully initialize (15 seconds)..."
-    sleep 15
-    
-    # Check frontend health
-    log_info "Checking if frontend container is responsive..."
-    if curl -s -o /dev/null -w "%{http_code}" http://localhost:15000/ | grep -q "200"; then
-      log_success "Frontend container is responsive"
-    else
-      log_warning "Frontend container is not responding properly"
-      curl -v http://localhost:15000/
-    fi
-    
-    # Check backend health
-    log_info "Checking if backend container health endpoint is responsive..."
-    if curl -s -o /dev/null -w "%{http_code}" http://localhost:15001/health | grep -q "200"; then
-      log_success "Backend container health endpoint is responsive"
-    else
-      log_warning "Backend container health endpoint is not responding properly"
-      curl -v http://localhost:15001/health
-    fi
-    
-    # Overall health check result
-    if curl -s -o /dev/null -w "%{http_code}" http://localhost:15000/ | grep -q "200" && \
-       curl -s -o /dev/null -w "%{http_code}" http://localhost:15001/health | grep -q "200"; then
-      log_success "All container health checks passed successfully"
-    else
-      log_warning "Some container health checks failed"
-    fi
+  # Perform health checks on the containers
+  log_info "Step 2.4: Performing health checks on containers"
+  
+  # Wait a moment for containers to fully initialize
+  log_info "Waiting for containers to fully initialize (15 seconds)..."
+  sleep 15
+  
+  # Check frontend health
+  log_info "Checking if frontend container is responsive..."
+  if curl -s -o /dev/null -w "%{http_code}" http://localhost:15000/ | grep -q "200"; then
+    log_success "Frontend container is responsive"
   else
-    log_warning "No containers found running after installation"
-    log_info "Checking for stopped containers:"
-    podman ps -a || echo "No containers found"
+    log_warning "Frontend container is not responding properly"
+    curl -v http://localhost:15000/
   fi
   
-  # Clean up after the test in CI
-  log_info "Step 2.5: Cleaning up after test"
-  log_info "Command: podman-compose -f $TEMP_CONFIG_FILE down"
-  
-  # Run cleanup
-  podman-compose -f "$TEMP_CONFIG_FILE" down
-  CLEANUP_EXIT_CODE=$?
-  
-  if [ $CLEANUP_EXIT_CODE -eq 0 ]; then
-    log_success "Final cleanup successful"
+  # Check backend health
+  log_info "Checking if backend container health endpoint is responsive..."
+  if curl -s -o /dev/null -w "%{http_code}" http://localhost:15001/health | grep -q "200"; then
+    log_success "Backend container health endpoint is responsive"
   else
-    log_warning "Final cleanup may not have been complete"
+    log_warning "Backend container health endpoint is not responding properly"
+    curl -v http://localhost:15001/health
+  fi
+  
+  # Overall health check result
+  if curl -s -o /dev/null -w "%{http_code}" http://localhost:15000/ | grep -q "200" && \
+     curl -s -o /dev/null -w "%{http_code}" http://localhost:15001/health | grep -q "200"; then
+    log_success "All container health checks passed successfully"
+  else
+    log_warning "Some container health checks failed"
   fi
 else
-  # In local environment, check for share-things containers
-  CONTAINER_COUNT=$(podman ps | grep -c "share-things" || echo "0")
-  
-  if [ "$CONTAINER_COUNT" -gt 0 ]; then
-    log_success "Installation verified: $CONTAINER_COUNT containers are running"
-    podman ps | grep "share-things"
-    
-    # Perform health checks on the containers
-    log_info "Step 2.4: Performing health checks on containers"
-    
-    # Wait a moment for containers to fully initialize
-    log_info "Waiting for containers to fully initialize (15 seconds)..."
-    sleep 15
-    
-    # Check frontend health
-    log_info "Checking if frontend container is responsive..."
-    if curl -s -o /dev/null -w "%{http_code}" http://localhost:15000/ | grep -q "200"; then
-      log_success "Frontend container is responsive"
-    else
-      log_warning "Frontend container is not responding properly"
-      curl -v http://localhost:15000/
-    fi
-    
-    # Check backend health
-    log_info "Checking if backend container health endpoint is responsive..."
-    if curl -s -o /dev/null -w "%{http_code}" http://localhost:15001/health | grep -q "200"; then
-      log_success "Backend container health endpoint is responsive"
-    else
-      log_warning "Backend container health endpoint is not responding properly"
-      curl -v http://localhost:15001/health
-    fi
-    
-    # Overall health check result
-    if curl -s -o /dev/null -w "%{http_code}" http://localhost:15000/ | grep -q "200" && \
-       curl -s -o /dev/null -w "%{http_code}" http://localhost:15001/health | grep -q "200"; then
-      log_success "All container health checks passed successfully"
-    else
-      log_warning "Some container health checks failed"
-    fi
-  else
-    log_warning "No containers found running after installation"
-    log_info "Checking for stopped containers:"
-    podman ps -a | grep "share-things" || echo "No containers found"
-  fi
-  
-  # Clean up after the test in local environment
-  log_info "Step 2.5: Cleaning up after test"
-  log_info "Command: ./setup.sh --uninstall --non-interactive"
-  
-  # Create a temporary log file for cleanup output
-  TEMP_LOG_FILE="setup-cleanup-output.log"
-  ./setup.sh --uninstall --non-interactive > "$TEMP_LOG_FILE" 2>&1
-  CLEANUP_EXIT_CODE=$?
-  
-  if [ $CLEANUP_EXIT_CODE -eq 0 ]; then
-    log_success "Final cleanup successful"
-  else
-    log_warning "Final cleanup may not have been complete"
-  fi
-  
-  # Clean up the log file
-  rm -f "$TEMP_LOG_FILE"
+  log_warning "No containers found running after installation"
+  log_info "Checking for stopped containers:"
+  podman ps -a | grep "share-things" || echo "No containers found"
 fi
+
+# Clean up after the test
+log_info "Step 2.5: Cleaning up after test"
+log_info "Command: ./setup.sh --uninstall --non-interactive"
+
+# Create a temporary log file for cleanup output
+TEMP_LOG_FILE="setup-cleanup-output.log"
+./setup.sh --uninstall --non-interactive > "$TEMP_LOG_FILE" 2>&1
+CLEANUP_EXIT_CODE=$?
+
+if [ $CLEANUP_EXIT_CODE -eq 0 ]; then
+  log_success "Final cleanup successful"
+else
+  log_warning "Final cleanup may not have been complete"
+fi
+
+# Clean up the log file
+rm -f "$TEMP_LOG_FILE"
 
 # Change back to original directory
 cd "$CURRENT_DIR"

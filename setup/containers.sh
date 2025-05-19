@@ -391,22 +391,23 @@ build_and_start_containers() {
 # Verify containers are running
 verify_containers() {
     log_info "Checking container status..."
-    echo "Running: podman ps --filter label=io.podman.compose.project=share-things"
-    podman ps --filter label=io.podman.compose.project=share-things
+    echo "Running: podman ps | grep share-things"
+    podman ps | grep share-things || echo "No share-things containers found in 'podman ps' output"
     
     # Get detailed container information
     echo "Detailed container information:"
     podman ps -a --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}" | grep share-things || echo "No share-things containers found"
     
-    # Count running containers
-    # Use a simpler approach to avoid command substitution issues
+    # Count running containers by name, without relying on labels
+    # This is more reliable as it checks for containers by name pattern
     RUNNING_COUNT=0
-    if podman ps --filter label=io.podman.compose.project=share-things | grep -q "share-things-frontend"; then
+    if podman ps | grep -q "share-things-frontend"; then
         RUNNING_COUNT=$((RUNNING_COUNT + 1))
     fi
-    if podman ps --filter label=io.podman.compose.project=share-things | grep -q "share-things-backend"; then
+    if podman ps | grep -q "share-things-backend"; then
         RUNNING_COUNT=$((RUNNING_COUNT + 1))
     fi
+    
     if [ "$RUNNING_COUNT" -ge "2" ]; then
         log_success "Containers are running successfully!"
         
@@ -418,10 +419,10 @@ verify_containers() {
         # Check container logs for errors
         log_info "Checking container logs for errors..."
         echo "Backend container logs:"
-        podman logs share-things-backend --tail 20
+        podman logs share-things-backend --tail 20 2>/dev/null || echo "No logs available for backend container"
         
         echo "Frontend container logs:"
-        podman logs share-things-frontend --tail 20
+        podman logs share-things-frontend --tail 20 2>/dev/null || echo "No logs available for frontend container"
         
         # Check container network
         echo "Container network information:"
@@ -429,10 +430,10 @@ verify_containers() {
         
         # Check container ports
         echo "Container port mappings:"
-        podman port share-things-frontend || echo "No port mappings for frontend container"
-        podman port share-things-backend || echo "No port mappings for backend container"
+        podman port share-things-frontend 2>/dev/null || echo "No port mappings for frontend container"
+        podman port share-things-backend 2>/dev/null || echo "No port mappings for backend container"
     else
-        log_error "Warning: Not all containers appear to be running."
+        log_warning "Not all expected containers appear to be running."
         echo "You can check container logs with: podman logs <container_name>"
         
         # Show logs for troubleshooting
@@ -445,11 +446,11 @@ verify_containers() {
         
         # Check if containers exist but are not running
         echo "Checking for stopped containers:"
-        podman ps -a --filter name=share-things
+        podman ps -a | grep share-things || echo "No share-things containers found"
         
         # Check for container creation errors
         echo "Checking for container creation errors:"
-        podman events --filter event=create --filter event=die --since 5m --format "{{.Time}} {{.Type}} {{.Action}} {{.Actor.Name}}" || echo "No recent container events"
+        podman events --filter event=create --filter event=die --since 5m --format "{{.Time}} {{.Type}} {{.Action}} {{.Actor.Name}}" 2>/dev/null || echo "No recent container events"
     fi
     
     # Save logs to file if in debug mode
