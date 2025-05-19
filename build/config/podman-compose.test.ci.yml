@@ -9,6 +9,15 @@ services:
       interval: 5s
       timeout: 3s
       retries: 3
+    networks:
+      - app_network
+    depends_on:
+      - backend
+    environment:
+      - BACKEND_HOST=backend
+      - BACKEND_PORT=15001
+    # Skip the entrypoint script that tries to ping backend
+    entrypoint: ["nginx", "-g", "daemon off;"]
   backend:
     image: linner.ddns.net:4443/docker.io.proxy/node:18-alpine
     command: ["node", "-e", "const http=require('http');const server=http.createServer((req,res)=>{if(req.url==='/health'){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({status:'ok'}));}else{res.writeHead(404);res.end();}});server.listen(15001);console.log('Server listening on port 15001');"]
@@ -19,3 +28,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 3
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge

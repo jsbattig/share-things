@@ -139,15 +139,30 @@ if [ "$CI" = "true" ]; then
   # Create necessary directories with proper permissions
   log_info "Creating necessary directories if they don't exist"
   mkdir -p build/config
+  mkdir -p data
+  mkdir -p client/dist
+  mkdir -p server/dist
   
   # Set appropriate permissions
   log_info "Setting appropriate permissions"
   chmod -R 755 build
+  chmod -R 777 data 2>/dev/null || true
+  chmod -R 777 client/dist 2>/dev/null || true
+  chmod -R 777 server/dist 2>/dev/null || true
   
   # Copy the CI-specific podman-compose file if it exists
   if [ -f "$REPO_ROOT/build/config/podman-compose.test.ci.yml" ]; then
     log_info "Using CI-specific podman-compose configuration"
     cp "$REPO_ROOT/build/config/podman-compose.test.ci.yml" "$REPO_ROOT/build/config/podman-compose.yml"
+    # Make sure the file is copied successfully
+    if [ -f "$REPO_ROOT/build/config/podman-compose.yml" ]; then
+      log_info "CI-specific podman-compose configuration copied successfully"
+      log_info "Contents of podman-compose.yml:"
+      cat "$REPO_ROOT/build/config/podman-compose.yml"
+    else
+      log_error "Failed to copy CI-specific podman-compose configuration"
+      exit 1
+    fi
   fi
 fi
 
