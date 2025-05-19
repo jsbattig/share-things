@@ -27,6 +27,8 @@ fi
 
 echo "Repository root: $REPO_ROOT"
 echo "Current working directory: $(pwd)"
+echo "Files in current directory:"
+ls -la
 
 # Container names
 FRONTEND_CONTAINER="share-things-frontend"
@@ -39,6 +41,18 @@ else
   LOG_DIR="$REPO_ROOT/test/setup/logs"
 fi
 mkdir -p "$LOG_DIR"
+
+# In CI environment, we need to make sure setup.sh is executable
+if [ "$CI" = "true" ]; then
+  if [ -f "./setup.sh" ]; then
+    chmod +x ./setup.sh
+    echo "Made setup.sh executable"
+  else
+    echo "ERROR: setup.sh not found in current directory!"
+    ls -la
+    exit 1
+  fi
+fi
 
 # ===== UTILITY FUNCTIONS =====
 
@@ -98,15 +112,23 @@ cleanup_environment() {
   log_info "Removing all containers..."
   podman rm -f $(podman ps -a -q --filter name=share-things) 2>/dev/null || true
   
-  # Remove environment files
+  # Remove environment files - check if they exist first
   log_info "Removing environment files..."
-  rm -f "$REPO_ROOT/.env" "$REPO_ROOT/client/.env" "$REPO_ROOT/server/.env" 2>/dev/null || true
+  [ -f "$REPO_ROOT/.env" ] && rm -f "$REPO_ROOT/.env"
+  [ -f "$REPO_ROOT/client/.env" ] && rm -f "$REPO_ROOT/client/.env"
+  [ -f "$REPO_ROOT/server/.env" ] && rm -f "$REPO_ROOT/server/.env"
   
-  # Remove generated compose files
+  # Create directories if they don't exist in CI environment
+  if [ "$CI" = "true" ]; then
+    mkdir -p "$REPO_ROOT/build/config"
+    log_info "Created build/config directory for CI environment"
+  fi
+  
+  # Remove generated compose files - check if they exist first
   log_info "Removing generated compose files..."
-  rm -f "$REPO_ROOT/build/config/podman-compose.prod.yml" \
-        "$REPO_ROOT/build/config/podman-compose.prod.temp.yml" \
-        "$REPO_ROOT/build/config/podman-compose.update.yml" 2>/dev/null || true
+  [ -f "$REPO_ROOT/build/config/podman-compose.prod.yml" ] && rm -f "$REPO_ROOT/build/config/podman-compose.prod.yml"
+  [ -f "$REPO_ROOT/build/config/podman-compose.prod.temp.yml" ] && rm -f "$REPO_ROOT/build/config/podman-compose.prod.temp.yml"
+  [ -f "$REPO_ROOT/build/config/podman-compose.update.yml" ] && rm -f "$REPO_ROOT/build/config/podman-compose.update.yml"
   
   # Prune podman resources
   log_info "Pruning podman resources..."
@@ -195,18 +217,37 @@ cleanup_environment
 
 # Run setup.sh to install the application
 log_info "Running setup.sh to install the application..."
+
 # Change to the repository root directory before running setup.sh
 cd "$REPO_ROOT"
-if ! ./setup.sh --non-interactive --force-install --hostname=auto --expose-ports --debug --force; then
-  log_error "setup.sh failed to install the application."
-  cd - > /dev/null  # Return to the original directory
-  exit 1
+
+# In CI environment, use a shorter timeout
+if [ "$CI" = "true" ]; then
+  log_info "Running in CI environment with timeout"
+  if ! timeout 180 ./setup.sh --non-interactive --force-install --hostname=auto --expose-ports --debug --force; then
+    log_error "setup.sh failed to install the application or timed out."
+    cd - > /dev/null  # Return to the original directory
+    exit 1
+  fi
+else
+  # Normal execution in non-CI environment
+  if ! ./setup.sh --non-interactive --force-install --hostname=auto --expose-ports --debug --force; then
+    log_error "setup.sh failed to install the application."
+    cd - > /dev/null  # Return to the original directory
+    exit 1
+  fi
 fi
+
 cd - > /dev/null  # Return to the original directory
 
-# Wait for containers to start
-log_info "Waiting for containers to start (10 seconds)..."
-sleep 10
+# Wait for containers to start - longer in CI environment
+if [ "$CI" = "true" ]; then
+  log_info "Waiting for containers to start in CI environment (20 seconds)..."
+  sleep 20
+else
+  log_info "Waiting for containers to start (10 seconds)..."
+  sleep 10
+fi
 
 # Show all containers
 log_info "Current containers:"

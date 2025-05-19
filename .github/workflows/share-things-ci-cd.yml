@@ -129,8 +129,22 @@ jobs:
     
     - uses: actions/checkout@v3
     
+    - name: List test directory contents
+      run: |
+        echo "Listing test directory contents:"
+        ls -la test/
+        echo "Listing test/setup directory contents:"
+        ls -la test/setup/
+    
     - name: Make setup test scripts executable
-      run: chmod +x test/setup/setup-test-install.sh
+      run: |
+        if [ -f "test/setup/setup-test-install.sh" ]; then
+          chmod +x test/setup/setup-test-install.sh
+          echo "Made setup-test-install.sh executable"
+        else
+          echo "ERROR: setup-test-install.sh not found!"
+          exit 1
+        fi
     
     - name: Debug environment
       run: |
@@ -147,8 +161,10 @@ jobs:
         df -h
     
     - name: Run setup installation test script
-      run: ./test/setup/setup-test-install.sh
-      timeout-minutes: 10  # Reduced timeout to avoid hanging
+      run: |
+        # Use a shorter timeout for the actual command
+        timeout 300 ./test/setup/setup-test-install.sh
+      timeout-minutes: 6  # Further reduced timeout to avoid hanging
       env:
         CI: true
         PODMAN_USERNS: keep-id
