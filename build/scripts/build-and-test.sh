@@ -105,44 +105,28 @@ services:
       context: ./server
       dockerfile: Dockerfile.test
     container_name: share-things-backend-test
-    hostname: backend
+    network_mode: "host"  # Use host networking instead of bridge
     environment:
       - NODE_ENV=test
-    ports:
-      - "\${BACKEND_PORT}:3001"
-    networks:
-      app_network:
-        aliases:
-          - backend
+      - PORT=3001
+    command: npm test
 
   # Use a simple Node.js container for the frontend instead of a multi-stage build
   frontend:
     image: node:18-alpine
     container_name: share-things-frontend-test
-    hostname: frontend
+    network_mode: "host"  # Use host networking instead of bridge
     working_dir: /app
     volumes:
       - ./client:/app
     environment:
-      - VITE_API_URL=http://backend:3001
-      - VITE_SOCKET_URL=http://backend:3001
+      - VITE_API_URL=http://localhost:3001
+      - VITE_SOCKET_URL=http://localhost:3001
       - VITE_ENABLE_ANALYTICS=false
       - VITE_ENABLE_LOGGING=true
-    ports:
-      - "\${FRONTEND_PORT}:3000"
-    depends_on:
-      - backend
-    networks:
-      app_network:
-        aliases:
-          - frontend
     command: sh -c "npm install && npm run preview -- --host 0.0.0.0 --port 3000"
 
-
-# Explicit network configuration
-networks:
-  app_network:
-    driver: bridge
+# No networks needed with host networking
 EOL
 
 echo -e "${GREEN}Docker Compose test configuration created.${NC}"
@@ -188,7 +172,7 @@ mkdir -p test-results
 echo -e "${YELLOW}Running server unit tests...${NC}"
 # Run server unit tests directly with podman
 echo -e "${YELLOW}Running server unit tests...${NC}"
-podman run --rm --name share-things-backend-test -e NODE_ENV=test share-things-backend-test npm test
+podman run --rm --name share-things-backend-test --network host -e NODE_ENV=test -e PORT=3001 share-things-backend-test npm test
 SERVER_TEST_EXIT_CODE=$?
 
 # Ensure client has crypto-js installed
@@ -207,8 +191,11 @@ fi
 echo -e "${YELLOW}Running client unit tests...${NC}"
 # Run client unit tests directly with podman
 podman run --rm --name share-things-frontend-test \
+  --network host \
   -v ./client:/app:Z \
   -w /app \
+  -e VITE_API_URL=http://localhost:3001 \
+  -e VITE_SOCKET_URL=http://localhost:3001 \
   share-things-frontend-test \
   npm test
 
@@ -226,8 +213,11 @@ echo -e "${YELLOW}Running functional tests...${NC}"
 # Create a temporary container to run the functional tests
 # Use the --cache flag to specify a cache directory within the mounted volume
 podman run --rm --name share-things-functional-tests \
+  --network host \
   -v ./test:/app/test:Z \
   -w /app/test/e2e/functional \
+  -e VITE_API_URL=http://localhost:3001 \
+  -e VITE_SOCKET_URL=http://localhost:3001 \
   share-things-frontend-test \
   sh -c "mkdir -p .npm-cache && \
          npm install --cache=./.npm-cache ts-jest @types/jest blob-polyfill uuid @types/uuid socket.io-client && \

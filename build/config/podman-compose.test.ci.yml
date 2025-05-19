@@ -2,22 +2,25 @@ version: '3'
 services:
   frontend:
     image: linner.ddns.net:4443/docker.io.proxy/nginx:alpine
-    ports:
-      - "15000:80"
+    network_mode: "host"  # Use host networking instead of bridge
     volumes:
       - ./client/dist:/usr/share/nginx/html:ro
     restart: always
+    environment:
+      - PORT=15000
+    command: ["sh", "-c", "mkdir -p /usr/share/nginx/html/health && echo '{\"status\":\"ok\"}' > /usr/share/nginx/html/health/index.json && nginx -g 'daemon off;'"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:15000/health"]
       interval: 5s
       timeout: 3s
       retries: 3
   
   backend:
     image: linner.ddns.net:4443/docker.io.proxy/node:18-alpine
+    network_mode: "host"  # Use host networking instead of bridge
+    environment:
+      - PORT=15001
     command: ["node", "-e", "const http=require('http');const server=http.createServer((req,res)=>{if(req.url==='/health'){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({status:'ok'}));}else{res.writeHead(404);res.end();}});server.listen(15001);console.log('Server listening on port 15001');"]
-    ports:
-      - "15001:15001"
     restart: always
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:15001/health"]
