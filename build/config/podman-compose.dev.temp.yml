@@ -6,14 +6,14 @@ services:
       context: /home/jsbattig/Dev/share-things/server
       dockerfile: Dockerfile
       args:
-        - PORT=15101
+        - PORT=15001
     container_name: share-things-backend
     hostname: backend
     environment:
       - NODE_ENV=development
-      - PORT=15101
+      - PORT=15001
     ports:
-      - "15101:15101"
+      - "15001:15001"
     restart: always
     networks:
       app_network:
@@ -32,13 +32,13 @@ services:
       args:
         - API_URL=auto
         - SOCKET_URL=auto
-        - API_PORT=15101
-        - VITE_API_PORT=15101
+        - API_PORT=15001
+        - VITE_API_PORT=15001
     container_name: share-things-frontend
     environment:
-      - API_PORT=15101
+      - API_PORT=15001
     ports:
-      - "15100:80"
+      - "15000:80"
     restart: always
     depends_on:
       - backend

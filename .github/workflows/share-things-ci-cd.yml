@@ -129,8 +129,8 @@ jobs:
     
     - uses: actions/checkout@v3
     
-    - name: Make test-setup script executable
-      run: chmod +x test/setup/test-setup.sh
+    - name: Make setup test scripts executable
+      run: chmod +x test/setup/setup-test-install.sh
     
     - name: Debug environment
       run: |
@@ -146,8 +146,8 @@ jobs:
         echo "Available disk space:"
         df -h
     
-    - name: Run test-setup script
-      run: ./test/setup/test-setup.sh
+    - name: Run setup installation test script
+      run: ./test/setup/setup-test-install.sh
       timeout-minutes: 15  # Allow up to 15 minutes for the test to complete
       env:
         CI: true
