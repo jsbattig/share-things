@@ -13,6 +13,20 @@ stop_containers() {
         RUNNING_CONTAINERS_BEFORE="has-containers"
     fi
     
+    # Check if podman is working properly
+    if ! podman info &> /dev/null; then
+        log_warning "Podman service may not be running properly. Attempting to reset..."
+        podman system migrate &> /dev/null || true
+        podman system reset --force &> /dev/null || true
+        
+        # Check again after reset
+        if ! podman info &> /dev/null; then
+            log_warning "Podman service still not running properly. Container operations may fail."
+        else
+            log_info "Podman service reset successfully."
+        fi
+    fi
+    
     # First attempt with podman-compose down
     log_info "Stopping containers with podman-compose..."
     # Use a hardcoded path to avoid command substitution issues
@@ -129,6 +143,20 @@ stop_containers() {
 clean_container_images() {
     log_info "Cleaning container image cache..."
     
+    # Check if podman is working properly
+    if ! podman info &> /dev/null; then
+        log_warning "Podman service may not be running properly. Attempting to reset..."
+        podman system migrate &> /dev/null || true
+        podman system reset --force &> /dev/null || true
+        
+        # Check again after reset
+        if ! podman info &> /dev/null; then
+            log_warning "Podman service still not running properly. Image cleanup may fail."
+        else
+            log_info "Podman service reset successfully."
+        fi
+    fi
+    
     # Remove dangling images (not used by any container)
     log_info "Removing dangling images (not used by any container)..."
     podman image prune -f
@@ -241,13 +269,47 @@ EOF
         ABSOLUTE_PROD_COMPOSE_PATH="$(cd "$(dirname "$PROD_COMPOSE_PATH")" && pwd)/$(basename "$PROD_COMPOSE_PATH")"
         log_info "Using absolute compose file path: $ABSOLUTE_PROD_COMPOSE_PATH"
         
-        podman-compose -f "$ABSOLUTE_PROD_COMPOSE_PATH" build --no-cache
+        # Check if podman is working properly before attempting to build
+        if ! podman info &> /dev/null; then
+            log_warning "Podman service may not be running properly. Attempting to reset..."
+            podman system migrate &> /dev/null || true
+            podman system reset --force &> /dev/null || true
+            
+            # Check again after reset
+            if ! podman info &> /dev/null; then
+                log_warning "Podman service still not running properly. Will attempt to continue with existing images..."
+            else
+                log_info "Podman service reset successfully. Proceeding with build..."
+                podman-compose -f "$ABSOLUTE_PROD_COMPOSE_PATH" build --no-cache
+            fi
+        else
+            # Podman is working fine, proceed with build
+            podman-compose -f "$ABSOLUTE_PROD_COMPOSE_PATH" build --no-cache
+        fi
         
         log_info "Starting containers in production mode with ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}"
         
         # For podman-compose, we need to explicitly pass the environment variables
         # Include API_PORT to ensure it's available during the container runtime
-        FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT podman-compose -f "$ABSOLUTE_PROD_COMPOSE_PATH" up -d
+        
+        # Check if podman is working properly before attempting to start containers
+        if ! podman info &> /dev/null; then
+            log_warning "Podman service may not be running properly. Attempting to reset..."
+            podman system migrate &> /dev/null || true
+            podman system reset --force &> /dev/null || true
+            
+            # Check again after reset
+            if ! podman info &> /dev/null; then
+                log_warning "Podman service still not running properly. Container startup may fail."
+                FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT podman-compose -f "$ABSOLUTE_PROD_COMPOSE_PATH" up -d
+            else
+                log_info "Podman service reset successfully. Proceeding with container startup..."
+                FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT podman-compose -f "$ABSOLUTE_PROD_COMPOSE_PATH" up -d
+            fi
+        else
+            # Podman is working fine, proceed with container startup
+            FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT podman-compose -f "$ABSOLUTE_PROD_COMPOSE_PATH" up -d
+        fi
         
         # Store the compose file name for later use
         COMPOSE_FILE="$ABSOLUTE_PROD_COMPOSE_PATH"
@@ -363,8 +425,27 @@ EOF
         # Use a more reliable path construction
         ABSOLUTE_COMPOSE_PATH="$(cd "$(dirname "$COMPOSE_PATH")" && pwd)/$(basename "$COMPOSE_PATH")"
         log_info "Using absolute compose file path: $ABSOLUTE_COMPOSE_PATH"
-        podman-compose -f "$ABSOLUTE_COMPOSE_PATH" build --no-cache
-        BUILD_EXIT_CODE=$?
+        
+        # Check if podman is working properly before attempting to build
+        if ! podman info &> /dev/null; then
+            log_warning "Podman service may not be running properly. Attempting to reset..."
+            podman system migrate &> /dev/null || true
+            podman system reset --force &> /dev/null || true
+            
+            # Check again after reset
+            if ! podman info &> /dev/null; then
+                log_warning "Podman service still not running properly. Will attempt to continue with existing images..."
+                BUILD_EXIT_CODE=1
+            else
+                log_info "Podman service reset successfully. Proceeding with build..."
+                podman-compose -f "$ABSOLUTE_COMPOSE_PATH" build --no-cache
+                BUILD_EXIT_CODE=$?
+            fi
+        else
+            # Podman is working fine, proceed with build
+            podman-compose -f "$ABSOLUTE_COMPOSE_PATH" build --no-cache
+            BUILD_EXIT_CODE=$?
+        fi
         
         if [ $BUILD_EXIT_CODE -ne 0 ]; then
             log_error "Container build failed with exit code $BUILD_EXIT_CODE"
@@ -387,8 +468,28 @@ EOF
         # Start the containers
         log_info "Starting containers with podman-compose..."
         # Use the same absolute path approach
-        podman-compose -f "$ABSOLUTE_COMPOSE_PATH" up -d
-        UP_EXIT_CODE=$?
+        
+        # Check if podman is working properly before attempting to start containers
+        if ! podman info &> /dev/null; then
+            log_warning "Podman service may not be running properly. Attempting to reset..."
+            podman system migrate &> /dev/null || true
+            podman system reset --force &> /dev/null || true
+            
+            # Check again after reset
+            if ! podman info &> /dev/null; then
+                log_warning "Podman service still not running properly. Container startup may fail."
+                podman-compose -f "$ABSOLUTE_COMPOSE_PATH" up -d
+                UP_EXIT_CODE=$?
+            else
+                log_info "Podman service reset successfully. Proceeding with container startup..."
+                podman-compose -f "$ABSOLUTE_COMPOSE_PATH" up -d
+                UP_EXIT_CODE=$?
+            fi
+        else
+            # Podman is working fine, proceed with container startup
+            podman-compose -f "$ABSOLUTE_COMPOSE_PATH" up -d
+            UP_EXIT_CODE=$?
+        fi
         
         if [ $UP_EXIT_CODE -ne 0 ]; then
             log_error "Container startup failed with exit code $UP_EXIT_CODE"
@@ -409,6 +510,20 @@ EOF
 
 # Verify containers are running
 verify_containers() {
+    # Check if podman is working properly
+    if ! podman info &> /dev/null; then
+        log_warning "Podman service may not be running properly. Attempting to reset..."
+        podman system migrate &> /dev/null || true
+        podman system reset --force &> /dev/null || true
+        
+        # Check again after reset
+        if ! podman info &> /dev/null; then
+            log_warning "Podman service still not running properly. Container verification may fail."
+        else
+            log_info "Podman service reset successfully."
+        fi
+    fi
+    
     log_info "Checking container status..."
     echo "Running: podman ps | grep share-things"
     podman ps | grep share-things || echo "No share-things containers found in 'podman ps' output"
