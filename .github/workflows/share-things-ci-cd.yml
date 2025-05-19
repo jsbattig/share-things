@@ -163,12 +163,11 @@ jobs:
     - name: Run setup installation test script
       run: |
         # Use a shorter timeout for the actual command
-        timeout 300 ./test/setup/setup-test-install.sh
-      timeout-minutes: 6  # Further reduced timeout to avoid hanging
+        timeout 180 ./test/setup/setup-test-install.sh
+      timeout-minutes: 4  # Further reduced timeout to avoid hanging
       env:
         CI: true
         PODMAN_USERNS: keep-id
-        SKIP_HEALTH_CHECKS: true  # Skip health checks in CI environment
 
   integration:
     name: Dockered Build and Tests
