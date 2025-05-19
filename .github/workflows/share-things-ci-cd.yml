@@ -257,12 +257,21 @@ jobs:
           mkdir -p deployment-logs
           
           # Run the setup script with verbose output and capture logs
+          echo "Running setup.sh with update mode for production deployment..."
           sshpass -p "${{ secrets.GHRUserPassword }}" ssh -v -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && bash -x ./setup.sh --update --non-interactive --debug 2>&1" | tee deployment-logs/deploy-$(date +%Y%m%d-%H%M%S).log
           DEPLOY_EXIT_CODE=$?
           
           # Get container status after deployment
           echo "Checking container status after deployment..."
           sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && podman ps --filter label=io.podman.compose.project=share-things" | tee -a deployment-logs/deploy-$(date +%Y%m%d-%H%M%S)-containers.log
+          
+          # Check for any build images
+          echo "Checking for build images..."
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && podman images | grep share-things" | tee -a deployment-logs/deploy-$(date +%Y%m%d-%H%M%S)-images.log
+          
+          # Check for compose files
+          echo "Checking for compose files..."
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && ls -la build/config/" | tee -a deployment-logs/deploy-$(date +%Y%m%d-%H%M%S)-files.log
           
           # Get container logs
           echo "Fetching container logs..."

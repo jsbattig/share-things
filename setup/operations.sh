@@ -340,17 +340,8 @@ EOF
         log_success "Containers started successfully"
     fi
     
-    # For testing purposes only, create dummy containers to pass the verification
-    # This should only run in CI or explicit testing environments, never in production
-    if [ -n "$CI" ] || [ "$TESTING" = "true" ]; then
-        log_info "Creating dummy containers for testing environment only"
-        # Create dummy containers that will pass the verification and keep running
-        # Use fully qualified image names with the correct registry
-        podman run -d --name share-things-frontend linner.ddns.net:4443/docker.io.proxy/nginx:alpine
-        podman run -d --name share-things-backend linner.ddns.net:4443/docker.io.proxy/nginx:alpine
-    else
-        log_info "Running in production mode - using real containers"
-    fi
+    # No dummy containers - always use real containers for all environments
+    log_info "Using real containers for all environments"
     UP_EXIT_CODE=$?
     echo "Up exit code: $UP_EXIT_CODE"
     

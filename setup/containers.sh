@@ -383,14 +383,8 @@ build_and_start_containers() {
         COMPOSE_FILE="$ABSOLUTE_COMPOSE_PATH"
         log_info "Compose file set to: $COMPOSE_FILE"
         
-        # For testing purposes, create dummy containers to pass the verification
-        if [ -n "$CI" ] || [ "$TESTING" = "true" ]; then
-            log_info "Creating dummy containers for testing"
-            # Create dummy containers that will pass the verification and keep running
-            # Use fully qualified image names with the correct registry
-            podman run -d --name share-things-frontend linner.ddns.net:4443/docker.io.proxy/nginx:alpine-slim
-            podman run -d --name share-things-backend linner.ddns.net:4443/docker.io.proxy/nginx:alpine-slim
-        fi
+        # No dummy containers - always use real containers for all environments
+        log_info "Using real containers for all environments"
     fi
 }
 

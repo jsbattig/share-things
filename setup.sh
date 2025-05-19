@@ -20,6 +20,9 @@ COMPOSE_FILE="$(pwd)/build/config/podman-compose.yml"
 FORCE_INSTALL="false"
 DEBUG_MODE="false"
 
+# Export INSTALL_MODE so it's available to all functions
+export INSTALL_MODE
+
 # Source the module scripts
 source setup/common.sh
 source setup/config.sh
