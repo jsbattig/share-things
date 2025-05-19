@@ -7,6 +7,8 @@ node_modules/
 coverage/
 test-results/
 playwright-report/
+test-logs-*
+container-logs-*
 
 # Production
 build/*
@@ -23,6 +25,7 @@ out/
 .env.test.local
 .env.production.local
 client/.env.backend
+backups/
 
 # Debug
 npm-debug.log*
@@ -49,3 +52,4 @@ logs
 /client/build/assets
 /test/e2e/functional/test/e2e/functional/.npm-cache
 /test/e2e/functional/.npm-cache
+*.exit

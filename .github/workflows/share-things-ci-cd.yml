@@ -249,9 +249,24 @@ jobs:
           
           echo "No running setup.sh --update process detected. Proceeding with deployment..."
           
-          # Set up SSH connection and run the update script, capturing the exit code
-          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && ./setup.sh --update --non-interactive"
+          # Set up SSH connection and run the update script with verbose output
+          echo "Starting deployment with verbose logging..."
+          
+          # Create a log directory if it doesn't exist
+          mkdir -p deployment-logs
+          
+          # Run the setup script with verbose output and capture logs
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -v -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && bash -x ./setup.sh --update --non-interactive --debug 2>&1" | tee deployment-logs/deploy-$(date +%Y%m%d-%H%M%S).log
           DEPLOY_EXIT_CODE=$?
+          
+          # Get container status after deployment
+          echo "Checking container status after deployment..."
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && podman ps --filter label=io.podman.compose.project=share-things" | tee -a deployment-logs/deploy-$(date +%Y%m%d-%H%M%S)-containers.log
+          
+          # Get container logs
+          echo "Fetching container logs..."
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && podman logs share-things-frontend --tail 50" | tee -a deployment-logs/deploy-$(date +%Y%m%d-%H%M%S)-frontend.log
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && podman logs share-things-backend --tail 50" | tee -a deployment-logs/deploy-$(date +%Y%m%d-%H%M%S)-backend.log
           
           # Check if the deployment was successful
           if [ $DEPLOY_EXIT_CODE -ne 0 ]; then
@@ -259,4 +274,14 @@ jobs:
             exit $DEPLOY_EXIT_CODE
           else
             echo "Deployment completed successfully"
+            
+            # Upload deployment logs as artifacts
+            echo "Uploading deployment logs as artifacts..."
           fi
+          
+      - name: Upload deployment logs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: deployment-logs
+          path: deployment-logs/

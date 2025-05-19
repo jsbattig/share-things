@@ -91,13 +91,28 @@ perform_installation() {
 
 # Perform update
 perform_update() {
+    echo "=== Starting update process with detailed logging ==="
+    echo "Current time: $(date)"
+    
     # Backup current configuration
+    echo "Step 1: Backing up current configuration..."
     backup_configuration
     
     # Pull latest code
+    echo "Step 2: Pulling latest code from repository..."
     pull_latest_code
     
+    # Log git status and last commit
+    if [ -d .git ]; then
+        echo "Git repository information:"
+        echo "Current branch: $(git branch --show-current)"
+        echo "Last commit: $(git log -1 --pretty=format:'%h - %s (%cr) <%an>')"
+        echo "Modified files:"
+        git status --porcelain
+    fi
+    
     # Capture current configuration
+    echo "Step 3: Capturing current configuration..."
     capture_current_configuration
     
     # Determine which compose file to use
@@ -208,12 +223,40 @@ EOL
     log_info "Using environment variables: FRONTEND_PORT=$FRONTEND_PORT, BACKEND_PORT=$BACKEND_PORT, API_PORT=$API_PORT, VITE_API_PORT=$VITE_API_PORT"
     
     # Build and run containers with explicitly passed environment variables
-    log_info "Building containers with comprehensive configuration..."
-    podman-compose -f "$(pwd)/build/config/podman-compose.update.yml" build
+    log_info "Step 8: Building containers with comprehensive configuration..."
+    # Create a variable with the full path to avoid command substitution issues
+    # Use a more reliable approach to avoid command substitution issues
+    echo "$(pwd)/build/config/podman-compose.update.yml" > /tmp/compose_update_path.txt
+    COMPOSE_UPDATE_PATH=$(cat /tmp/compose_update_path.txt)
+    echo "Running: podman-compose -f \"$COMPOSE_UPDATE_PATH\" build --no-cache"
+    podman-compose -f "$COMPOSE_UPDATE_PATH" build --no-cache
+    BUILD_EXIT_CODE=$?
+    echo "Build exit code: $BUILD_EXIT_CODE"
     
-    log_info "Starting containers with explicit environment variables..."
+    if [ $BUILD_EXIT_CODE -ne 0 ]; then
+        log_error "Container build failed with exit code $BUILD_EXIT_CODE"
+        echo "Build logs:"
+        podman logs podman-build 2>&1 || echo "No build logs available"
+    else
+        log_success "Container build completed successfully"
+    fi
+    
+    log_info "Step 9: Starting containers with explicit environment variables..."
+    # Use the same variable for consistency
+    echo "Running: FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT podman-compose -f \"$COMPOSE_UPDATE_PATH\" up -d"
     # Directly pass environment variables to the compose command
-    FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT podman-compose -f "$(pwd)/build/config/podman-compose.update.yml" up -d
+    # Make sure the file exists before using it
+    touch /tmp/compose_update_path.txt
+    COMPOSE_UPDATE_PATH=$(cat /tmp/compose_update_path.txt)
+    FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT podman-compose -f "$COMPOSE_UPDATE_PATH" up -d
+    UP_EXIT_CODE=$?
+    echo "Up exit code: $UP_EXIT_CODE"
+    
+    if [ $UP_EXIT_CODE -ne 0 ]; then
+        log_error "Container startup failed with exit code $UP_EXIT_CODE"
+    else
+        log_success "Containers started successfully"
+    fi
     
     COMPOSE_FILE="$(pwd)/build/config/podman-compose.update.yml"
     
@@ -251,7 +294,12 @@ EOL
     fi
     
     # Verify containers
+    echo "Step 10: Verifying containers..."
     verify_containers
+    
+    # List all images to verify they were rebuilt
+    echo "Step 11: Listing all container images..."
+    podman images | grep share-things || echo "No share-things images found"
     
     # Clean up any temporary files created during the update
     if [ -f build/config/podman-compose.update.yml ]; then
@@ -264,6 +312,8 @@ EOL
     # Clean up any backup files created by sed
     cleanup_backup_files
     
+    echo "=== Update process completed ==="
+    echo "End time: $(date)"
     log_success "Update complete!"
     
     # Display current configuration
@@ -300,9 +350,48 @@ perform_uninstall() {
     fi
     
     # Stop and remove containers
+    # This function is defined in setup/containers.sh, but we'll add it here as a fallback
+    if ! type stop_containers &>/dev/null; then
+        stop_containers() {
+            log_info "Stopping running containers..."
+            
+            # Stop all containers at once
+            podman stop --all --time 10 2>/dev/null || log_warning "Failed to stop all containers"
+            
+            # Try to stop specific containers by name
+            podman stop --time 10 share-things-frontend 2>/dev/null || log_warning "Failed to stop frontend container"
+            podman stop --time 10 share-things-backend 2>/dev/null || log_warning "Failed to stop backend container"
+            
+            # Remove all containers at once
+            podman rm -f --all 2>/dev/null || log_warning "Failed to remove all containers"
+            
+            # Try to remove specific containers by name
+            podman rm -f share-things-frontend 2>/dev/null || log_warning "Failed to remove frontend container"
+            podman rm -f share-things-backend 2>/dev/null || log_warning "Failed to remove backend container"
+            
+            log_success "All containers stopped successfully."
+        }
+    fi
+    
     stop_containers
     
     # Clean container images
+    # This function is defined in setup/containers.sh, but we'll add it here as a fallback
+    if ! type clean_container_images &>/dev/null; then
+        clean_container_images() {
+            log_info "Cleaning container image cache..."
+            
+            # Remove dangling images (not used by any container)
+            podman image prune -f
+            log_success "Podman dangling images removed."
+            
+            # Perform full cleanup automatically in autonomous mode
+            log_info "Performing full Podman system prune..."
+            podman system prune -f
+            log_success "Podman system cache cleaned."
+        }
+    fi
+    
     clean_container_images
     
     # Ask if want to remove configuration files

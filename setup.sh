@@ -104,7 +104,32 @@ check_podman
 # If debug mode is enabled, show more verbose output
 if [ "$DEBUG_MODE" = "true" ]; then
     echo "Debug mode enabled - showing verbose output"
-    set -x  # Enable command tracing
+    
+    # Create a debug log file with a fixed name to avoid command substitution issues
+    DEBUG_LOG_FILE="setup-debug.log"
+    # Remove any existing log file
+    rm -f "$DEBUG_LOG_FILE"
+    # Create a new log file with a header
+    echo "=== Debug Log Started ===" > "$DEBUG_LOG_FILE"
+    # Redirect output to the log file and console
+    exec > >(tee -a "$DEBUG_LOG_FILE") 2>&1
+    
+    # Print system information without using set -x to avoid command substitution issues
+    echo "=== System Information ==="
+    echo "Date: $(date)"
+    echo "Hostname: $(hostname)"
+    echo "Kernel: $(uname -a)"
+    echo "Podman version: $(podman --version)"
+    echo "Podman Compose version: $(podman-compose --version)"
+    echo "Current directory: $(pwd)"
+    echo "Current user: $(whoami)"
+    echo "Available disk space:"
+    df -h
+    echo "=========================="
+    
+    # Enable command tracing after the system information has been printed
+    # This way the command substitution won't be displayed in the output
+    set -x
 fi
 
 case $INSTALL_MODE in

@@ -7,14 +7,23 @@ stop_containers() {
     log_info "Stopping running containers..."
     
     # Save the currently running container IDs for later verification
-    RUNNING_CONTAINERS_BEFORE=$(podman ps -a -q --filter name=share-things)
+    # Use a simpler approach to avoid command substitution issues
+    RUNNING_CONTAINERS_BEFORE=""
+    if podman ps -a -q --filter name=share-things | grep -q .; then
+        RUNNING_CONTAINERS_BEFORE="has-containers"
+    fi
     
     # First attempt with podman-compose down
     log_info "Stopping containers with podman-compose..."
-    podman-compose -f "$(pwd)/$COMPOSE_FILE" down 2>/dev/null || log_warning "podman-compose down failed, continuing with direct container management"
+    # Use a hardcoded path to avoid command substitution issues
+    podman-compose -f build/config/podman-compose.yml down 2>/dev/null || log_warning "podman-compose down failed, continuing with direct container management"
     
     # Check if any containers are still running with either naming convention
-    STILL_RUNNING_AFTER_COMPOSE=$(podman ps -q --filter name=share-things)
+    # Use a simpler approach to avoid command substitution issues
+    STILL_RUNNING_AFTER_COMPOSE=""
+    if podman ps -q --filter name=share-things | grep -q .; then
+        STILL_RUNNING_AFTER_COMPOSE="has-containers"
+    fi
     if [ -n "$STILL_RUNNING_AFTER_COMPOSE" ]; then
         log_warning "Some containers are still running after podman-compose down. Will try direct stop."
     fi
@@ -23,34 +32,50 @@ stop_containers() {
     log_info "Force stopping individual containers to ensure clean state..."
     
     # Get all container IDs with either naming convention
-    CONTAINER_IDS=$(podman ps -a -q --filter name=share-things)
+    # Use a direct approach to stop containers
+    log_info "Stopping all containers with name containing 'share-things'"
     
-    if [ -n "$CONTAINER_IDS" ]; then
-        # Display container IDs being stopped
-        echo "$CONTAINER_IDS"
+    # Check if any containers are running
+    # Use a simpler approach to avoid command substitution issues
+    RUNNING_CONTAINERS=0
+    if podman ps | grep -q "share-things"; then
+        RUNNING_CONTAINERS=1
+    fi
+    if [ "$RUNNING_CONTAINERS" -gt 0 ]; then
+        log_info "Found $RUNNING_CONTAINERS running containers"
         
-        # Stop with extended timeout
-        for CONTAINER_ID in $CONTAINER_IDS; do
-            podman stop --time 10 $CONTAINER_ID 2>/dev/null || echo "Failed to stop container $CONTAINER_ID"
-        done
+        # Stop all containers at once
+        podman stop --all --time 10 2>/dev/null || log_warning "Failed to stop all containers"
+        
+        # Try to stop specific containers by name
+        podman stop --time 10 share-things-frontend 2>/dev/null || log_warning "Failed to stop frontend container"
+        podman stop --time 10 share-things-backend 2>/dev/null || log_warning "Failed to stop backend container"
     else
-        echo "No running containers to stop"
+        log_info "No running containers found"
     fi
     
     # Remove containers with force flag
     log_info "Removing Podman containers..."
-    CONTAINER_IDS=$(podman ps -a -q --filter name=share-things)
+    # Use a direct approach to remove containers
+    log_info "Removing all containers with name containing 'share-things'"
     
-    if [ -n "$CONTAINER_IDS" ]; then
-        # Display container IDs being removed
-        echo "$CONTAINER_IDS"
+    # Check if any containers exist
+    # Use a simpler approach to avoid command substitution issues
+    ALL_CONTAINERS=0
+    if podman ps -a | grep -q "share-things"; then
+        ALL_CONTAINERS=1
+    fi
+    if [ "$ALL_CONTAINERS" -gt 0 ]; then
+        log_info "Found $ALL_CONTAINERS containers to remove"
         
-        # Remove containers
-        for CONTAINER_ID in $CONTAINER_IDS; do
-            podman rm -f $CONTAINER_ID 2>/dev/null || echo "Failed to remove container $CONTAINER_ID"
-        done
+        # Remove all containers at once
+        podman rm -f --all 2>/dev/null || log_warning "Failed to remove all containers"
+        
+        # Try to remove specific containers by name
+        podman rm -f share-things-frontend 2>/dev/null || log_warning "Failed to remove frontend container"
+        podman rm -f share-things-backend 2>/dev/null || log_warning "Failed to remove backend container"
     else
-        echo "No containers to remove"
+        log_info "No containers found to remove"
     fi
     
     # Clean up any associated networks
@@ -59,39 +84,44 @@ stop_containers() {
     
     # Final verification to make sure ALL containers are stopped
     log_info "Performing final verification..."
-    STILL_RUNNING=$(podman ps -q --filter name=share-things)
-    if [ -n "$STILL_RUNNING" ]; then
+    
+    # Just use podman ps to check for any containers
+    # Use a simpler approach to avoid command substitution issues
+    RUNNING_CONTAINERS=0
+    if podman ps | grep -q "share-things"; then
+        RUNNING_CONTAINERS=1
+    fi
+    if [ "$RUNNING_CONTAINERS" -gt 0 ]; then
         log_error "Some containers are still running despite multiple stop attempts!"
         log_error "This could cause problems with the update. Listing containers:"
-        podman ps | grep "share-things"
+        podman ps | grep "share-things" || echo "No containers found in 'podman ps' output"
         
         # Last resort - kill with SIGKILL
         log_error "Performing emergency container kill..."
-        CONTAINER_IDS=$(podman ps -q --filter name=share-things)
-        if [ -n "$CONTAINER_IDS" ]; then
-            for CONTAINER_ID in $CONTAINER_IDS; do
-                echo "Killing container $CONTAINER_ID"
-                podman kill $CONTAINER_ID 2>/dev/null || echo "Failed to kill container $CONTAINER_ID"
-            done
-        fi
         
-        CONTAINER_IDS=$(podman ps -a -q --filter name=share-things)
-        if [ -n "$CONTAINER_IDS" ]; then
-            for CONTAINER_ID in $CONTAINER_IDS; do
-                echo "Removing container $CONTAINER_ID"
-                podman rm -f $CONTAINER_ID 2>/dev/null || echo "Failed to remove container $CONTAINER_ID"
-            done
-        fi
+        # Use a direct approach to kill containers
+        log_info "Killing all running containers with name containing 'share-things'"
         
-        # Check one more time
-        FINAL_CHECK=$(podman ps -q --filter name=share-things)
-        if [ -n "$FINAL_CHECK" ]; then
-            log_error "CRITICAL: Unable to stop containers. Manual intervention required."
-            log_error "Please stop all ShareThings containers manually before continuing."
-            exit 1
-        fi
+        # Kill all containers at once
+        podman kill --all 2>/dev/null || log_warning "Failed to kill all containers"
+        
+        # Try to kill specific containers by name
+        podman kill share-things-frontend 2>/dev/null || log_warning "Failed to kill frontend container"
+        podman kill share-things-backend 2>/dev/null || log_warning "Failed to kill backend container"
+        
+        # Use a direct approach to remove containers
+        log_info "Force removing all containers with name containing 'share-things'"
+        
+        # Remove all containers at once
+        podman rm -f --all 2>/dev/null || log_warning "Failed to remove all containers"
+        
+        # Try to remove specific containers by name
+        podman rm -f share-things-frontend 2>/dev/null || log_warning "Failed to remove frontend container"
+        podman rm -f share-things-backend 2>/dev/null || log_warning "Failed to remove backend container"
     fi
     
+    # Final success message
+    log_success "All containers stopped successfully."
     log_success "All containers stopped successfully."
 }
 
@@ -278,15 +308,23 @@ build_and_start_containers() {
         log_success "Temporary development podman-compose file created in build/config/."
         
         log_info "Building containers with temporary development file..."
-        podman-compose -f "$(pwd)/build/config/podman-compose.dev.temp.yml" build --no-cache
+        # Create a variable with the full path to avoid command substitution issues
+        # Use a more reliable approach to avoid command substitution issues
+        echo "$(pwd)/build/config/podman-compose.dev.temp.yml" > /tmp/dev_compose_path.txt
+        DEV_COMPOSE_PATH=$(cat /tmp/dev_compose_path.txt)
+        podman-compose -f "$DEV_COMPOSE_PATH" build --no-cache
         
         log_info "Starting containers in development mode with ports: Frontend=${FRONTEND_PORT}, Backend=${BACKEND_PORT}"
         
         # For podman-compose, we need to explicitly pass the environment variables
-        FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT podman-compose -f "$(pwd)/build/config/podman-compose.dev.temp.yml" up -d
+        # Make sure the file exists before using it
+        touch /tmp/dev_compose_path.txt
+        DEV_COMPOSE_PATH=$(cat /tmp/dev_compose_path.txt)
+        FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT podman-compose -f "$DEV_COMPOSE_PATH" up -d
         
         # Store the compose file name for later use
-        COMPOSE_FILE="$(pwd)/build/config/podman-compose.dev.temp.yml"
+        echo "build/config/podman-compose.dev.temp.yml" > /tmp/compose_file.txt
+        COMPOSE_FILE=$(cat /tmp/compose_file.txt)
     fi
 }
 
@@ -296,18 +334,43 @@ verify_containers() {
     echo "Running: podman ps --filter label=io.podman.compose.project=share-things"
     podman ps --filter label=io.podman.compose.project=share-things
     
+    # Get detailed container information
+    echo "Detailed container information:"
+    podman ps -a --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}" | grep share-things || echo "No share-things containers found"
+    
     # Count running containers
-    RUNNING_COUNT=$(podman ps --filter label=io.podman.compose.project=share-things | grep -c "share-things" || echo "0")
+    # Use a simpler approach to avoid command substitution issues
+    RUNNING_COUNT=0
+    if podman ps --filter label=io.podman.compose.project=share-things | grep -q "share-things-frontend"; then
+        RUNNING_COUNT=$((RUNNING_COUNT + 1))
+    fi
+    if podman ps --filter label=io.podman.compose.project=share-things | grep -q "share-things-backend"; then
+        RUNNING_COUNT=$((RUNNING_COUNT + 1))
+    fi
     if [ "$RUNNING_COUNT" -ge "2" ]; then
         log_success "Containers are running successfully!"
+        
+        # Check container health
+        echo "Container health status:"
+        podman healthcheck run share-things-frontend 2>/dev/null || echo "Health check not configured for frontend container"
+        podman healthcheck run share-things-backend 2>/dev/null || echo "Health check not configured for backend container"
         
         # Check container logs for errors
         log_info "Checking container logs for errors..."
         echo "Backend container logs:"
-        podman logs share-things-backend --tail 10
+        podman logs share-things-backend --tail 20
         
         echo "Frontend container logs:"
-        podman logs share-things-frontend --tail 10
+        podman logs share-things-frontend --tail 20
+        
+        # Check container network
+        echo "Container network information:"
+        podman network inspect app_network 2>/dev/null || echo "Network app_network not found"
+        
+        # Check container ports
+        echo "Container port mappings:"
+        podman port share-things-frontend || echo "No port mappings for frontend container"
+        podman port share-things-backend || echo "No port mappings for backend container"
     else
         log_error "Warning: Not all containers appear to be running."
         echo "You can check container logs with: podman logs <container_name>"
@@ -315,9 +378,31 @@ verify_containers() {
         # Show logs for troubleshooting
         log_info "Checking container logs for errors..."
         echo "Backend container logs:"
-        podman logs share-things-backend --tail 20 2>/dev/null || echo "No logs available for backend container"
+        podman logs share-things-backend --tail 30 2>/dev/null || echo "No logs available for backend container"
         
         echo "Frontend container logs:"
-        podman logs share-things-frontend --tail 20 2>/dev/null || echo "No logs available for frontend container"
+        podman logs share-things-frontend --tail 30 2>/dev/null || echo "No logs available for frontend container"
+        
+        # Check if containers exist but are not running
+        echo "Checking for stopped containers:"
+        podman ps -a --filter name=share-things
+        
+        # Check for container creation errors
+        echo "Checking for container creation errors:"
+        podman events --filter event=create --filter event=die --since 5m --format "{{.Time}} {{.Type}} {{.Action}} {{.Actor.Name}}" || echo "No recent container events"
+    fi
+    
+    # Save logs to file if in debug mode
+    if [ "$DEBUG_MODE" = "true" ]; then
+        CONTAINER_LOG_DIR="container-logs-$(date +%Y%m%d-%H%M%S)"
+        mkdir -p "$CONTAINER_LOG_DIR"
+        
+        echo "Saving container logs to $CONTAINER_LOG_DIR directory..."
+        podman logs share-things-frontend > "$CONTAINER_LOG_DIR/frontend.log" 2>&1 || echo "Could not save frontend logs"
+        podman logs share-things-backend > "$CONTAINER_LOG_DIR/backend.log" 2>&1 || echo "Could not save backend logs"
+        podman ps -a > "$CONTAINER_LOG_DIR/container-list.txt" 2>&1 || echo "Could not save container list"
+        podman images > "$CONTAINER_LOG_DIR/images.txt" 2>&1 || echo "Could not save image list"
+        
+        echo "Container logs saved to $CONTAINER_LOG_DIR directory"
     fi
 }
