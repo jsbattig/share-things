@@ -52,19 +52,19 @@ echo ""
 
 # Step 5: Check if registry references are correct
 echo -e "${YELLOW}Step 5: Checking if registry references are correct...${NC}"
-if grep -q "docker.io/library/nginx" setup/operations.sh; then
+if grep -q "docker.io/library/node" setup/operations.sh; then
     echo -e "${RED}Error: Direct docker.io reference found in setup/operations.sh.${NC}"
     exit 1
 fi
-if grep -q "docker.io/library/nginx" setup/containers.sh; then
+if grep -q "docker.io/library/node" setup/containers.sh; then
     echo -e "${RED}Error: Direct docker.io reference found in setup/containers.sh.${NC}"
     exit 1
 fi
-if ! grep -q "linner.ddns.net:4443/docker.io.proxy/nginx" setup/operations.sh; then
+if ! grep -q "linner.ddns.net:4443/docker.io.proxy/node" setup/operations.sh; then
     echo -e "${RED}Error: Linner registry reference not found in setup/operations.sh.${NC}"
     exit 1
 fi
-if ! grep -q "linner.ddns.net:4443/docker.io.proxy/nginx" setup/containers.sh; then
+if ! grep -q "linner.ddns.net:4443/docker.io.proxy/node" setup/containers.sh; then
     echo -e "${RED}Error: Linner registry reference not found in setup/containers.sh.${NC}"
     exit 1
 fi

@@ -39,7 +39,7 @@ perform_installation() {
     
     if [ "$EXPOSE_PORTS" = "true" ]; then
         echo "You can access the application at:"
-        echo "- Frontend: ${PROTOCOL}://${HOSTNAME}:${FRONTEND_PORT} (container port 80)"
+        echo "- Frontend: ${PROTOCOL}://${HOSTNAME}:${FRONTEND_PORT} (container port 15000)"
         echo "- Backend: ${PROTOCOL}://${HOSTNAME}:${BACKEND_PORT} (container port ${API_PORT})"
         
         # Verify that the correct ports are being used
@@ -192,7 +192,7 @@ services:
     environment:
       - API_PORT=${API_PORT:-15001}
     ports:
-      - "${FRONTEND_PORT}:80"  # This will use 15000:80 for production
+      - "${FRONTEND_PORT}:15000"  # This will use 15000:15000 for production
     restart: always
     depends_on:
       - backend
@@ -268,7 +268,7 @@ services:
     environment:
       - API_PORT=${API_PORT}
     ports:
-      - "${FRONTEND_PORT}:80"
+      - "${FRONTEND_PORT}:15000"
     restart: always
     depends_on:
       - backend

@@ -11,6 +11,7 @@ ENV TS_NODE_TRANSPILE_ONLY=true
 COPY package*.json ./
 RUN npm install
 RUN npm install crypto-js @types/crypto-js
+RUN npm install -D ts-jest @types/jest jest-environment-jsdom
 
 # Copy source code
 COPY . .

@@ -37,29 +37,37 @@ RUN echo "Client build environment:" && \
 # Build the application (skip TypeScript type checking)
 RUN npx vite build || (mkdir -p dist && echo "<html><body>Build failed</body></html>" > dist/index.html)
 
-# Production stage with Nginx
-FROM linner.ddns.net:4443/docker.io.proxy/nginx:alpine
+# Production stage with Node.js
+FROM linner.ddns.net:4443/docker.io.proxy/node:18-alpine
 
-# Install necessary tools for the entrypoint script
-RUN apk add --no-cache iputils bind-tools
+# Create app directory
+WORKDIR /app
+
+# Install necessary dependencies
+WORKDIR /app
+COPY package.json /app/
+RUN npm install
 
 # Copy built files from builder stage
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/dist /app/public
 
-# Copy custom Nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy static server script
+COPY static-server.js /app/
 
-# Copy custom entrypoint script
-COPY docker-entrypoint.sh /usr/local/bin/custom-entrypoint.sh
-RUN chmod +x /usr/local/bin/custom-entrypoint.sh
+# Create health check directory
+RUN mkdir -p /app/public/health && \
+    echo '{"status":"ok"}' > /app/public/health/index.json
 
 # Expose port
-EXPOSE 80
+EXPOSE 15000
+
+# Set environment variables
+ENV PORT=15000
+ENV STATIC_DIR=/app/public
 
 # Healthcheck
 HEALTHCHECK --interval=5s --timeout=3s --retries=3 \
-  CMD curl -f http://localhost:80 || exit 1
+  CMD wget -q -O - http://localhost:15000/health || exit 1
 
-# Use custom entrypoint
-ENTRYPOINT ["/usr/local/bin/custom-entrypoint.sh"]
-CMD ["nginx", "-g", "daemon off;"]
+# Start static file server
+CMD ["node", "static-server.js"]
