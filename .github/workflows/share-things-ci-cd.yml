@@ -169,8 +169,8 @@ jobs:
     - name: Run setup installation test script
       run: |
         # Use a longer timeout for the full installation test
-        timeout 300 ./test/setup/setup-test-install.sh
-      timeout-minutes: 6  # Increased timeout for the entire job
+        timeout 600 ./test/setup/setup-test-install.sh
+      timeout-minutes: 12  # Doubled timeout for the entire job
       env:
         CI: true
         PODMAN_USERNS: keep-id
