@@ -299,6 +299,15 @@ if [ "$CONTAINER_COUNT" -gt 0 ]; then
       podman exec share-things-frontend ps aux || echo "Could not execute ps in container"
       log_info "Testing network connectivity inside container:"
       podman exec share-things-frontend wget -q -O - http://localhost:15000/health || echo "Health check failed inside container"
+      
+      # Capture detailed logs for frontend container
+      log_info "Capturing detailed logs for frontend container:"
+      podman logs share-things-frontend || echo "Could not get frontend logs"
+      
+      # Inspect frontend container
+      log_info "Inspecting frontend container:"
+      podman inspect share-things-frontend || echo "Could not inspect frontend container"
+      
       FRONTEND_HEALTHY=false
     fi
   fi
@@ -311,6 +320,15 @@ if [ "$CONTAINER_COUNT" -gt 0 ]; then
   else
     log_error "Backend container health endpoint is not responding properly"
     curl -v http://localhost:15001/health
+    
+    # Capture detailed logs for backend container
+    log_info "Capturing detailed logs for backend container:"
+    podman logs share-things-backend || echo "Could not get backend logs"
+    
+    # Inspect backend container
+    log_info "Inspecting backend container:"
+    podman inspect share-things-backend || echo "Could not inspect backend container"
+    
     BACKEND_HEALTHY=false
   fi
   
@@ -319,6 +337,15 @@ if [ "$CONTAINER_COUNT" -gt 0 ]; then
     log_success "All container health checks passed successfully"
   else
     log_error "Some container health checks failed"
+    
+    # Check if logs directory exists, create if not
+    mkdir -p logs/container-logs
+    
+    # Save container logs to files for later analysis
+    log_info "Saving container logs to logs/container-logs directory"
+    podman logs share-things-frontend > logs/container-logs/frontend-failed.log 2>&1 || echo "Could not save frontend logs"
+    podman logs share-things-backend > logs/container-logs/backend-failed.log 2>&1 || echo "Could not save backend logs"
+    
     exit 1
   fi
 else

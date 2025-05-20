@@ -189,6 +189,20 @@ jobs:
         echo "Checking container status..."
         podman ps -a
         
+        echo "Checking container logs..."
+        for container in $(podman ps -a --format "{{.Names}}"); do
+          echo "=== Logs for container $container ==="
+          podman logs $container || echo "Failed to get logs for $container"
+          echo ""
+        done
+        
+        echo "Checking container inspect..."
+        for container in $(podman ps -a --format "{{.Names}}"); do
+          echo "=== Inspect for container $container ==="
+          podman inspect $container || echo "Failed to inspect $container"
+          echo ""
+        done
+        
         echo "Checking build/config directory contents..."
         ls -la build/config/
         

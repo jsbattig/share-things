@@ -197,6 +197,30 @@ verify_health_endpoint() {
       # Start frontend
       log_info "Starting frontend container..."
       podman run -d --name share-things-frontend -p 15000:15000 localhost/share-things-frontend:latest
+      
+      # Wait for containers to start
+      log_info "Waiting for containers to start (15 seconds)..."
+      sleep 15
+      
+      # Check container status
+      log_info "Checking container status..."
+      podman ps -a
+      
+      # Capture logs for debugging
+      log_info "Capturing container logs for debugging..."
+      
+      # Create logs directory if it doesn't exist
+      mkdir -p logs/container-logs
+      
+      # Capture backend logs
+      log_info "Backend container logs:"
+      podman logs share-things-backend > logs/container-logs/backend-update.log 2>&1 || echo "Could not save backend logs"
+      cat logs/container-logs/backend-update.log || echo "No backend logs available"
+      
+      # Capture frontend logs
+      log_info "Frontend container logs:"
+      podman logs share-things-frontend > logs/container-logs/frontend-update.log 2>&1 || echo "Could not save frontend logs"
+      cat logs/container-logs/frontend-update.log || echo "No frontend logs available"
     }
   fi
   
