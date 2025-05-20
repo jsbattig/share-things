@@ -421,7 +421,7 @@ EOF
         # Create the development compose file with bridge networking
         log_info "Creating development compose file with host networking..."
         cat > "$DEV_COMPOSE_PATH" <<-EOF
-# Temporary development configuration for ShareThings Podman Compose
+# Temporary development configuration for ShareThings Podman Compose with host networking
 
 services:
   backend:
@@ -431,12 +431,7 @@ services:
       args:
         - PORT=${API_PORT:-15001}
     container_name: share-things-backend
-    ports:
-      - "${BACKEND_PORT}:${API_PORT:-15001}"
-    networks:
-      app_network:
-        aliases:
-          - backend
+    network_mode: "host"  # Use host networking instead of bridge
     environment:
       - NODE_ENV=development
       - PORT=${API_PORT:-15001}
@@ -457,12 +452,7 @@ services:
         - API_PORT=${API_PORT:-15001}
         - VITE_API_PORT=${API_PORT:-15001}
     container_name: share-things-frontend
-    ports:
-      - "${FRONTEND_PORT}:15000"
-    networks:
-      app_network:
-        aliases:
-          - frontend
+    network_mode: "host"  # Use host networking instead of bridge
     environment:
       - API_PORT=${API_PORT:-15001}
       - PORT=15000
@@ -544,10 +534,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-# Define networks
-networks:
-  app_network:
-    driver: bridge
+# No networks needed with host networking
 
 # Named volumes for node_modules
 volumes:

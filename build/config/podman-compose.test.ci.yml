@@ -1,17 +1,12 @@
-# Standard test configuration for ShareThings with bridge networking
+# Standard test configuration for ShareThings with host networking
 version: '3'
 services:
   frontend:
     image: linner.ddns.net:4443/docker.io.proxy/node:18-alpine
-    ports:
-      - "15000:15000"
-    networks:
-      app_network:
-        aliases:
-          - frontend
+    network_mode: "host"  # Use host networking instead of bridge
     volumes:
-      - ./client/dist:/app/public
-      - ./client/static-server.js:/app/static-server.js
+      - ./client/dist:/app/public:Z
+      - ./client/static-server.js:/app/static-server.js:Z
     restart: always
     environment:
       - PORT=15000
@@ -56,12 +51,7 @@ services:
   
   backend:
     image: linner.ddns.net:4443/docker.io.proxy/node:18-alpine
-    ports:
-      - "15001:15001"
-    networks:
-      app_network:
-        aliases:
-          - backend
+    network_mode: "host"  # Use host networking instead of bridge
     volumes:
       - data_volume:/app/data:Z
     environment:
@@ -74,10 +64,7 @@ services:
       timeout: 3s
       retries: 3
 
-# Define networks
-networks:
-  app_network:
-    driver: bridge
+# No networks needed with host networking
 
 # Define volumes
 volumes:

@@ -1,4 +1,4 @@
-# Temporary development configuration for ShareThings Podman Compose
+# Temporary development configuration for ShareThings Podman Compose with host networking
 
 services:
   backend:
@@ -8,12 +8,7 @@ services:
       args:
         - PORT=15001
     container_name: share-things-backend
-    ports:
-      - "15001:15001"
-    networks:
-      app_network:
-        aliases:
-          - backend
+    network_mode: "host"  # Use host networking instead of bridge
     environment:
       - NODE_ENV=development
       - PORT=15001
@@ -34,12 +29,7 @@ services:
         - API_PORT=15001
         - VITE_API_PORT=15001
     container_name: share-things-frontend
-    ports:
-      - "15000:15000"
-    networks:
-      app_network:
-        aliases:
-          - frontend
+    network_mode: "host"  # Use host networking instead of bridge
     environment:
       - API_PORT=15001
       - PORT=15000
@@ -121,10 +111,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-# Define networks
-networks:
-  app_network:
-    driver: bridge
+# No networks needed with host networking
 
 # Named volumes for node_modules
 volumes:
