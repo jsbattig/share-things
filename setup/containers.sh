@@ -513,7 +513,15 @@ services:
           process.exit(1);
         }' > /app/server.mjs &&
         # Run the server with detailed error output
-        node /app/server.mjs || { echo "Server failed to start"; exit 1; }
+        # Set NODE_OPTIONS to increase memory limit and add debug flags
+        export NODE_OPTIONS="--max-old-space-size=512 --trace-warnings" &&
+        # Run the server with a timeout to prevent hanging
+        timeout 240 node --trace-uncaught /app/server.mjs || {
+          echo "Server failed to start or timed out";
+          echo "Node.js version: $(node --version)";
+          echo "Available memory: $(free -m)";
+          exit 1;
+        }
     restart: always
     logging:
       driver: "json-file"
