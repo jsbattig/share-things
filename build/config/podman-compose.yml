@@ -11,7 +11,7 @@ services:
     environment:
       - PORT=15000
       - STATIC_DIR=/app/public
-    # Run the Node.js static file server
+    # Run the Node.js static file server directly from the mounted file
     command:
       - sh
       - -c
@@ -30,8 +30,16 @@ services:
         # Install dependencies globally
         npm install -g express compression &&
         
-        # Run the static server with error handling
-        node /app/static-server.js || { echo "Server failed to start"; exit 1; }
+        # Set NODE_OPTIONS to increase memory limit and add debug flags
+        export NODE_OPTIONS="--max-old-space-size=512 --trace-warnings"
+        
+        # Run the static server with detailed error output and timeout
+        timeout 240 node --trace-uncaught /app/static-server.js || {
+          echo "Server failed to start or timed out";
+          echo "Node.js version: $(node --version)";
+          echo "Available memory: $(free -m)";
+          exit 1;
+        }
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:15000/health"]
       interval: 5s

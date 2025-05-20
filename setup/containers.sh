@@ -202,7 +202,7 @@ build_and_start_containers() {
 services:
   backend:
     build:
-      context: $SERVER_DIR
+      context: ./server
       dockerfile: Dockerfile
       args:
         - PORT=${API_PORT:-15001}
@@ -220,7 +220,7 @@ services:
 
   frontend:
     build:
-      context: $CLIENT_DIR
+      context: ./client
       dockerfile: Dockerfile
       args:
         - API_URL=auto
@@ -413,7 +413,7 @@ EOF
 services:
   backend:
     build:
-      context: $SERVER_DIR
+      context: ./server
       dockerfile: Dockerfile
       args:
         - PORT=${API_PORT:-15001}
@@ -431,7 +431,7 @@ services:
 
   frontend:
     build:
-      context: $CLIENT_DIR
+      context: ./client
       dockerfile: Dockerfile
       args:
         - API_URL=auto
