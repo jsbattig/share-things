@@ -238,6 +238,14 @@ services:
       - sh
       - -c
       - |
+        # Check if port is already in use
+        if nc -z 0.0.0.0 15000 2>/dev/null; then
+          echo "ERROR: Port 15000 is already in use by another process"
+          netstat -tulpn | grep 15000 || echo "Could not determine which process is using port 15000"
+          exit 1
+        fi
+        
+        # Create necessary directories and files
         mkdir -p /app/public/health &&
         echo '{"status":"ok"}' > /app/public/health/index.json &&
         mkdir -p /app &&
@@ -248,6 +256,12 @@ services:
         import path from "path";
         import { fileURLToPath } from "url";
         import compression from "compression";
+        
+        // Handle uncaught exceptions
+        process.on("uncaughtException", (err) => {
+          console.error("UNCAUGHT EXCEPTION:", err);
+          process.exit(1);
+        });
         
         const app = express();
         
@@ -269,10 +283,26 @@ services:
           res.sendFile(path.join(STATIC_DIR, "index.html"));
         });
         
-        app.listen(PORT, "0.0.0.0", () => {
-          console.log(`Static file server running on port ${PORT}`);
-        });' > /app/server.mjs &&
-        node /app/server.mjs
+        // Try to start the server with error handling
+        try {
+          const server = app.listen(PORT, "0.0.0.0", () => {
+            console.log(`Static file server running on port ${PORT}`);
+          });
+          
+          server.on("error", (err) => {
+            if (err.code === "EADDRINUSE") {
+              console.error(`ERROR: Port ${PORT} is already in use by another process`);
+            } else {
+              console.error("Server error:", err);
+            }
+            process.exit(1);
+          });
+        } catch (err) {
+          console.error("Failed to start server:", err);
+          process.exit(1);
+        }' > /app/server.mjs &&
+        # Run the server with detailed error output
+        node /app/server.mjs || { echo "Server failed to start"; exit 1; }
     restart: always
     logging:
       driver: "json-file"
@@ -419,6 +449,14 @@ services:
       - sh
       - -c
       - |
+        # Check if port is already in use
+        if nc -z 0.0.0.0 15000 2>/dev/null; then
+          echo "ERROR: Port 15000 is already in use by another process"
+          netstat -tulpn | grep 15000 || echo "Could not determine which process is using port 15000"
+          exit 1
+        fi
+        
+        # Create necessary directories and files
         mkdir -p /app/public/health &&
         echo '{"status":"ok"}' > /app/public/health/index.json &&
         mkdir -p /app &&
@@ -429,6 +467,12 @@ services:
         import path from "path";
         import { fileURLToPath } from "url";
         import compression from "compression";
+        
+        // Handle uncaught exceptions
+        process.on("uncaughtException", (err) => {
+          console.error("UNCAUGHT EXCEPTION:", err);
+          process.exit(1);
+        });
         
         const app = express();
         
@@ -450,10 +494,26 @@ services:
           res.sendFile(path.join(STATIC_DIR, "index.html"));
         });
         
-        app.listen(PORT, "0.0.0.0", () => {
-          console.log(`Static file server running on port ${PORT}`);
-        });' > /app/server.mjs &&
-        node /app/server.mjs
+        // Try to start the server with error handling
+        try {
+          const server = app.listen(PORT, "0.0.0.0", () => {
+            console.log(`Static file server running on port ${PORT}`);
+          });
+          
+          server.on("error", (err) => {
+            if (err.code === "EADDRINUSE") {
+              console.error(`ERROR: Port ${PORT} is already in use by another process`);
+            } else {
+              console.error("Server error:", err);
+            }
+            process.exit(1);
+          });
+        } catch (err) {
+          console.error("Failed to start server:", err);
+          process.exit(1);
+        }' > /app/server.mjs &&
+        # Run the server with detailed error output
+        node /app/server.mjs || { echo "Server failed to start"; exit 1; }
     restart: always
     logging:
       driver: "json-file"
