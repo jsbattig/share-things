@@ -10,6 +10,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import compression from 'compression';
 import { createServer } from 'net';
+import fs from 'fs';
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
@@ -26,20 +27,6 @@ const __dirname = path.dirname(__filename);
 // Directory where static files are located
 const STATIC_DIR = process.env.STATIC_DIR || '/app/public';
 const PORT = process.env.PORT || 15000;
-
-// Check if the port is already in use (this will be caught by the error handler if it fails)
-const portCheckServer = createServer();
-portCheckServer.once('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`ERROR: Port ${PORT} is already in use by another process`);
-    process.exit(1);
-  }
-});
-portCheckServer.once('listening', () => {
-  portCheckServer.close();
-  console.log(`Port ${PORT} is available`);
-});
-portCheckServer.listen(PORT, '0.0.0.0');
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -66,7 +53,6 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(STATIC_DIR, 'index.html'));
 });
 
-// Start server with error handling
 // Make sure we have a valid port
 if (!PORT || isNaN(parseInt(PORT))) {
   console.error(`ERROR: Invalid PORT value: ${PORT}`);
@@ -79,8 +65,22 @@ if (!STATIC_DIR) {
   process.exit(1);
 }
 
+// Check if the static directory exists
+if (!fs.existsSync(STATIC_DIR)) {
+  console.error(`ERROR: Static directory ${STATIC_DIR} does not exist`);
+  console.log(`Creating directory ${STATIC_DIR}`);
+  fs.mkdirSync(STATIC_DIR, { recursive: true });
+  
+  // Create a basic index.html if it doesn't exist
+  const indexPath = path.join(STATIC_DIR, 'index.html');
+  if (!fs.existsSync(indexPath)) {
+    console.log(`Creating basic index.html`);
+    fs.writeFileSync(indexPath, '<html><body><h1>ShareThings</h1><p>Server is running but no content is available.</p></body></html>');
+  }
+}
+
+// Create a server with a timeout to prevent hanging
 try {
-  // Create a server with a timeout to prevent hanging
   const server = app.listen(PORT, '0.0.0.0', () => {
     // Always log something meaningful to avoid empty console.log issues
     console.log(`[${new Date().toISOString()}] Static file server running on port ${PORT}`);

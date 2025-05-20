@@ -69,5 +69,9 @@ ENV STATIC_DIR=/app/public
 HEALTHCHECK --interval=5s --timeout=3s --retries=3 \
   CMD wget -q -O - http://localhost:15000/health || exit 1
 
-# Start static file server
-CMD ["node", "static-server.js"]
+# Copy entrypoint script
+COPY docker-entrypoint.sh /app/
+RUN chmod +x /app/docker-entrypoint.sh
+
+# Start with entrypoint script
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

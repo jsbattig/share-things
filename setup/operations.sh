@@ -27,6 +27,14 @@ perform_installation() {
         log_warning "Warning: client/docker-entrypoint.sh not found. Container networking might have issues."
     fi
     
+    # Make the docker-entrypoint.sh script executable
+    if [ -f "client/docker-entrypoint.sh" ]; then
+        chmod +x client/docker-entrypoint.sh
+        log_success "Made client/docker-entrypoint.sh executable."
+    else
+        log_warning "Warning: client/docker-entrypoint.sh not found. Container networking might have issues."
+    fi
+    
     # Build and start containers
     build_and_start_containers
     

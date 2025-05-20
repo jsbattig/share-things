@@ -168,9 +168,17 @@ jobs:
     
     - name: Run setup installation test script
       run: |
+        # Add more debugging information
+        echo "Node.js version: $(node --version)"
+        echo "NPM version: $(npm --version)"
+        echo "Podman version: $(podman --version)"
+        echo "Podman Compose version: $(podman-compose --version)"
+        echo "Available memory: $(free -m)"
+        echo "Available disk space: $(df -h)"
+        
         # Use a longer timeout for the full installation test
         timeout 600 ./test/setup/setup-test-install.sh
-      timeout-minutes: 12  # Doubled timeout for the entire job
+      timeout-minutes: 15  # Increased timeout for the entire job
       env:
         CI: true
         PODMAN_USERNS: keep-id

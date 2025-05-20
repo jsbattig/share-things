@@ -207,7 +207,12 @@ services:
       args:
         - PORT=${API_PORT:-15001}
     container_name: share-things-backend
-    network_mode: "host"  # Use host networking instead of bridge
+    ports:
+      - "${BACKEND_PORT}:${API_PORT:-15001}"
+    networks:
+      app_network:
+        aliases:
+          - backend
     environment:
       - NODE_ENV=production
       - PORT=${API_PORT:-15001}
@@ -228,7 +233,12 @@ services:
         - API_PORT=${API_PORT:-15001}
         - VITE_API_PORT=${API_PORT:-15001}
     container_name: share-things-frontend
-    network_mode: "host"  # Use host networking instead of bridge
+    ports:
+      - "${FRONTEND_PORT}:15000"
+    networks:
+      app_network:
+        aliases:
+          - frontend
     environment:
       - API_PORT=${API_PORT:-15001}
       - PORT=15000
@@ -310,7 +320,10 @@ services:
         max-size: "10m"
         max-file: "3"
 
-# No networks needed with host networking
+# Define networks
+networks:
+  app_network:
+    driver: bridge
 
 # Named volumes for node_modules
 volumes:
@@ -405,7 +418,7 @@ EOF
         SERVER_DIR="$REPO_ROOT/server"
         CLIENT_DIR="$REPO_ROOT/client"
         
-        # Create the development compose file with host networking
+        # Create the development compose file with bridge networking
         log_info "Creating development compose file with host networking..."
         cat > "$DEV_COMPOSE_PATH" <<-EOF
 # Temporary development configuration for ShareThings Podman Compose
@@ -418,7 +431,12 @@ services:
       args:
         - PORT=${API_PORT:-15001}
     container_name: share-things-backend
-    network_mode: "host"  # Use host networking instead of bridge
+    ports:
+      - "${BACKEND_PORT}:${API_PORT:-15001}"
+    networks:
+      app_network:
+        aliases:
+          - backend
     environment:
       - NODE_ENV=development
       - PORT=${API_PORT:-15001}
@@ -439,7 +457,12 @@ services:
         - API_PORT=${API_PORT:-15001}
         - VITE_API_PORT=${API_PORT:-15001}
     container_name: share-things-frontend
-    network_mode: "host"  # Use host networking instead of bridge
+    ports:
+      - "${FRONTEND_PORT}:15000"
+    networks:
+      app_network:
+        aliases:
+          - frontend
     environment:
       - API_PORT=${API_PORT:-15001}
       - PORT=15000
@@ -521,7 +544,10 @@ services:
         max-size: "10m"
         max-file: "3"
 
-# No networks needed with host networking
+# Define networks
+networks:
+  app_network:
+    driver: bridge
 
 # Named volumes for node_modules
 volumes:

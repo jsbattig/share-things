@@ -1,23 +1,25 @@
 #!/bin/sh
 set -e
 
-# Simple entrypoint script that doesn't rely on backend hostname resolution
-echo "Starting simplified entrypoint script"
+# Entrypoint script for Node.js static server
+echo "Starting Node.js static server entrypoint script"
 
-# Add a health check endpoint
-mkdir -p /usr/share/nginx/html/health
-echo '{"status":"ok"}' > /usr/share/nginx/html/health/index.json
+# Create necessary directories
+mkdir -p /app/public/health
+echo '{"status":"ok"}' > /app/public/health/index.json
 
 # Print diagnostic information
 echo "DIAGNOSTIC INFO:"
 echo "Environment variables:"
-env | grep -E 'PORT|API|SOCKET'
+env | grep -E 'PORT|API|SOCKET|STATIC'
 
-# Execute the original docker-entrypoint.sh from the Nginx image with error handling
-if [ -x /docker-entrypoint.sh ]; then
-  exec /docker-entrypoint.sh "$@"
-else
-  echo "WARNING: Cannot find or execute /docker-entrypoint.sh"
-  echo "Falling back to direct nginx execution"
-  exec nginx -g "daemon off;"
+# Check if the static directory exists
+if [ ! -d "$STATIC_DIR" ]; then
+  echo "WARNING: Static directory $STATIC_DIR does not exist"
+  mkdir -p "$STATIC_DIR"
+  echo "<html><body><h1>ShareThings</h1><p>Server is running but no content is available.</p></body></html>" > "$STATIC_DIR/index.html"
 fi
+
+# Execute the static server
+echo "Starting Node.js static server..."
+exec node /app/static-server.js

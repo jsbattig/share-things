@@ -1,9 +1,14 @@
-# Standard test configuration for ShareThings with host networking
+# Standard test configuration for ShareThings with bridge networking
 version: '3'
 services:
   frontend:
     image: linner.ddns.net:4443/docker.io.proxy/node:18-alpine
-    network_mode: "host"  # Use host networking instead of bridge
+    ports:
+      - "15000:15000"
+    networks:
+      app_network:
+        aliases:
+          - frontend
     volumes:
       - ./client/dist:/app/public:ro
       - ./client/static-server.js:/app/static-server.js:ro
@@ -27,6 +32,9 @@ services:
         mkdir -p /app/public/health &&
         echo '{"status":"ok"}' > /app/public/health/index.json &&
         
+        # Create a package.json file to specify module type
+        echo '{"type":"module"}' > /app/package.json &&
+        
         # Install dependencies globally
         npm install -g express compression &&
         
@@ -48,7 +56,12 @@ services:
   
   backend:
     image: linner.ddns.net:4443/docker.io.proxy/node:18-alpine
-    network_mode: "host"  # Use host networking instead of bridge
+    ports:
+      - "15001:15001"
+    networks:
+      app_network:
+        aliases:
+          - backend
     environment:
       - PORT=15001
     command: ["node", "-e", "const http=require('http');const server=http.createServer((req,res)=>{if(req.url==='/health'){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({status:'ok'}));}else{res.writeHead(404);res.end();}});server.listen(15001);console.log('Server listening on port 15001');"]
@@ -58,3 +71,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 3
+
+# Define networks
+networks:
+  app_network:
+    driver: bridge

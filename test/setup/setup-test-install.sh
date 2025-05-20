@@ -1,9 +1,16 @@
 #!/bin/bash
 #
-# setup-test-install.sh - Minimal test script for setup.sh
+# setup-test-install.sh - Test script for setup.sh
 #
-# This script only checks if setup.sh exists and is executable
-# without trying to run it or create any files
+# IMPORTANT TESTING GUIDELINES:
+# 1. Tests MUST use the full setup.sh process without shortcuts or simplifications
+# 2. DO NOT attempt to use any CI flags to minimize setup, remove steps, or simplify configuration
+# 3. The test MUST always use setup.sh as-is to completely build and test the process
+# 4. ALWAYS use bridge networking instead of host networking
+# 5. DO NOT create "minimal" or "simplified" test environments - tests should verify the real thing
+# 6. Tests should verify that containers are properly built, started, and accessible
+# 7. If a test times out, it should fail - DO NOT try to implement fallback mechanisms
+# 8. The goal is to test the actual setup process as a user would experience it
 #
 
 set -e  # Exit immediately if a command exits with a non-zero status
@@ -220,7 +227,7 @@ if [ "$CI" = "true" ]; then
   timeout 600 ./setup.sh --non-interactive --force-install
 else
   # Run with a standard timeout for local environments
-  log_info "Using standard timeout (300s) for local environment"
+  log_info "Using standard timeout (600s) for local environment"
   timeout 600 ./setup.sh --non-interactive --force-install
 fi
 SETUP_EXIT_CODE=$?
@@ -229,23 +236,21 @@ SETUP_EXIT_CODE=$?
 if [ $SETUP_EXIT_CODE -eq 0 ]; then
   log_success "Full installation executed successfully"
 elif [ $SETUP_EXIT_CODE -eq 124 ]; then
-  log_warning "Installation timed out, attempting simplified setup..."
+  log_warning "Installation timed out"
   
-  # Create a minimal environment for testing
-  log_info "Creating minimal test environment"
-  mkdir -p client/dist/health
-  echo '{"status":"ok"}' > client/dist/health/index.json
+  # Don't attempt to use the CI flag to minimize setup, remove steps, simplify configuration.
+  # The test must always use the setup.sh, as-is, to completely build and test the process.
+  # Also, use bridge networking instead of host networking.
   
-  # Try using the CI-specific configuration directly
-  log_info "Using CI-specific configuration directly"
-  cp build/config/podman-compose.test.ci.yml build/config/podman-compose.yml
+  log_error "Installation timed out and failed with exit code $SETUP_EXIT_CODE"
+  exit 1
   
-  # Check if containers are running despite the timeout
+  # Check if containers are running after the simplified setup
   CONTAINER_COUNT=$(podman ps | grep -c "share-things" || echo "0")
   if [ "$CONTAINER_COUNT" -gt 0 ]; then
-    log_success "Containers are running despite timeout"
+    log_success "Containers are running after simplified setup"
   else
-    log_error "No containers running after timeout"
+    log_error "No containers running after simplified setup"
     # Continue anyway to see if we can get more diagnostic information
   fi
 else
@@ -290,6 +295,17 @@ if [ "$CONTAINER_COUNT" -gt 0 ]; then
       # Check container logs
       log_info "Container logs:"
       podman logs share-things-frontend
+      # Add more detailed debugging
+      log_info "Detailed container inspection:"
+      podman inspect share-things-frontend
+      log_info "Network information:"
+      podman network inspect podman
+      log_info "Port information:"
+      podman port share-things-frontend
+      log_info "Process information inside container:"
+      podman exec share-things-frontend ps aux || echo "Could not execute ps in container"
+      log_info "Testing network connectivity inside container:"
+      podman exec share-things-frontend wget -q -O - http://localhost:15000/health || echo "Health check failed inside container"
       FRONTEND_HEALTHY=false
     fi
   fi
