@@ -270,10 +270,28 @@ capture_current_configuration() {
 pull_latest_code() {
     if [ -d .git ]; then
         log_info "Pulling latest code from git repository..."
+        
+        # Check for local changes
+        if git status --porcelain | grep -q .; then
+            log_warning "Local changes detected. Resetting to match remote..."
+            git fetch origin
+            git reset --hard origin/master  # Adjust branch name if needed
+            RESET_EXIT_CODE=$?
+            
+            if [ $RESET_EXIT_CODE -ne 0 ]; then
+                log_error "Failed to reset local changes. Manual intervention required."
+                log_warning "Continuing with update anyway in autonomous mode..."
+            else
+                log_info "Local repository reset to match remote."
+            fi
+        fi
+        
+        # Pull latest code
         git pull
         GIT_EXIT_CODE=$?
+        
         if [ $GIT_EXIT_CODE -ne 0 ]; then
-            log_error "Failed to pull latest code. You may have local changes."
+            log_error "Failed to pull latest code even after reset. Manual intervention required."
             log_warning "Continuing with update anyway in autonomous mode..."
         else
             log_success "Latest code pulled successfully."
