@@ -54,9 +54,11 @@ COPY --from=builder /app/dist /app/public
 # Copy static server script
 COPY static-server.js /app/
 
-# Create health check directory
+# Create health check directory with proper permissions for non-root user
 RUN mkdir -p /app/public/health && \
-    echo '{"status":"ok"}' > /app/public/health/index.json
+    echo '{"status":"ok"}' > /app/public/health/index.json && \
+    chown -R 1001:1001 /app/public && \
+    chmod -R 755 /app/public
 
 # Expose port
 EXPOSE 15000

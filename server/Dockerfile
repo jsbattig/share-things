@@ -40,6 +40,9 @@ RUN npm install --only=production
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
 
+# Create data directory with proper permissions for non-root user
+RUN mkdir -p /app/data && chown -R 1001:1001 /app/data && chmod -R 755 /app/data
+
 # Set default port
 ARG PORT=3001
 ENV PORT=${PORT}

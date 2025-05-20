@@ -62,6 +62,8 @@ services:
       app_network:
         aliases:
           - backend
+    volumes:
+      - data_volume:/app/data:Z
     environment:
       - PORT=15001
     command: ["node", "-e", "const http=require('http');const server=http.createServer((req,res)=>{if(req.url==='/health'){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({status:'ok'}));}else{res.writeHead(404);res.end();}});server.listen(15001);console.log('Server listening on port 15001');"]
@@ -76,3 +78,8 @@ services:
 networks:
   app_network:
     driver: bridge
+
+# Define volumes
+volumes:
+  data_volume:
+    # Named volume for SQLite data persistence

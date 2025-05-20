@@ -166,11 +166,38 @@ jobs:
         echo "Available disk space:"
         df -h
     
+    - name: Prepare environment for containers
+      run: |
+        # Create necessary directories
+        mkdir -p data
+        mkdir -p client/dist
+        mkdir -p client/dist/health
+        
+        # Create health check endpoint for frontend
+        echo '{"status":"ok"}' > client/dist/health/index.json
+        
+        # Set appropriate permissions - make directories writable by container user (1001:1001)
+        chmod -R 777 data
+        chmod -R 777 client/dist
+        
+        # Create a volume for SQLite data persistence
+        podman volume create data_volume || echo "Volume may already exist"
+        
+        # List volumes for verification
+        echo "Podman volumes:"
+        podman volume ls
+        
+        # List directories and permissions for verification
+        echo "Directory permissions:"
+        ls -la data
+        ls -la client/dist
+        ls -la client/dist/health
+
     - name: Run setup installation test script
       run: |
         # Add more debugging information
-        echo "Node.js version: $(node --version)"
-        echo "NPM version: $(npm --version)"
+        echo "Node.js version: $(node --version || echo 'not installed')"
+        echo "NPM version: $(npm --version || echo 'not installed')"
         echo "Podman version: $(podman --version)"
         echo "Podman Compose version: $(podman-compose --version)"
         echo "Available memory: $(free -m)"
