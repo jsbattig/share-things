@@ -409,6 +409,7 @@ EOF
         log_info "Creating development compose file with host networking..."
         cat > "$DEV_COMPOSE_PATH" << EOF
 # Temporary development configuration for ShareThings Podman Compose
+version: '3'
 
 services:
   backend:
@@ -463,55 +464,58 @@ services:
         cd /app &&
         echo '{"type":"module","dependencies":{"express":"^4.18.2","compression":"^1.7.4"}}' > package.json &&
         npm install &&
-        echo 'import express from "express";
-        import path from "path";
-        import { fileURLToPath } from "url";
-        import compression from "compression";
-        
-        // Handle uncaught exceptions
-        process.on("uncaughtException", (err) => {
-          console.error("UNCAUGHT EXCEPTION:", err);
-          process.exit(1);
-        });
-        
-        const app = express();
-        
-        // Get directory name in ES modules
-        const __filename = fileURLToPath(import.meta.url);
-        const __dirname = path.dirname(__filename);
-        
-        const STATIC_DIR = process.env.STATIC_DIR || "/app/public";
-        const PORT = process.env.PORT || 15000;
-        
-        app.get("/health", (req, res) => {
-          res.status(200).json({ status: "ok" });
-        });
-        
-        app.use(compression());
-        app.use(express.static(STATIC_DIR));
-        
-        app.get("*", (req, res) => {
-          res.sendFile(path.join(STATIC_DIR, "index.html"));
-        });
-        
-        // Try to start the server with error handling
-        try {
-          const server = app.listen(PORT, "0.0.0.0", () => {
-            console.log(`Static file server running on port ${PORT}`);
-          });
-          
-          server.on("error", (err) => {
-            if (err.code === "EADDRINUSE") {
-              console.error(`ERROR: Port ${PORT} is already in use by another process`);
-            } else {
-              console.error("Server error:", err);
-            }
-            process.exit(1);
-          });
-        } catch (err) {
-          console.error("Failed to start server:", err);
-          process.exit(1);
-        }' > /app/server.mjs &&
+        cat > /app/server.mjs << 'SERVERJS'
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+import compression from "compression";
+
+// Handle uncaught exceptions
+process.on("uncaughtException", (err) => {
+  console.error("UNCAUGHT EXCEPTION:", err);
+  process.exit(1);
+});
+
+const app = express();
+
+// Get directory name in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const STATIC_DIR = process.env.STATIC_DIR || "/app/public";
+const PORT = process.env.PORT || 15000;
+
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+
+app.use(compression());
+app.use(express.static(STATIC_DIR));
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(STATIC_DIR, "index.html"));
+});
+
+// Try to start the server with error handling
+try {
+  const server = app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Static file server running on port ${PORT}`);
+  });
+  
+  server.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      console.error(`ERROR: Port ${PORT} is already in use by another process`);
+    } else {
+      console.error("Server error:", err);
+    }
+    process.exit(1);
+  });
+} catch (err) {
+  console.error("Failed to start server:", err);
+  process.exit(1);
+}
+SERVERJS
+        &&
         # Run the server with detailed error output
         # Set NODE_OPTIONS to increase memory limit and add debug flags
         export NODE_OPTIONS="--max-old-space-size=512 --trace-warnings" &&
