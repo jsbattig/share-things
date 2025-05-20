@@ -370,8 +370,8 @@ jobs:
           # Copy the compose file to the production server
           echo "Copying compose file to production server..."
           sshpass -p "${{ secrets.GHRUserPassword }}" scp -o StrictHostKeyChecking=no simple-compose.yml ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }}:~/share-things/build/config/podman-compose.yml
-
-          # Run the setup script with verbose output and capture logs
+          
+          # Run the setup script with update mode, non-interactive, and debug flags
           echo "Running setup.sh with update mode for production deployment..."
           sshpass -p "${{ secrets.GHRUserPassword }}" ssh -v -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && bash -x ./setup.sh --update --non-interactive --debug 2>&1" | tee deployment-logs/deploy-$(date +%Y%m%d-%H%M%S).log
           DEPLOY_EXIT_CODE=$?

@@ -293,7 +293,11 @@ EOF
     log_info "Created update compose file: $COMPOSE_UPDATE_PATH"
     echo "Running: podman-compose -f \"$COMPOSE_UPDATE_PATH\" build --no-cache"
     
-    # Build the containers
+    # Remove existing images to ensure a clean build
+    log_info "Removing existing images to ensure a clean build..."
+    podman rmi localhost/share-things_frontend:latest localhost/share-things_backend:latest 2>/dev/null || log_warning "No existing images to remove or removal failed"
+    
+    # Build the containers with no cache
     log_info "Using compose file: $COMPOSE_UPDATE_PATH"
     echo "Running: podman-compose -f \"$COMPOSE_UPDATE_PATH\" build --no-cache"
     podman-compose -f "$COMPOSE_UPDATE_PATH" build --no-cache
@@ -303,18 +307,9 @@ EOF
         log_error "Container build failed with exit code $BUILD_EXIT_CODE"
         echo "Build logs:"
         podman logs podman-build 2>&1 || echo "No build logs available"
-        # Don't exit here, try to continue with existing images
-        log_warning "Attempting to continue with existing images"
-    else
-        log_success "Container build completed successfully"
-    fi
-    BUILD_EXIT_CODE=$?
-    echo "Build exit code: $BUILD_EXIT_CODE"
-    
-    if [ $BUILD_EXIT_CODE -ne 0 ]; then
-        log_error "Container build failed with exit code $BUILD_EXIT_CODE"
-        echo "Build logs:"
-        podman logs podman-build 2>&1 || echo "No build logs available"
+        # This is a critical error - we need to build new images
+        log_error "Cannot continue with update. Please fix the build errors and try again."
+        exit 1
     else
         log_success "Container build completed successfully"
     fi
@@ -322,9 +317,11 @@ EOF
     log_info "Step 9: Starting containers with explicit environment variables..."
     # Use the same variable for consistency
     echo "Running: FRONTEND_PORT=$FRONTEND_PORT BACKEND_PORT=$BACKEND_PORT API_PORT=$API_PORT podman-compose -f \"$COMPOSE_UPDATE_PATH\" up -d"
-    # Directly pass environment variables to the compose command
-    # Use the same approach for starting containers
-    log_info "Starting containers with update configuration"
+    
+    # Stop and remove existing containers first to ensure a clean start
+    log_info "Stopping and removing existing containers..."
+    podman stop share-things-frontend share-things-backend 2>/dev/null || log_warning "No containers to stop or stop failed"
+    podman rm share-things-frontend share-things-backend 2>/dev/null || log_warning "No containers to remove or removal failed"
     
     # Export the variables to ensure they're available to podman-compose
     export FRONTEND_PORT
@@ -342,8 +339,9 @@ EOF
         echo "Container logs:"
         podman logs share-things-frontend 2>&1 || echo "No frontend logs available"
         podman logs share-things-backend 2>&1 || echo "No backend logs available"
-        # This is a critical error, but we'll continue to show diagnostics
-        log_warning "Container startup failed, but continuing for diagnostics"
+        # This is a critical error
+        log_error "Container startup failed. Please check the logs and try again."
+        exit 1
     else
         log_success "Containers started successfully"
     fi
