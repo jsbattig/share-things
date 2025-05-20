@@ -117,29 +117,58 @@ restore_health_endpoint() {
   ROUTES_FILE="$REPO_ROOT/server/src/routes/index.ts"
   ORIGINAL_FILE="$ROUTES_FILE.original"
   
-  # Check if the original file exists
-  if [ ! -f "$ORIGINAL_FILE" ]; then
-    log_error "Original file not found at $ORIGINAL_FILE"
-    return 1
-  fi
+  # Use git to restore the file to its original state
+  cd "$REPO_ROOT"
   
-  # Restore the original file by copying it back
-  cp "$ORIGINAL_FILE" "$ROUTES_FILE"
-  
-  # Verify the restoration was successful
-  if grep -q "json({ status: 'OK', updated: true })" "$ROUTES_FILE"; then
-    log_error "Failed to restore original health endpoint - modified version still present"
-    return 1
-  elif grep -q "send('OK')" "$ROUTES_FILE"; then
-    log_success "Verified original health endpoint was properly restored"
+  # Check if the file is tracked by git
+  if git ls-files --error-unmatch server/src/routes/index.ts &>/dev/null; then
+    log_info "Using git to restore the original file..."
+    git checkout -- server/src/routes/index.ts
+    
+    # Verify the restoration was successful
+    if grep -q "json({ status: 'OK', updated: true })" "$ROUTES_FILE"; then
+      log_error "Failed to restore original health endpoint - modified version still present"
+      return 1
+    elif grep -q "send('OK')" "$ROUTES_FILE"; then
+      log_success "Verified original health endpoint was properly restored"
+    else
+      log_warning "Could not verify health endpoint restoration - unexpected content"
+    fi
+    
+    # Remove the backup file to clean up
+    if [ -f "$ORIGINAL_FILE" ]; then
+      rm -f "$ORIGINAL_FILE"
+      log_info "Removed backup file"
+    fi
+    
+    log_success "Restored original health endpoint using git"
   else
-    log_warning "Could not verify health endpoint restoration - unexpected content"
+    log_warning "File is not tracked by git, falling back to file copy method"
+    
+    # Check if the original file exists
+    if [ ! -f "$ORIGINAL_FILE" ]; then
+      log_error "Original file not found at $ORIGINAL_FILE"
+      return 1
+    fi
+    
+    # Restore the original file by copying it back
+    cp "$ORIGINAL_FILE" "$ROUTES_FILE"
+    
+    # Verify the restoration was successful
+    if grep -q "json({ status: 'OK', updated: true })" "$ROUTES_FILE"; then
+      log_error "Failed to restore original health endpoint - modified version still present"
+      return 1
+    elif grep -q "send('OK')" "$ROUTES_FILE"; then
+      log_success "Verified original health endpoint was properly restored"
+    else
+      log_warning "Could not verify health endpoint restoration - unexpected content"
+    fi
+    
+    # Remove the backup file to clean up
+    rm -f "$ORIGINAL_FILE"
+    
+    log_success "Restored original health endpoint and removed backup file"
   fi
-  
-  # Remove the backup file to clean up
-  rm -f "$ORIGINAL_FILE"
-  
-  log_success "Restored original health endpoint and removed backup file"
 }
 
 # Function to verify the health endpoint was updated

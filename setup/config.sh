@@ -273,16 +273,15 @@ pull_latest_code() {
         
         # Check for local changes
         if git status --porcelain | grep -q .; then
-            log_warning "Local changes detected. Resetting to match remote..."
-            git fetch origin
-            git reset --hard origin/master  # Adjust branch name if needed
-            RESET_EXIT_CODE=$?
+            log_warning "Local changes detected. Stashing changes to preserve them..."
+            git stash
+            STASH_EXIT_CODE=$?
             
-            if [ $RESET_EXIT_CODE -ne 0 ]; then
-                log_error "Failed to reset local changes. Manual intervention required."
+            if [ $STASH_EXIT_CODE -ne 0 ]; then
+                log_error "Failed to stash local changes. Manual intervention required."
                 log_warning "Continuing with update anyway in autonomous mode..."
             else
-                log_info "Local repository reset to match remote."
+                log_info "Local changes stashed successfully."
             fi
         fi
         
@@ -291,10 +290,24 @@ pull_latest_code() {
         GIT_EXIT_CODE=$?
         
         if [ $GIT_EXIT_CODE -ne 0 ]; then
-            log_error "Failed to pull latest code even after reset. Manual intervention required."
+            log_error "Failed to pull latest code. Manual intervention required."
             log_warning "Continuing with update anyway in autonomous mode..."
         else
             log_success "Latest code pulled successfully."
+            
+            # Apply stashed changes if any
+            if [ $STASH_EXIT_CODE -eq 0 ]; then
+                log_info "Applying stashed changes..."
+                git stash apply
+                APPLY_EXIT_CODE=$?
+                
+                if [ $APPLY_EXIT_CODE -ne 0 ]; then
+                    log_error "Failed to apply stashed changes. Manual intervention required."
+                    log_warning "Continuing with update anyway in autonomous mode..."
+                else
+                    log_success "Stashed changes applied successfully."
+                fi
+            fi
         fi
     else
         log_warning "Not a git repository. Skipping code update."

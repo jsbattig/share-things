@@ -233,10 +233,10 @@ EOL
     # Build and run containers with explicitly passed environment variables
     log_info "Step 8: Building containers with comprehensive configuration..."
     # Use a fixed path without command substitution
-    COMPOSE_UPDATE_PATH="./build/config/podman-compose.update.yml"
+    COMPOSE_UPDATE_PATH="$(pwd)/build/config/podman-compose.update.yml"
     
     # Create the directory if it doesn't exist
-    mkdir -p "./build/config"
+    mkdir -p "$(pwd)/build/config"
     
     # Create the update compose file
     cat > "$COMPOSE_UPDATE_PATH" << EOF
