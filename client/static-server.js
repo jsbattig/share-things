@@ -9,6 +9,13 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import compression from 'compression';
+import { createServer } from 'net';
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err);
+  process.exit(1);
+});
 
 const app = express();
 
@@ -19,6 +26,20 @@ const __dirname = path.dirname(__filename);
 // Directory where static files are located
 const STATIC_DIR = process.env.STATIC_DIR || '/app/public';
 const PORT = process.env.PORT || 15000;
+
+// Check if the port is already in use (this will be caught by the error handler if it fails)
+const portCheckServer = createServer();
+portCheckServer.once('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`ERROR: Port ${PORT} is already in use by another process`);
+    process.exit(1);
+  }
+});
+portCheckServer.once('listening', () => {
+  portCheckServer.close();
+  console.log(`Port ${PORT} is available`);
+});
+portCheckServer.listen(PORT, '0.0.0.0');
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -45,11 +66,25 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(STATIC_DIR, 'index.html'));
 });
 
-// Start server
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Static file server running on port ${PORT}`);
-  console.log(`Serving files from ${STATIC_DIR}`);
-});
+// Start server with error handling
+try {
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Static file server running on port ${PORT}`);
+    console.log(`Serving files from ${STATIC_DIR}`);
+  });
+  
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`ERROR: Port ${PORT} is already in use by another process`);
+    } else {
+      console.error('Server error:', err);
+    }
+    process.exit(1);
+  });
+} catch (err) {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+}
 
 // Handle graceful shutdown
 process.on('SIGTERM', () => {

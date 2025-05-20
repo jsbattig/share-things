@@ -16,10 +16,22 @@ services:
       - sh
       - -c
       - |
+        # Check if port is already in use
+        if nc -z 0.0.0.0 15000 2>/dev/null; then
+          echo "ERROR: Port 15000 is already in use by another process"
+          netstat -tulpn | grep 15000 || echo "Could not determine which process is using port 15000"
+          exit 1
+        fi
+        
+        # Create necessary directories and files
         mkdir -p /app/public/health &&
         echo '{"status":"ok"}' > /app/public/health/index.json &&
+        
+        # Install dependencies globally
         npm install -g express compression &&
-        node /app/static-server.js
+        
+        # Run the static server with error handling
+        node /app/static-server.js || { echo "Server failed to start"; exit 1; }
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:15000/health"]
       interval: 5s
