@@ -345,6 +345,42 @@ jobs:
           # Create a log directory if it doesn't exist
           mkdir -p deployment-logs
           
+          # Ensure build/config directory exists and copy necessary files
+          echo "Ensuring build/config directory exists on production server..."
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && mkdir -p build/config"
+          
+          # Create the compose files on the production server
+          echo "Creating compose files on production server..."
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && cat > build/config/podman-compose.yml << 'EOL'
+# Standard configuration for ShareThings with host networking
+version: '3'
+services:
+  frontend:
+    image: localhost/share-things_frontend:latest
+    network_mode: \"host\"  # Use host networking instead of bridge
+    restart: always
+    environment:
+      - PORT=15000
+      - STATIC_DIR=/app/public
+    healthcheck:
+      test: [\"CMD\", \"wget\", \"-q\", \"-O\", \"-\", \"http://localhost:15000/health\"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+  
+  backend:
+    image: localhost/share-things_backend:latest
+    network_mode: \"host\"  # Use host networking instead of bridge
+    environment:
+      - PORT=15001
+    restart: always
+    healthcheck:
+      test: [\"CMD\", \"wget\", \"-q\", \"-O\", \"-\", \"http://localhost:15001/health\"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+EOL"
+
           # Run the setup script with verbose output and capture logs
           echo "Running setup.sh with update mode for production deployment..."
           sshpass -p "${{ secrets.GHRUserPassword }}" ssh -v -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && bash -x ./setup.sh --update --non-interactive --debug 2>&1" | tee deployment-logs/deploy-$(date +%Y%m%d-%H%M%S).log
@@ -364,8 +400,8 @@ jobs:
           
           # Get container logs
           echo "Fetching container logs..."
-          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && podman logs share-things-frontend --tail 50" | tee -a deployment-logs/deploy-$(date +%Y%m%d-%H%M%S)-frontend.log
-          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && podman logs share-things-backend --tail 50" | tee -a deployment-logs/deploy-$(date +%Y%m%d-%H%M%S)-backend.log
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && podman logs --tail 50 share-things-frontend" | tee -a deployment-logs/deploy-$(date +%Y%m%d-%H%M%S)-frontend.log
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && podman logs --tail 50 share-things-backend" | tee -a deployment-logs/deploy-$(date +%Y%m%d-%H%M%S)-backend.log
           
           # Check if the deployment was successful
           if [ $DEPLOY_EXIT_CODE -ne 0 ]; then
