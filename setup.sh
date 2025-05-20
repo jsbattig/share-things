@@ -113,7 +113,9 @@ if [ "$DEBUG_MODE" = "true" ]; then
     echo "Debug mode enabled - showing verbose output"
     
     # Create a debug log file with a fixed name to avoid command substitution issues
-    DEBUG_LOG_FILE="setup-debug.log"
+    # Create logs directory if it doesn't exist
+    mkdir -p "logs"
+    DEBUG_LOG_FILE="logs/setup-debug.log"
     # Remove any existing log file
     rm -f "$DEBUG_LOG_FILE"
     # Create a new log file with a header

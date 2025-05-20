@@ -15,6 +15,23 @@
 
 set -e  # Exit immediately if a command exits with a non-zero status
 
+# Default values
+SKIP_CLEANUP="false"
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --skip-cleanup)
+            SKIP_CLEANUP="true"
+            shift
+            ;;
+        *)
+            # Unknown option
+            shift
+            ;;
+    esac
+done
+
 # ===== CONFIGURATION =====
 
 # Determine if we're running in CI
@@ -147,35 +164,11 @@ if [ "$CI" = "true" ]; then
   log_info "Creating necessary directories if they don't exist"
   mkdir -p build/config
   mkdir -p data
-  mkdir -p client/dist
-  mkdir -p server/dist
-  
-  # Create health check endpoint for frontend
-  log_info "Creating health check endpoint for frontend"
-  mkdir -p client/dist/health
-  echo '{"status":"ok"}' > client/dist/health/index.json
   
   # Set appropriate permissions
   log_info "Setting appropriate permissions"
   chmod -R 755 build
   chmod -R 777 data 2>/dev/null || true
-  chmod -R 777 client/dist 2>/dev/null || true
-  chmod -R 777 server/dist 2>/dev/null || true
-  
-  # Copy the CI-specific podman-compose file if it exists
-  if [ -f "$REPO_ROOT/build/config/podman-compose.test.ci.yml" ]; then
-    log_info "Using CI-specific podman-compose configuration"
-    cp "$REPO_ROOT/build/config/podman-compose.test.ci.yml" "$REPO_ROOT/build/config/podman-compose.yml"
-    # Make sure the file is copied successfully
-    if [ -f "$REPO_ROOT/build/config/podman-compose.yml" ]; then
-      log_info "CI-specific podman-compose configuration copied successfully"
-      log_info "Contents of podman-compose.yml:"
-      cat "$REPO_ROOT/build/config/podman-compose.yml"
-    else
-      log_error "Failed to copy CI-specific podman-compose configuration"
-      exit 1
-    fi
-  fi
 fi
 
 # Do a full installation test
@@ -336,32 +329,39 @@ else
   exit 1
 fi
 
-# Clean up after the test
-log_info "Step 2.5: Cleaning up after test"
-log_info "Command: ./setup.sh --uninstall --non-interactive"
+# Clean up after the test if not skipped
+if [ "$SKIP_CLEANUP" = "false" ]; then
+  log_info "Step 2.5: Cleaning up after test"
+  log_info "Command: ./setup.sh --uninstall --non-interactive"
 
-# Create a temporary log file for cleanup output
-TEMP_LOG_FILE="setup-cleanup-output.log"
-./setup.sh --uninstall --non-interactive > "$TEMP_LOG_FILE" 2>&1
-CLEANUP_EXIT_CODE=$?
+  # Create a temporary log file for cleanup output
+  # Create logs directory if it doesn't exist
+  mkdir -p "logs/test"
+  TEMP_LOG_FILE="logs/test/setup-cleanup-output.log"
+  ./setup.sh --uninstall --non-interactive > "$TEMP_LOG_FILE" 2>&1
+  CLEANUP_EXIT_CODE=$?
 
-if [ $CLEANUP_EXIT_CODE -eq 0 ]; then
-  # Verify that all containers have been properly stopped and removed
-  if podman ps -a | grep -q "share-things"; then
-    log_error "Final cleanup failed: containers still exist after cleanup"
-    log_error "Please check the following containers:"
-    podman ps -a | grep "share-things"
-    exit 1
+  if [ $CLEANUP_EXIT_CODE -eq 0 ]; then
+    # Verify that all containers have been properly stopped and removed
+    if podman ps -a | grep -q "share-things"; then
+      log_error "Final cleanup failed: containers still exist after cleanup"
+      log_error "Please check the following containers:"
+      podman ps -a | grep "share-things"
+      exit 1
+    else
+      log_success "Final cleanup successful - all containers properly removed"
+    fi
   else
-    log_success "Final cleanup successful - all containers properly removed"
+    log_error "Final cleanup failed with exit code $CLEANUP_EXIT_CODE"
+    exit 1
   fi
-else
-  log_error "Final cleanup failed with exit code $CLEANUP_EXIT_CODE"
-  exit 1
-fi
 
-# Clean up the log file
-rm -f "$TEMP_LOG_FILE"
+  # Clean up the log file
+  rm -f "$TEMP_LOG_FILE"
+else
+  log_info "Skipping cleanup as requested with --skip-cleanup"
+  log_warning "Containers are still running and will need to be cleaned up manually or by another script"
+fi
 
 # Change back to original directory
 cd "$CURRENT_DIR"

@@ -742,8 +742,24 @@ verify_containers() {
     
     # Save logs to file if in debug mode
     if [ "$DEBUG_MODE" = "true" ]; then
-        CONTAINER_LOG_DIR="container-logs-$(date +%Y%m%d-%H%M%S)"
+        # Create logs directory if it doesn't exist
+        mkdir -p "logs/container-logs"
+        
+        # Get the date in a separate step to avoid command substitution issues
+        CURRENT_DATE=$(date +%Y%m%d-%H%M%S)
+        
+        # Add error handling to detect and report when command substitution fails
+        if [[ ! $CURRENT_DATE =~ ^[0-9]{8}-[0-9]{6}$ ]]; then
+            log_warning "Failed to get properly formatted date. Using fallback."
+            CURRENT_DATE="fallback-$(date +%s)"  # Use Unix timestamp as fallback
+        fi
+        
+        # Use the variable to create the directory name under logs/container-logs
+        CONTAINER_LOG_DIR="logs/container-logs/${CURRENT_DATE}"
         mkdir -p "$CONTAINER_LOG_DIR"
+        
+        log_info "Debug: date command output: $(date +%Y%m%d-%H%M%S)"
+        log_info "Debug: CONTAINER_LOG_DIR value: $CONTAINER_LOG_DIR"
         
         echo "Saving container logs to $CONTAINER_LOG_DIR directory..."
         podman logs share-things-frontend > "$CONTAINER_LOG_DIR/frontend.log" 2>&1 || echo "Could not save frontend logs"

@@ -182,6 +182,24 @@ jobs:
       env:
         CI: true
         PODMAN_USERNS: keep-id
+        
+    - name: Debug container and file state
+      if: always()
+      run: |
+        echo "Checking container status..."
+        podman ps -a
+        
+        echo "Checking build/config directory contents..."
+        ls -la build/config/
+        
+        echo "Checking for podman-compose.update.yml and its backup..."
+        find . -name "podman-compose.update.yml*" || echo "No podman-compose.update.yml files found"
+        
+        echo "Checking file permissions..."
+        ls -la build/config/podman-compose* || echo "No podman-compose files found"
+        
+        echo "Checking for log directories..."
+        find logs -type d || echo "No logs directory found"
 
   integration:
     name: Dockered Build and Tests

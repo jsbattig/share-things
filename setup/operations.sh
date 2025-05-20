@@ -406,7 +406,7 @@ EOF
     if [ -f build/config/podman-compose.update.yml ]; then
         log_info "Cleaning up temporary files..."
         # Keep the file for reference in case of issues
-        mv build/config/podman-compose.update.yml build/config/podman-compose.update.yml.bak
+        cp build/config/podman-compose.update.yml build/config/podman-compose.update.yml.bak
         log_success "build/config/podman-compose.update.yml saved as build/config/podman-compose.update.yml.bak for reference."
     fi
     

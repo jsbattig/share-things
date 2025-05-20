@@ -10,8 +10,8 @@ services:
         aliases:
           - frontend
     volumes:
-      - ./client/dist:/app/public:ro
-      - ./client/static-server.js:/app/static-server.js:ro
+      - ./client/dist:/app/public
+      - ./client/static-server.js:/app/static-server.js
     restart: always
     environment:
       - PORT=15000
