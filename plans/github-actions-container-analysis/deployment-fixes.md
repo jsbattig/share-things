@@ -60,41 +60,45 @@ This ensures that any local changes on the production server are reset before pu
 We modified the GitHub Actions workflow to ensure the `build/config/` directory exists and contains the necessary compose files:
 
 ```yaml
-# Ensure build/config directory exists and copy necessary files
+# Ensure build/config directory exists
 echo "Ensuring build/config directory exists on production server..."
 sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && mkdir -p build/config"
 
-# Create the compose files on the production server
-echo "Creating compose files on production server..."
-sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && cat > build/config/podman-compose.yml << 'EOL'
+# Create a local compose file
+echo "Creating local compose file..."
+cat > podman-compose-host.yml << EOF
 # Standard configuration for ShareThings with host networking
 version: '3'
 services:
   frontend:
     image: localhost/share-things_frontend:latest
-    network_mode: \"host\"  # Use host networking instead of bridge
+    network_mode: "host"  # Use host networking instead of bridge
     restart: always
     environment:
       - PORT=15000
       - STATIC_DIR=/app/public
     healthcheck:
-      test: [\"CMD\", \"wget\", \"-q\", \"-O\", \"-\", \"http://localhost:15000/health\"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:15000/health"]
       interval: 5s
       timeout: 3s
       retries: 3
   
   backend:
     image: localhost/share-things_backend:latest
-    network_mode: \"host\"  # Use host networking instead of bridge
+    network_mode: "host"  # Use host networking instead of bridge
     environment:
       - PORT=15001
     restart: always
     healthcheck:
-      test: [\"CMD\", \"wget\", \"-q\", \"-O\", \"-\", \"http://localhost:15001/health\"]
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:15001/health"]
       interval: 5s
       timeout: 3s
       retries: 3
-EOL"
+EOF
+
+# Copy the compose file to the production server
+echo "Copying compose file to production server..."
+sshpass -p "${{ secrets.GHRUserPassword }}" scp -o StrictHostKeyChecking=no podman-compose-host.yml ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }}:~/share-things/build/config/podman-compose.yml
 ```
 
 This ensures that the `build/config/` directory exists and contains a valid `podman-compose.yml` file with our host networking configuration.
