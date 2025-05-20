@@ -60,38 +60,31 @@ This ensures that any local changes on the production server are reset before pu
 We modified the GitHub Actions workflow to ensure the `build/config/` directory exists and contains the necessary compose files:
 
 ```yaml
-# Create a script to generate the compose file
-echo "Creating script to generate compose file..."
-cat > create-compose.sh << 'EOF'
-#!/bin/bash
-mkdir -p ~/share-things/build/config
-cat > ~/share-things/build/config/podman-compose.yml << 'EOFINNER'
-version: '3'
-services:
-  frontend:
-    image: localhost/share-things_frontend:latest
-    network_mode: host
-    restart: always
-    environment:
-      - PORT=15000
-      - STATIC_DIR=/app/public
-  
-  backend:
-    image: localhost/share-things_backend:latest
-    network_mode: host
-    environment:
-      - PORT=15001
-    restart: always
-EOFINNER
-EOF
+# Create the build/config directory on the production server
+echo "Creating build/config directory on production server..."
+sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "mkdir -p ~/share-things/build/config"
 
-# Make the script executable
-chmod +x create-compose.sh
+# Create a simple compose file with host networking
+echo "Creating compose file with host networking..."
+echo 'version: "3"' > simple-compose.yml
+echo 'services:' >> simple-compose.yml
+echo '  frontend:' >> simple-compose.yml
+echo '    image: localhost/share-things_frontend:latest' >> simple-compose.yml
+echo '    network_mode: host' >> simple-compose.yml
+echo '    restart: always' >> simple-compose.yml
+echo '    environment:' >> simple-compose.yml
+echo '      - PORT=15000' >> simple-compose.yml
+echo '      - STATIC_DIR=/app/public' >> simple-compose.yml
+echo '  backend:' >> simple-compose.yml
+echo '    image: localhost/share-things_backend:latest' >> simple-compose.yml
+echo '    network_mode: host' >> simple-compose.yml
+echo '    environment:' >> simple-compose.yml
+echo '      - PORT=15001' >> simple-compose.yml
+echo '    restart: always' >> simple-compose.yml
 
-# Copy and execute the script on the production server
-echo "Copying and executing script on production server..."
-sshpass -p "${{ secrets.GHRUserPassword }}" scp -o StrictHostKeyChecking=no create-compose.sh ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }}:~/create-compose.sh
-sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "chmod +x ~/create-compose.sh && ~/create-compose.sh && rm ~/create-compose.sh"
+# Copy the compose file to the production server
+echo "Copying compose file to production server..."
+sshpass -p "${{ secrets.GHRUserPassword }}" scp -o StrictHostKeyChecking=no simple-compose.yml ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }}:~/share-things/build/config/podman-compose.yml
 ```
 
 This ensures that the `build/config/` directory exists and contains a valid `podman-compose.yml` file with our host networking configuration.
