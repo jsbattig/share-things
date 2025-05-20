@@ -235,76 +235,37 @@ if [ "$CONTAINER_COUNT" -gt 0 ]; then
   
   # Check frontend health
   log_info "Checking if frontend container is responsive..."
-  # Store the health check response in a variable
-  FRONTEND_RESPONSE=$(timeout 5 curl -s -w "\nHTTP_CODE:%{http_code}" http://localhost:15000/ 2>&1)
-  FRONTEND_HTTP_CODE=$(echo "$FRONTEND_RESPONSE" | grep "HTTP_CODE:" | cut -d':' -f2)
-  
-  log_info "Frontend health check response code: $FRONTEND_HTTP_CODE"
-  log_info "Frontend health check response content:"
-  echo "$FRONTEND_RESPONSE" | grep -v "HTTP_CODE:"
-  
-  if [ "$FRONTEND_HTTP_CODE" = "200" ]; then
+  if curl -s -o /dev/null -w "%{http_code}" http://localhost:15000/ | grep -q "200"; then
     log_success "Frontend container is responsive"
     FRONTEND_HEALTHY=true
   else
-    # Try again with a longer timeout but still limited
+    # Try again with a longer timeout
     log_warning "Frontend container not responding on first attempt, trying again with longer timeout..."
-    FRONTEND_RESPONSE_RETRY=$(timeout 10 curl -s -w "\nHTTP_CODE:%{http_code}" --connect-timeout 5 http://localhost:15000/ 2>&1)
-    FRONTEND_HTTP_CODE_RETRY=$(echo "$FRONTEND_RESPONSE_RETRY" | grep "HTTP_CODE:" | cut -d':' -f2)
-    
-    log_info "Frontend health check retry response code: $FRONTEND_HTTP_CODE_RETRY"
-    log_info "Frontend health check retry response content:"
-    echo "$FRONTEND_RESPONSE_RETRY" | grep -v "HTTP_CODE:"
-    
-    if [ "$FRONTEND_HTTP_CODE_RETRY" = "200" ]; then
+    if curl -s --connect-timeout 10 -o /dev/null -w "%{http_code}" http://localhost:15000/ | grep -q "200"; then
       log_success "Frontend container is responsive on second attempt"
       FRONTEND_HEALTHY=true
     else
       log_error "Frontend container is not responding properly"
-      # Use timeout for verbose curl as well
-      log_info "Detailed curl output:"
-      timeout 5 curl -v http://localhost:15000/ || echo "curl timed out"
+      curl -v http://localhost:15000/
       # Check if the container is running
       log_info "Checking container status:"
       podman ps -a | grep share-things-frontend
       # Check container logs
       log_info "Container logs:"
       podman logs share-things-frontend
-      # Check for network issues
-      log_info "Checking network connectivity:"
-      netstat -tulpn | grep 15000 || echo "No process listening on port 15000"
       FRONTEND_HEALTHY=false
-      # Store the failure reason
-      FRONTEND_FAILURE_REASON="Frontend container health check failed with HTTP code: $FRONTEND_HTTP_CODE_RETRY"
     fi
   fi
   
   # Check backend health
   log_info "Checking if backend container health endpoint is responsive..."
-  # Store the health check response in a variable
-  BACKEND_RESPONSE=$(timeout 5 curl -s -w "\nHTTP_CODE:%{http_code}" http://localhost:15001/health 2>&1)
-  BACKEND_HTTP_CODE=$(echo "$BACKEND_RESPONSE" | grep "HTTP_CODE:" | cut -d':' -f2)
-  
-  log_info "Backend health check response code: $BACKEND_HTTP_CODE"
-  log_info "Backend health check response content:"
-  echo "$BACKEND_RESPONSE" | grep -v "HTTP_CODE:"
-  
-  if [ "$BACKEND_HTTP_CODE" = "200" ]; then
+  if curl -s -o /dev/null -w "%{http_code}" http://localhost:15001/health | grep -q "200"; then
     log_success "Backend container health endpoint is responsive"
     BACKEND_HEALTHY=true
   else
     log_error "Backend container health endpoint is not responding properly"
-    log_info "Detailed curl output:"
-    timeout 5 curl -v http://localhost:15001/health || echo "curl timed out"
-    # Check container logs
-    log_info "Backend container logs:"
-    podman logs share-things-backend
-    # Check for network issues
-    log_info "Checking network connectivity:"
-    netstat -tulpn | grep 15001 || echo "No process listening on port 15001"
+    curl -v http://localhost:15001/health
     BACKEND_HEALTHY=false
-    # Store the failure reason
-    BACKEND_FAILURE_REASON="Backend container health check failed with HTTP code: $BACKEND_HTTP_CODE"
   fi
   
   # Overall health check result
@@ -312,42 +273,12 @@ if [ "$CONTAINER_COUNT" -gt 0 ]; then
     log_success "All container health checks passed successfully"
   else
     log_error "Some container health checks failed"
-    # Create a detailed failure summary
-    echo "=============================================="
-    echo "TEST FAILURE SUMMARY"
-    echo "=============================================="
-    if [ "$FRONTEND_HEALTHY" != "true" ]; then
-      echo "FRONTEND FAILURE: ${FRONTEND_FAILURE_REASON:-Unknown reason}"
-    fi
-    if [ "$BACKEND_HEALTHY" != "true" ]; then
-      echo "BACKEND FAILURE: ${BACKEND_FAILURE_REASON:-Unknown reason}"
-    fi
-    echo "=============================================="
     exit 1
   fi
 else
   log_error "No containers found running after installation"
   log_info "Checking for stopped containers:"
-  STOPPED_CONTAINERS=$(podman ps -a | grep "share-things" || echo "No containers found")
-  echo "$STOPPED_CONTAINERS"
-  
-  # Check for container creation errors
-  log_info "Checking for container creation errors:"
-  FRONTEND_LOGS=$(podman logs share-things-frontend 2>&1 || echo "No frontend container logs available")
-  BACKEND_LOGS=$(podman logs share-things-backend 2>&1 || echo "No backend container logs available")
-  
-  # Create a detailed failure summary
-  echo "=============================================="
-  echo "TEST FAILURE SUMMARY"
-  echo "=============================================="
-  echo "CONTAINER FAILURE: No containers found running after installation"
-  echo "Stopped containers: $(echo "$STOPPED_CONTAINERS" | wc -l) found"
-  echo "Last 10 lines of frontend logs:"
-  echo "$FRONTEND_LOGS" | tail -n 10
-  echo "Last 10 lines of backend logs:"
-  echo "$BACKEND_LOGS" | tail -n 10
-  echo "=============================================="
-  
+  podman ps -a | grep "share-things" || echo "No containers found"
   log_error "Installation failed: containers are not running"
   exit 1
 fi
@@ -364,38 +295,15 @@ CLEANUP_EXIT_CODE=$?
 if [ $CLEANUP_EXIT_CODE -eq 0 ]; then
   # Verify that all containers have been properly stopped and removed
   if podman ps -a | grep -q "share-things"; then
-    REMAINING_CONTAINERS=$(podman ps -a | grep "share-things")
     log_error "Final cleanup failed: containers still exist after cleanup"
     log_error "Please check the following containers:"
-    echo "$REMAINING_CONTAINERS"
-    
-    # Create a detailed failure summary
-    echo "=============================================="
-    echo "TEST FAILURE SUMMARY"
-    echo "=============================================="
-    echo "CLEANUP FAILURE: Containers still exist after cleanup"
-    echo "Remaining containers:"
-    echo "$REMAINING_CONTAINERS"
-    echo "Cleanup log:"
-    cat "$TEMP_LOG_FILE" | tail -n 20
-    echo "=============================================="
-    
+    podman ps -a | grep "share-things"
     exit 1
   else
     log_success "Final cleanup successful - all containers properly removed"
   fi
 else
   log_error "Final cleanup failed with exit code $CLEANUP_EXIT_CODE"
-  
-  # Create a detailed failure summary
-  echo "=============================================="
-  echo "TEST FAILURE SUMMARY"
-  echo "=============================================="
-  echo "CLEANUP FAILURE: Cleanup script exited with code $CLEANUP_EXIT_CODE"
-  echo "Last 20 lines of cleanup log:"
-  cat "$TEMP_LOG_FILE" | tail -n 20
-  echo "=============================================="
-  
   exit 1
 fi
 

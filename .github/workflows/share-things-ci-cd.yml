@@ -36,8 +36,14 @@ jobs:
     - name: Install root dependencies
       run: npm ci
     
-    - name: Install client dependencies
-      run: cd client && npm ci
+    - name: Install client dependencies with TypeScript ESLint plugin fix
+      run: |
+        cd client
+        npm ci
+        # Install compatible versions of TypeScript ESLint plugin
+        npm install --save-dev @typescript-eslint/eslint-plugin@5.62.0 @typescript-eslint/parser@5.62.0
+        echo "Installed TypeScript ESLint plugin version:"
+        npm list @typescript-eslint/eslint-plugin
     
     - name: Install server dependencies
       run: cd server && npm ci

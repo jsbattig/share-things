@@ -3,7 +3,7 @@
 services:
   backend:
     build:
-      context: ./server
+      context: /home/jsbattig/Dev/share-things/server
       dockerfile: Dockerfile
       args:
         - PORT=15001
@@ -21,7 +21,7 @@ services:
 
   frontend:
     build:
-      context: ./client
+      context: /home/jsbattig/Dev/share-things/client
       dockerfile: Dockerfile
       args:
         - API_URL=auto
@@ -51,12 +51,8 @@ services:
         echo '{"status":"ok"}' > /app/public/health/index.json &&
         mkdir -p /app &&
         cd /app &&
-        
-        # Create package.json and install dependencies
         echo '{"type":"module","dependencies":{"express":"^4.18.2","compression":"^1.7.4"}}' > package.json &&
         npm install &&
-        
-        # Create server.mjs with error handling
         echo 'import express from "express";
         import path from "path";
         import { fileURLToPath } from "url";
@@ -91,12 +87,12 @@ services:
         // Try to start the server with error handling
         try {
           const server = app.listen(PORT, "0.0.0.0", () => {
-            console.log(`Static file server running on port ${PORT}`);
+            console.log();
           });
           
           server.on("error", (err) => {
             if (err.code === "EADDRINUSE") {
-              console.error(`ERROR: Port ${PORT} is already in use by another process`);
+              console.error();
             } else {
               console.error("Server error:", err);
             }
@@ -106,7 +102,6 @@ services:
           console.error("Failed to start server:", err);
           process.exit(1);
         }' > /app/server.mjs &&
-        
         # Run the server with detailed error output
         node /app/server.mjs || { echo "Server failed to start"; exit 1; }
     restart: always
