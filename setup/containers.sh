@@ -10,6 +10,19 @@ REGISTRY_URL="linner.ddns.net:4443/docker.io.proxy"
 stop_containers() {
     log_info "Stopping running containers..."
     
+    # Temporarily modify compose files to remove restart:always policy
+    log_info "Temporarily disabling container restart policy..."
+    
+    # Check if the compose files exist before modifying them
+    for compose_file in "build/config/podman-compose.yml" "build/config/podman-compose.update.yml" "build/config/podman-compose.prod.yml"; do
+        if [ -f "$compose_file" ]; then
+            log_info "Modifying restart policy in $compose_file"
+            # Create a backup of the original file
+            cp "$compose_file" "${compose_file}.bak"
+            sed -i 's/restart: always/restart: "no"/' "$compose_file" || log_warning "Failed to modify restart policy in $compose_file"
+        fi
+    done
+    
     # Save the currently running container IDs for later verification
     # Use a simpler approach to avoid command substitution issues
     RUNNING_CONTAINERS_BEFORE=""
@@ -118,6 +131,12 @@ stop_containers() {
         log_error "This could cause problems with the update. Listing containers:"
         podman ps | grep "share-things" || echo "No containers found in 'podman ps' output"
         
+        log_error "Attempting to disable systemd services for containers..."
+        for service in $(podman ps | grep share-things | awk '{print $NF}'); do
+            systemctl --user stop "podman-$service" 2>/dev/null || log_warning "Failed to stop systemd service for $service"
+            systemctl --user disable "podman-$service" 2>/dev/null || log_warning "Failed to disable systemd service for $service"
+        done
+        
         # Last resort - kill with SIGKILL
         log_error "Performing emergency container kill..."
         
@@ -142,8 +161,15 @@ stop_containers() {
         podman rm -f share-things-backend 2>/dev/null || log_warning "Failed to remove backend container"
     fi
     
+    log_info "Restoring original compose files..."
+    for compose_file in "build/config/podman-compose.yml" "build/config/podman-compose.update.yml" "build/config/podman-compose.prod.yml"; do
+        if [ -f "${compose_file}.bak" ]; then
+            mv "${compose_file}.bak" "$compose_file"
+            log_info "Restored $compose_file from backup"
+        fi
+    done
+    
     # Final success message
-    log_success "All containers stopped successfully."
     log_success "All containers stopped successfully."
 }
 
