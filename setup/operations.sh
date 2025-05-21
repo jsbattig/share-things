@@ -297,6 +297,12 @@ EOF
     log_info "Force removing existing images to ensure a clean build..."
     podman rmi -f localhost/share-things_frontend:latest localhost/share-things_backend:latest 2>/dev/null || log_warning "No existing images to remove or removal failed"
     
+    # Double-check that images are actually removed
+    if podman images | grep -q "share-things"; then
+        log_warning "Images still exist after removal. Force removing all share-things images..."
+        podman rmi -f $(podman images -q --filter reference=localhost/share-things*) 2>/dev/null || log_warning "Force remove failed"
+    fi
+    
     # Build the containers with no cache
     log_info "Using compose file: $COMPOSE_UPDATE_PATH"
     echo "Running: podman-compose -f \"$COMPOSE_UPDATE_PATH\" build --no-cache"
@@ -312,6 +318,19 @@ EOF
         exit 1
     else
         log_success "Container build completed successfully"
+        
+        # Verify that images were actually built
+        if ! podman images | grep -q "share-things"; then
+            log_error "Images were not built successfully. Trying one more time with force..."
+            podman-compose -f "$COMPOSE_UPDATE_PATH" build --no-cache --force-rm
+            
+            # Check again
+            if ! podman images | grep -q "share-things"; then
+                log_error "Failed to build images after second attempt. Update may not complete successfully."
+            else
+                log_success "Images built successfully on second attempt"
+            fi
+        fi
     fi
     
     log_info "Step 9: Starting containers with explicit environment variables..."
@@ -322,6 +341,12 @@ EOF
     log_info "Stopping and removing existing containers..."
     podman stop share-things-frontend share-things-backend 2>/dev/null || log_warning "No containers to stop or stop failed"
     podman rm share-things-frontend share-things-backend 2>/dev/null || log_warning "No containers to remove or removal failed"
+    
+    # Double-check that containers are actually stopped and removed
+    if podman ps -a | grep -q "share-things"; then
+        log_warning "Containers still exist after stop/remove. Force removing all share-things containers..."
+        podman rm -f $(podman ps -a -q --filter name=share-things) 2>/dev/null || log_warning "Force remove failed"
+    fi
     
     # Export the variables to ensure they're available to podman-compose
     export FRONTEND_PORT
@@ -344,6 +369,19 @@ EOF
         exit 1
     else
         log_success "Containers started successfully"
+        
+        # Verify that containers are actually running
+        if ! podman ps | grep -q "share-things"; then
+            log_error "Containers were not started successfully. Trying one more time..."
+            podman-compose -f "$COMPOSE_UPDATE_PATH" up -d
+            
+            # Check again
+            if ! podman ps | grep -q "share-things"; then
+                log_error "Failed to start containers after second attempt. Update may not complete successfully."
+            else
+                log_success "Containers started successfully on second attempt"
+            fi
+        fi
     fi
     
     # No dummy containers - always use real containers for all environments

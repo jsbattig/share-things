@@ -285,8 +285,11 @@ pull_latest_code() {
             fi
         fi
         
-        # Pull latest code
-        git pull
+        # Pull latest code with force
+        log_info "Pulling latest code with force to ensure we get the latest changes..."
+        git fetch --all
+        git reset --hard origin/$(git branch --show-current)
+        git pull --force
         GIT_EXIT_CODE=$?
         
         if [ $GIT_EXIT_CODE -ne 0 ]; then

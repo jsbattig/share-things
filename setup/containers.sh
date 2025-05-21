@@ -17,6 +17,10 @@ stop_containers() {
         RUNNING_CONTAINERS_BEFORE="has-containers"
     fi
     
+    # Force stop and remove all containers with share-things in the name
+    log_info "Force stopping and removing all share-things containers..."
+    podman rm -f $(podman ps -a -q --filter name=share-things) 2>/dev/null || log_warning "No share-things containers to remove"
+    
     # Check if podman is working properly
     if ! podman info &> /dev/null; then
         log_warning "Podman service may not be running properly. Attempting to reset..."
@@ -160,6 +164,10 @@ clean_container_images() {
             log_info "Podman service reset successfully."
         fi
     fi
+    
+    # Force remove share-things images
+    log_info "Force removing share-things images..."
+    podman rmi -f $(podman images -q --filter reference=localhost/share-things*) 2>/dev/null || log_warning "No share-things images to remove"
     
     # Remove dangling images (not used by any container)
     log_info "Removing dangling images (not used by any container)..."
