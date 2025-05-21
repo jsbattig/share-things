@@ -293,9 +293,9 @@ EOF
     log_info "Created update compose file: $COMPOSE_UPDATE_PATH"
     echo "Running: podman-compose -f \"$COMPOSE_UPDATE_PATH\" build --no-cache"
     
-    # Remove existing images to ensure a clean build
-    log_info "Removing existing images to ensure a clean build..."
-    podman rmi localhost/share-things_frontend:latest localhost/share-things_backend:latest 2>/dev/null || log_warning "No existing images to remove or removal failed"
+    # Force remove existing images to ensure a clean build
+    log_info "Force removing existing images to ensure a clean build..."
+    podman rmi -f localhost/share-things_frontend:latest localhost/share-things_backend:latest 2>/dev/null || log_warning "No existing images to remove or removal failed"
     
     # Build the containers with no cache
     log_info "Using compose file: $COMPOSE_UPDATE_PATH"
@@ -424,7 +424,7 @@ EOF
     echo "5. Cleaned container images"
     echo "6. Updated environment files"
     echo "7. Created update compose file"
-    echo "8. Built containers with new configuration"
+    echo "8. Force rebuilt containers with new configuration (no cache)"
     echo "9. Started containers with new configuration"
     echo "10. Verified containers are running"
     
