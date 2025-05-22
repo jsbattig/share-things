@@ -349,14 +349,14 @@ jobs:
           echo "Creating build/config directory on production server..."
           sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "mkdir -p ~/share-things/build/config"
           
-          # Create a simple compose file with host networking
-          echo "Creating compose file with host networking..."
+          # Create a simple compose file with host networking and restart: "no" for update process
+          echo "Creating compose file with host networking and restart: no for update process..."
           echo 'version: "3"' > simple-compose.yml
           echo 'services:' >> simple-compose.yml
           echo '  frontend:' >> simple-compose.yml
           echo '    image: localhost/share-things_frontend:latest' >> simple-compose.yml
           echo '    network_mode: host' >> simple-compose.yml
-          echo '    restart: always' >> simple-compose.yml
+          echo '    restart: "no"' >> simple-compose.yml
           echo '    environment:' >> simple-compose.yml
           echo '      - PORT=15000' >> simple-compose.yml
           echo '      - STATIC_DIR=/app/public' >> simple-compose.yml
@@ -365,7 +365,7 @@ jobs:
           echo '    network_mode: host' >> simple-compose.yml
           echo '    environment:' >> simple-compose.yml
           echo '      - PORT=15001' >> simple-compose.yml
-          echo '    restart: always' >> simple-compose.yml
+          echo '    restart: "no"' >> simple-compose.yml
           
           # Copy the compose file to the production server
           echo "Copying compose file to production server..."
@@ -375,6 +375,34 @@ jobs:
           echo "Running setup.sh with update mode for production deployment..."
           sshpass -p "${{ secrets.GHRUserPassword }}" ssh -v -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && bash -x ./setup.sh --update --non-interactive --debug 2>&1" | tee deployment-logs/deploy-$(date +%Y%m%d-%H%M%S).log
           DEPLOY_EXIT_CODE=$?
+          
+          # After successful update, create final compose file with restart: always for normal operation
+          if [ $DEPLOY_EXIT_CODE -eq 0 ]; then
+            echo "Creating final compose file with restart: always for normal operation..."
+            echo 'version: "3"' > final-compose.yml
+            echo 'services:' >> final-compose.yml
+            echo '  frontend:' >> final-compose.yml
+            echo '    image: localhost/share-things_frontend:latest' >> final-compose.yml
+            echo '    network_mode: host' >> final-compose.yml
+            echo '    restart: always' >> final-compose.yml
+            echo '    environment:' >> final-compose.yml
+            echo '      - PORT=15000' >> final-compose.yml
+            echo '      - STATIC_DIR=/app/public' >> final-compose.yml
+            echo '  backend:' >> final-compose.yml
+            echo '    image: localhost/share-things_backend:latest' >> final-compose.yml
+            echo '    network_mode: host' >> final-compose.yml
+            echo '    environment:' >> final-compose.yml
+            echo '      - PORT=15001' >> final-compose.yml
+            echo '    restart: always' >> final-compose.yml
+            
+            # Copy the final compose file to the production server
+            echo "Copying final compose file to production server..."
+            sshpass -p "${{ secrets.GHRUserPassword }}" scp -o StrictHostKeyChecking=no final-compose.yml ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }}:~/share-things/build/config/podman-compose.yml
+            
+            # Restart containers with the final compose file
+            echo "Restarting containers with final compose file..."
+            sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && podman-compose -f build/config/podman-compose.yml up -d"
+          fi
           
           # Get container status after deployment
           echo "Checking container status after deployment..."
