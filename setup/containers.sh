@@ -137,18 +137,25 @@ stop_containers() {
             systemctl --user disable "podman-$service" 2>/dev/null || log_warning "Failed to disable systemd service for $service"
         done
         
+        # Force kill all running processes inside containers before attempting to kill containers
+        log_error "Force killing all processes inside containers..."
+        for container_id in $(podman ps -q --filter name=share-things); do
+            podman exec "$container_id" /bin/sh -c "kill -9 -1" 2>/dev/null || log_warning "Failed to kill processes in container $container_id"
+            sleep 1
+        done
+        
         # Last resort - kill with SIGKILL
-        log_error "Performing emergency container kill..."
+        log_error "Performing emergency container kill with SIGKILL..."
         
         # Use a direct approach to kill containers
         log_info "Killing all running containers with name containing 'share-things'"
         
-        # Kill all containers at once
-        podman kill --all 2>/dev/null || log_warning "Failed to kill all containers"
+        # Kill all containers at once with SIGKILL
+        podman kill -s SIGKILL --all 2>/dev/null || log_warning "Failed to kill all containers"
         
-        # Try to kill specific containers by name
-        podman kill share-things-frontend 2>/dev/null || log_warning "Failed to kill frontend container"
-        podman kill share-things-backend 2>/dev/null || log_warning "Failed to kill backend container"
+        # Try to kill specific containers by name with SIGKILL
+        podman kill -s SIGKILL share-things-frontend 2>/dev/null || log_warning "Failed to kill frontend container"
+        podman kill -s SIGKILL share-things-backend 2>/dev/null || log_warning "Failed to kill backend container"
         
         # Use a direct approach to remove containers
         log_info "Force removing all containers with name containing 'share-things'"
@@ -168,6 +175,30 @@ stop_containers() {
             log_info "Restored $compose_file from backup"
         fi
     done
+    
+    # Final verification to ensure containers are truly stopped and removed
+    log_info "Performing final verification after container operations..."
+    
+    # Check if any containers with share-things in their name are still running
+    if podman ps -q --filter name=share-things | grep -q .; then
+        log_error "CRITICAL ERROR: Containers are still running despite all stop attempts!"
+        podman ps --filter name=share-things
+        
+        # Force kill as absolute last resort
+        log_error "Emergency force kill of all containers..."
+        for container_id in $(podman ps -q --filter name=share-things); do
+            podman kill -s SIGKILL "$container_id" 2>/dev/null || log_error "Failed to force kill container $container_id"
+            podman rm -f "$container_id" 2>/dev/null || log_error "Failed to force remove container $container_id"
+        done
+        
+        # Check again after emergency measures
+        if podman ps -q --filter name=share-things | grep -q .; then
+            log_error "FATAL: Containers still running after all stop attempts. Deployment cannot proceed."
+            exit 1  # Fail the deployment as requested by the user
+        fi
+    else
+        log_success "Verification complete: All containers have been successfully stopped and removed"
+    fi
     
     # Final success message
     log_success "All containers stopped successfully."
@@ -191,6 +222,10 @@ clean_container_images() {
         fi
     fi
     
+    # Force remove any containers still hanging around (extra insurance)
+    log_info "Force removing any remaining containers..."
+    podman rm -f $(podman ps -aq --filter name=share-things) 2>/dev/null || log_info "No containers to remove"
+    
     # Force remove share-things images
     log_info "Force removing share-things images..."
     podman rmi -f $(podman images -q --filter reference=localhost/share-things*) 2>/dev/null || log_warning "No share-things images to remove"
@@ -207,7 +242,8 @@ clean_container_images() {
     log_info "Current running containers:"
     podman ps
     
-    # Use a more selective prune that preserves currently used images
+    # Use a more aggressive system prune
+    log_info "Performing aggressive system prune..."
     podman system prune -f --volumes
     log_success "Podman system cache cleaned (preserving currently used images)."
     
