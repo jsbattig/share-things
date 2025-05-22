@@ -3,7 +3,7 @@
 services:
   backend:
     build:
-      context: /home/ubuntu/repos/share-things/server
+      context: ../../server
       dockerfile: Dockerfile
       args:
         - PORT=15001
@@ -21,7 +21,7 @@ services:
 
   frontend:
     build:
-      context: /home/ubuntu/repos/share-things/client
+      context: ../../client
       dockerfile: Dockerfile
       args:
         - API_URL=auto
