@@ -1176,23 +1176,27 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
    * @param contentId Content ID
    * @returns Content entry or undefined if not found
    */
+  // Create stable references that only change when content count changes
+  const contentCount = contents.size;
+  const contentKeys = React.useMemo(() => Array.from(contents.keys()).sort().join(','), [contents]);
+
   const getContent = React.useCallback((contentId: string): ContentEntry | undefined => {
-    const content = contents.get(contentId);
+    const content = contentsRef.current.get(contentId);
     
     // Don't update last accessed time during render as it causes infinite loops
     // Instead, we'll update it only when content is actually accessed for operations
     // like copying, downloading, etc.
     
     return content;
-  }, [contents]);
+  }, [contentCount]);
 
   /**
    * Gets a list of all content
    * @returns Array of content metadata
    */
   const getContentList = React.useCallback((): SharedContent[] => {
-    return Array.from(contents.values()).map(entry => entry.metadata);
-  }, [contents]);
+    return Array.from(contentsRef.current.values()).map(entry => entry.metadata);
+  }, [contentKeys]);
 
   /**
    * Removes content from the store
