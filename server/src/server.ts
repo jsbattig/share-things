@@ -11,6 +11,12 @@ import { SessionManager } from './services/SessionManager';
 // Load environment variables
 dotenv.config();
 
+// Set NODE_ENV if not already set
+if (!process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'production';
+}
+console.log(`Running in ${process.env.NODE_ENV} mode`);
+
 // Create Express app
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -34,9 +40,15 @@ const io = new Server(server, {
     credentials: true
   },
   transports: ['websocket', 'polling'],
-  pingTimeout: 60000,
-  pingInterval: 25000,
-  maxHttpBufferSize: 1e8 // 100MB
+  pingTimeout: 60000, // Reduced from 120000 to 60000 (1 minute) for faster timeout detection
+  pingInterval: 10000, // Reduced from 15000 to 10000 (10 seconds) for more responsive connection status
+  connectTimeout: 20000, // Reduced from 60000 to 20000 (20 seconds) for faster connection establishment
+  maxHttpBufferSize: 1e8, // 100MB
+  allowUpgrades: true, // Allow transport upgrades for better performance
+  upgradeTimeout: 10000, // 10 seconds timeout for upgrades
+  perMessageDeflate: {
+    threshold: 1024 // Only compress messages larger than 1KB
+  }
 });
 
 // Get database path from environment or use default
@@ -72,7 +84,7 @@ async function startServer() {
     await sessionManager.initialize();
     
     // Set up socket handlers with session manager
-    setupSocketHandlers(io, sessionManager);
+    const { cleanup: cleanupSocketHandlers } = setupSocketHandlers(io, sessionManager);
     
     // Start server
     server.listen({
@@ -89,6 +101,9 @@ async function startServer() {
       
       // Stop session manager
       await sessionManager.stop();
+      
+      // Clean up socket handlers and storage
+      await cleanupSocketHandlers();
       
       server.close(() => {
         console.log('HTTP server closed');

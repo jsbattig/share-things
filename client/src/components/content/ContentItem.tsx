@@ -1,4 +1,5 @@
-import React from 'react';
+/* eslint-disable react/display-name, react/prop-types */
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Box,
   Flex,
@@ -14,7 +15,8 @@ import {
   Badge,
   useToast,
   useClipboard,
-  Image
+  Image,
+  Spinner
 } from '@chakra-ui/react';
 import {
   FaEllipsisV,
@@ -25,11 +27,397 @@ import {
   FaFileAlt,
   FaFileImage,
   FaUser,
-  FaCheck
+  FaCheck,
+  FaExclamationTriangle
 } from 'react-icons/fa';
 import { useContentStore, ContentType } from '../../contexts/ContentStoreContext';
 import { useServices } from '../../contexts/ServiceContext';
 import { formatFileSize, formatDate } from '../../utils/formatters';
+
+/**
+ * Helper function to extract text from a Blob
+ */
+const extractTextFromBlob = async (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = () => {
+        resolve(reader.result as string);
+      };
+      reader.onerror = () => {
+        reject(new Error('Failed to read blob'));
+      };
+      reader.readAsText(blob);
+    } catch (error) {
+      reject(error);
+    }
+  });
+};
+
+/**
+ * Component to render an image
+ */
+const ImageRenderer: React.FC<{
+  contentId: string;
+  blob: Blob;
+  fileName?: string;
+  isComplete: boolean;
+  updateContentLastAccessed: (contentId: string) => void;
+  chunkTrackingService: unknown;
+  urlRegistry: unknown;
+}> = ({ contentId, blob, fileName, isComplete, updateContentLastAccessed, chunkTrackingService, urlRegistry }) => {
+  // DIAGNOSTIC: Track render count and prop changes
+  const renderCountRef = React.useRef(0);
+  const prevPropsRef = React.useRef({ contentId, blob, fileName, isComplete });
+  
+  renderCountRef.current += 1;
+  
+  console.log(`[RENDER] ImageRenderer #${renderCountRef.current} for ${contentId.substring(0, 8)}`);
+  
+  // Check if props changed
+  const propsChanged = {
+    blob: prevPropsRef.current.blob !== blob,
+    isComplete: prevPropsRef.current.isComplete !== isComplete
+  };
+  
+  if (propsChanged.blob || propsChanged.isComplete) {
+    console.log(`[RENDER] Props changed:`, propsChanged);
+  }
+  
+  // Update previous props
+  prevPropsRef.current = { contentId, blob, fileName, isComplete };
+  
+  const [imageError, setImageError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [loadingState, setLoadingState] = useState<'loading' | 'success' | 'error'>('loading');
+  
+  // Ensure we have a proper image blob with correct MIME type
+  const imageBlob = useMemo(() => {
+    if (!blob) {
+      return null;
+    }
+    
+    try {
+      // Check if the blob is actually an image by examining its type
+      const isImageType = blob.type.startsWith('image/');
+      
+      // Keep the original blob type if it's an image type, otherwise use a default
+      const blobType = isImageType ? blob.type : 'image/png';
+      
+      const resultBlob = new Blob([blob], { type: blobType });
+      return resultBlob;
+    } catch (error) {
+      console.error(`[RENDER] Error creating image blob for ${contentId.substring(0, 8)}:`, error);
+      return null;
+    }
+  }, [blob, contentId]);
+  
+  // Extract text from a blob
+  const extractTextFromBlob = useCallback(async (blob: Blob): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+        } else {
+          reject(new Error('Failed to read blob as text'));
+        }
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(blob);
+    });
+  }, []);
+  
+  // Validate the blob to check if it's actually an image
+  const validateImageBlob = useCallback(async (blob: Blob): Promise<boolean> => {
+    try {
+      // If the blob type is already an image type, trust it
+      if (blob.type.startsWith('image/')) {
+        console.log(`[ImageRenderer] Blob has image MIME type: ${blob.type}`);
+        return true;
+      }
+      
+      // Read the first few bytes to check for common image signatures
+      const buffer = await blob.slice(0, 8).arrayBuffer();
+      const header = new Uint8Array(buffer);
+      const hexSignature = Array.from(header).map(b => b.toString(16).padStart(2, '0')).join('');
+      
+      console.log(`[ImageRenderer] Content signature for ${contentId}: ${hexSignature}`);
+      
+      // Check for common image signatures
+      // PNG: 89 50 4E 47 0D 0A 1A 0A
+      const isPng = header[0] === 0x89 &&
+                    header[1] === 0x50 &&
+                    header[2] === 0x4E &&
+                    header[3] === 0x47;
+      
+      // JPEG: FF D8 FF
+      const isJpeg = header[0] === 0xFF &&
+                     header[1] === 0xD8 &&
+                     header[2] === 0xFF;
+      
+      // GIF: 47 49 46 38
+      const isGif = header[0] === 0x47 &&
+                    header[1] === 0x49 &&
+                    header[2] === 0x46 &&
+                    header[3] === 0x38;
+      
+      const isImage = isPng || isJpeg || isGif;
+      
+      // Check if this might be text content
+      const isTextContent = /^[\x20-\x7E\n\r\t]+$/.test(new TextDecoder().decode(buffer));
+      
+      console.log(`[ImageRenderer] Content validation for ${contentId}: ${isImage ? 'Valid image' : 'Not an image'}`);
+      if (isTextContent) {
+        console.log(`[ImageRenderer] Content appears to be text, not an image`);
+      }
+      
+      return isImage;
+    } catch (error) {
+      console.error(`[ImageRenderer] Error validating blob:`, error);
+      return false;
+    }
+  }, [contentId]);
+  
+  // Create URL only when we have a valid blob
+  useEffect(() => {
+    console.log(`[RENDER] useEffect executing for ${contentId.substring(0, 8)}`);
+    
+    let isMounted = true;
+    
+    const createImageUrl = async () => {
+      if (!imageBlob) {
+        if (isMounted) {
+          setImageError(true);
+          setLoadingState('error');
+        }
+        return;
+      }
+      
+      try {
+        // First check if this is actually an image
+        const isValid = await validateImageBlob(imageBlob);
+        
+        if (!isValid) {
+          console.log(`[RENDER] Content validation failed for ${contentId.substring(0, 8)} - not an image`);
+          
+          if (isMounted) {
+            setImageError(true);
+            setLoadingState('error');
+          }
+          return;
+        }
+        
+        // Create URL for valid image blob
+        const url = (urlRegistry as { createUrl: (contentId: string, blob: Blob) => string }).createUrl(contentId, imageBlob);
+        
+        if (isMounted) {
+          setImageUrl(url);
+          setLoadingState('loading'); // Still loading until the image is rendered
+        }
+      } catch (error) {
+        console.error(`[RENDER] Error processing image for ${contentId.substring(0, 8)}:`, error);
+        if (isMounted) {
+          setImageError(true);
+          setLoadingState('error');
+        }
+      }
+    };
+    
+    createImageUrl();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [contentId, imageBlob, urlRegistry, validateImageBlob, extractTextFromBlob]);
+  
+  // If image fails to load, we can try to reload it with more detailed error handling
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleImageError = useCallback((_e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    console.error(`[RENDER] Image loading failed for ${contentId.substring(0, 8)}`);
+    
+    setImageError(true);
+    setLoadingState('error');
+    
+    // Try to reload the image up to 3 times with increasing delays
+    if (retryCount < 3) {
+      const delay = 1000 * (retryCount + 1);
+      
+      setTimeout(() => {
+        // Revoke the old URL and create a new one
+        if (imageUrl) {
+          try {
+            (urlRegistry as { revokeUrl: (contentId: string, url: string) => void }).revokeUrl(contentId, imageUrl);
+          } catch (error) {
+            console.error(`[RENDER] Error revoking URL during retry:`, error);
+          }
+        }
+        
+        if (imageBlob) {
+          try {
+            // Create a fresh blob with the same data but try different MIME types
+            const mimeTypes = ['image/png', 'image/jpeg', 'image/gif'];
+            const mimeType = mimeTypes[retryCount % mimeTypes.length];
+            
+            const freshBlob = new Blob([imageBlob], { type: mimeType });
+            const newUrl = (urlRegistry as { createUrl: (contentId: string, blob: Blob) => string }).createUrl(contentId, freshBlob);
+            setImageUrl(newUrl);
+            setLoadingState('loading');
+          } catch (error) {
+            console.error(`[RENDER] Error creating new URL during retry:`, error);
+          }
+        }
+        
+        setRetryCount(prev => prev + 1);
+        setImageError(false);
+      }, delay);
+    }
+  }, [contentId, retryCount, imageBlob, imageUrl, urlRegistry]);
+  
+  // Handle successful image load
+  const handleImageLoad = useCallback(() => {
+    setLoadingState('success');
+    
+    // Force update content as complete if image loads successfully
+    if (!isComplete) {
+      updateContentLastAccessed(contentId);
+      
+      // Mark content as displayed in tracking service
+      (chunkTrackingService as { markContentDisplayed: (contentId: string) => void }).markContentDisplayed(contentId);
+    }
+  }, [contentId, isComplete, updateContentLastAccessed, chunkTrackingService]);
+
+  return (
+    <>
+      {!imageError && imageUrl ? (
+        <Image
+          key={`image-${contentId}-${retryCount}`}
+          src={imageUrl || ''}
+          alt={fileName || `Image-${contentId.substring(0, 8)}`}
+          maxH="200px"
+          objectFit="contain"
+          onLoad={handleImageLoad}
+          onError={handleImageError}
+          crossOrigin="anonymous"
+          fallback={
+            <Flex direction="column" align="center" justify="center" h="200px">
+              <Spinner size="md" color="blue.500" mb={2} />
+              <Text fontSize="sm" color="gray.600">Loading image...</Text>
+            </Flex>
+          }
+        />
+      ) : (
+        <Flex direction="column" align="center" justify="center" h="200px" bg="gray.50" borderRadius="md">
+          <Icon as={FaExclamationTriangle} color="red.500" boxSize="24px" mb={2} />
+          <Text color="red.500" mb={3} fontWeight="medium">Image failed to load</Text>
+          <Text fontSize="xs" color="gray.600" mb={3} maxW="80%" textAlign="center">
+            The image may be corrupted or in an unsupported format
+          </Text>
+          {retryCount >= 3 ? (
+            <Text fontSize="xs" color="gray.500">Maximum retries reached</Text>
+          ) : (
+            <Button
+              size="sm"
+              colorScheme="blue"
+              onClick={() => {
+                setImageError(false);
+                setLoadingState('loading');
+                
+                // Force a complete refresh of the image blob
+                if (imageBlob) {
+                  try {
+                    // Create a completely new blob with the same data
+                    const arrayBuffer = imageBlob.arrayBuffer();
+                    arrayBuffer.then(buffer => {
+                      const freshBlob = new Blob([buffer], { type: 'image/png' });
+                      const newUrl = (urlRegistry as { createUrl: (contentId: string, blob: Blob) => string }).createUrl(contentId, freshBlob);
+                      console.log(`[ImageRenderer] Created fresh URL for manual retry: ${newUrl}`);
+                      setImageUrl(newUrl);
+                    }).catch(err => {
+                      console.error(`[ImageRenderer] Error creating fresh blob:`, err);
+                    });
+                  } catch (error) {
+                    console.error(`[ImageRenderer] Error during manual retry:`, error);
+                  }
+                }
+              }}
+            >
+              Retry Loading
+            </Button>
+          )}
+        </Flex>
+      )}
+      {loadingState === 'loading' && !imageError && (
+        <Box
+          position="absolute"
+          top={0}
+          left={0}
+          right={0}
+          bottom={0}
+          bg="blackAlpha.50"
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+        >
+          <Spinner size="sm" color="blue.500" mr={2} />
+          <Text fontSize="xs" color="gray.600">Loading image...</Text>
+        </Box>
+      )}
+    </>
+  );
+};
+
+/**
+ * Component to detect content type from a Blob
+ */
+const ContentTypeDetector: React.FC<{
+  blob: Blob;
+  onTypeDetected: (type: string) => void
+}> = ({ blob, onTypeDetected }) => {
+  
+  
+  useEffect(() => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const result = e.target?.result;
+      if (typeof result === 'string' && /^[\x20-\x7E\n\r\t]+$/.test(result.substring(0, 100))) {
+        console.log(`[ContentTypeDetector] Detected text content from blob data`);
+        
+        onTypeDetected(ContentType.TEXT);
+      }
+    };
+    // Read the first 100 bytes as text
+    const slice = blob.slice(0, 100);
+    reader.readAsText(slice);
+  }, [blob, onTypeDetected]);
+  
+  return null; // This component doesn't render anything
+};
+
+/**
+ * Component to extract and display text from a Blob
+ */
+const BlobTextExtractor: React.FC<{ blob: Blob }> = ({ blob }) => {
+  const [textContent, setTextContent] = useState<string>('Loading text content...');
+  
+  useEffect(() => {
+    const extractText = async () => {
+      try {
+        const text = await extractTextFromBlob(blob);
+        console.log(`[BlobTextExtractor] Extracted text from blob: ${text.substring(0, 20)}...`);
+        setTextContent(text.length > 500 ? text.substring(0, 20) + '...' : text);
+      } catch (error) {
+        console.error('Error extracting text from blob:', error);
+        setTextContent('Error loading text content');
+      }
+    };
+    
+    extractText();
+  }, [blob]);
+  
+  return <>{textContent}</>;
+};
 
 interface ContentItemProps {
   contentId: string;
@@ -38,8 +426,12 @@ interface ContentItemProps {
 /**
  * Content item component
  */
-const ContentItem: React.FC<ContentItemProps> = ({ contentId }) => {
-  // No state needed
+const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
+  // DIAGNOSTIC: Track render count for ContentItem
+  const renderCountRef = React.useRef(0);
+  renderCountRef.current += 1;
+  
+  console.log(`[RENDER] ContentItem #${renderCountRef.current} for ${contentId.substring(0, 8)}`);
   
   // Context
   const { getContent, updateContentLastAccessed, removeContent } = useContentStore();
@@ -53,8 +445,8 @@ const ContentItem: React.FC<ContentItemProps> = ({ contentId }) => {
   
   // Clipboard
   const { hasCopied, onCopy } = useClipboard(
-    content?.data && typeof content.data === 'string' 
-      ? content.data 
+    content?.data && typeof content.data === 'string'
+      ? content.data
       : ''
   );
   
@@ -65,13 +457,55 @@ const ContentItem: React.FC<ContentItemProps> = ({ contentId }) => {
   // Get the metadata from the content entry
   const { metadata } = content;
   
-  // Debug logging for content structure
-  console.log(`[ContentItem] Content ID: ${contentId}, Content Type: ${metadata.contentType}`);
-  console.log(`[ContentItem] Content ID: ${contentId}, Timestamp: ${metadata.timestamp}, Type: ${typeof metadata.timestamp}`);
-  console.log(`[ContentItem] Content ID: ${contentId}, Size: ${metadata.metadata.size}, Type: ${typeof metadata.metadata.size}`);
-  console.log(`[ContentItem] Full content object:`, content);
-  console.log(`[ContentItem] Metadata object:`, metadata);
-  console.log(`[ContentItem] Image info:`, metadata.metadata.imageInfo);
+  // Determine the most appropriate content type based on metadata and actual content
+  let effectiveContentType = metadata.contentType;
+  
+  console.log(`[ContentItem] Determining effective content type for ${contentId}`);
+  console.log(`[ContentItem] Original content type: ${metadata.contentType}`);
+  console.log(`[ContentItem] MIME type: ${metadata.metadata.mimeType || 'not specified'}`);
+  console.log(`[ContentItem] Data type: ${content.data ? (typeof content.data === 'string' ? 'string' : (content.data instanceof Blob ? 'Blob' : 'unknown')) : 'undefined'}`);
+  
+  // Check if this is actually text content based on the metadata or content
+  if (metadata.contentType === ContentType.FILE || metadata.contentType === ContentType.IMAGE) {
+    // Check if the content is actually text based on MIME type
+    const mimeType = metadata.metadata.mimeType || '';
+    const isTextMimeType = mimeType.startsWith('text/') ||
+                          mimeType === 'application/json' ||
+                          mimeType === 'application/xml';
+    
+    // If we have a blob with text mime type or the content is a string
+    if (isTextMimeType ||
+        (content.data instanceof Blob && content.data.type.startsWith('text/')) ||
+        (typeof content.data === 'string')) {
+      console.log(`[ContentItem] Detected text content marked as ${metadata.contentType}, overriding content type to TEXT`);
+      effectiveContentType = ContentType.TEXT;
+    }
+    
+    // Try to detect text content from the data
+    if (content.data instanceof Blob) {
+      // Check the first few bytes to see if it's text
+      // Use the ContentTypeDetector component to detect the content type
+      <ContentTypeDetector blob={content.data} onTypeDetected={(type) => {
+        if (type === ContentType.TEXT) {
+          console.log(`[ContentItem] ContentTypeDetector identified content as TEXT`);
+          effectiveContentType = ContentType.TEXT;
+        }
+      }} />;
+    }
+  }
+  
+  // If content is marked as image but doesn't have image mime type, verify
+  if (metadata.contentType === ContentType.IMAGE) {
+    const mimeType = metadata.metadata.mimeType || '';
+    const isImageMimeType = mimeType.startsWith('image/');
+    
+    if (!isImageMimeType && content.data instanceof Blob && !content.data.type.startsWith('image/')) {
+      console.log(`[ContentItem] Content marked as IMAGE but doesn't have image MIME type, will verify during rendering`);
+      // The ImageRenderer component will handle validation
+    }
+  }
+  
+  
   
   /**
    * Copies content to clipboard
@@ -228,7 +662,7 @@ const ContentItem: React.FC<ContentItemProps> = ({ contentId }) => {
       );
     }
     
-    switch (metadata.contentType) {
+    switch (effectiveContentType) {
       case ContentType.TEXT:
         return (
           <Box 
@@ -242,11 +676,41 @@ const ContentItem: React.FC<ContentItemProps> = ({ contentId }) => {
             maxH="200px"
             position="relative"
           >
-            {content.data && typeof content.data === 'string' 
-              ? content.data.length > 500 
-                ? content.data.substring(0, 500) + '...'
-                : content.data
-              : 'No content available'}
+            {(() => {
+              // Debug logging to help diagnose content display issues
+              console.log(`[ContentItem] Rendering text content for ${contentId}`);
+              console.log(`[ContentItem] Content data type: ${typeof content.data}`);
+              console.log(`[ContentItem] Content data available: ${content.data !== undefined}`);
+              
+              // If we have string data, display it directly
+              if (content.data && typeof content.data === 'string') {
+                console.log(`[ContentItem] Displaying string data of length ${content.data.length}`);
+                console.log(`[ContentItem] String data preview: "${content.data.substring(0, Math.min(20, content.data.length))}"`);
+                return content.data.length > 500
+                  ? content.data.substring(0, 500) + '...'
+                  : content.data;
+              }
+              
+              // If we have a blob that might contain text, return a placeholder
+              // The actual text extraction happens in a separate component
+              if (content.data instanceof Blob) {
+                console.log(`[ContentItem] Displaying blob data of size ${content.data.size}`);
+                return <BlobTextExtractor blob={content.data} />;
+              }
+              
+              // Check if we have metadata but no data yet
+              if (content.metadata && !content.data && content.isComplete) {
+                console.log(`[ContentItem] Content is marked complete but has no data, trying to use metadata`);
+                // This is a workaround for when content is marked complete but data isn't set
+                if (content.metadata.contentType === ContentType.TEXT) {
+                  return `[Content available but not loaded: ${content.metadata.totalSize} bytes]`;
+                }
+              }
+              
+              // Fallback
+              console.log(`[ContentItem] No displayable content available for ${contentId}`);
+              return 'No content available';
+            })()}
             
             {content.data && typeof content.data === 'string' && content.data.length > 500 && (
               <Box 
@@ -273,51 +737,43 @@ const ContentItem: React.FC<ContentItemProps> = ({ contentId }) => {
             justifyContent="center"
             bg="gray.50"
           >
-            {content.data instanceof Blob ? (
-              <>
-                <Image
-                  key={`image-${contentId}`} // Removed Date.now() to prevent unnecessary re-renders
-                  src={urlRegistry.createUrl(contentId, content.data)}
-                  alt={metadata.metadata.fileName || `Image-${contentId.substring(0, 8)}`}
-                  maxH="200px"
-                  objectFit="contain"
-                  onLoad={() => {
-                    console.log(`[ContentItem] Image for ${contentId} loaded successfully`);
-                    
-                    // Force update content as complete if image loads successfully
-                    if (!content.isComplete) {
-                      console.log(`[ContentItem] Force marking content ${contentId} as complete after successful image load`);
-                      updateContentLastAccessed(contentId);
-                      
-                      // Mark content as displayed in tracking service
-                      chunkTrackingService.markContentDisplayed(contentId);
-                    }
-                  }}
-                  onError={(e) => {
-                    console.error(`[ContentItem] Error loading image for ${contentId}:`, e);
-                  }}
-                />
-                {!content.isComplete && (
-                  <Box
-                    position="absolute"
-                    top={0}
-                    left={0}
-                    right={0}
-                    bottom={0}
-                    bg="blackAlpha.50"
-                    display="flex"
-                    alignItems="center"
-                    justifyContent="center"
-                  >
-                    <Text fontSize="xs" color="gray.600">Finalizing image...</Text>
-                  </Box>
-                )}
-              </>
-            ) : (
-              <Flex align="center" justify="center" h="100px">
-                <Text color="gray.500">Image preview not available</Text>
-              </Flex>
-            )}
+            {(() => {
+              console.log(`[ContentItem] Image rendering check for ${contentId}:`);
+              console.log(`  - content.data type: ${typeof content.data}`);
+              console.log(`  - content.data instanceof Blob: ${content.data instanceof Blob}`);
+              console.log(`  - content.data:`, content.data);
+              console.log(`  - effectiveContentType: ${effectiveContentType}`);
+              console.log(`  - ContentType.IMAGE: ${ContentType.IMAGE}`);
+              
+              if (content.data instanceof Blob) {
+                console.log(`  - Blob size: ${content.data.size}`);
+                console.log(`  - Blob type: ${content.data.type}`);
+                console.log(`[ContentItem] About to render ImageRenderer for ${contentId}`);
+                console.log(`[ContentItem] Blob details:`, {
+                  type: content.data.type,
+                  size: content.data.size,
+                  constructor: content.data.constructor.name
+                });
+                return (
+                  <ImageRenderer
+                    contentId={contentId}
+                    blob={content.data}
+                    fileName={metadata.metadata.fileName}
+                    isComplete={content.isComplete}
+                    updateContentLastAccessed={updateContentLastAccessed}
+                    chunkTrackingService={chunkTrackingService}
+                    urlRegistry={urlRegistry}
+                  />
+                );
+              } else {
+                console.log(`  - Image data not available - content.data is not a Blob`);
+                return (
+                  <Flex align="center" justify="center" h="100px">
+                    <Text color="gray.500">Image data not available</Text>
+                  </Flex>
+                );
+              }
+            })()}
           </Box>
         );
         
@@ -359,7 +815,7 @@ const ContentItem: React.FC<ContentItemProps> = ({ contentId }) => {
    * Gets content icon based on type
    */
   const getContentIcon = () => {
-    switch (metadata.contentType) {
+    switch (effectiveContentType) {
       case ContentType.TEXT:
         return FaFileAlt;
       case ContentType.IMAGE:
@@ -386,9 +842,9 @@ const ContentItem: React.FC<ContentItemProps> = ({ contentId }) => {
             <Icon as={getContentIcon()} color="blue.500" />
             <Text fontWeight="bold">
               {metadata.metadata.fileName ||
-                (metadata.contentType === ContentType.TEXT
+                (effectiveContentType === ContentType.TEXT
                   ? 'Text content'
-                  : metadata.contentType === ContentType.IMAGE
+                  : effectiveContentType === ContentType.IMAGE
                     ? `Image-${contentId.substring(0, 8)}`
                     : 'File')}
             </Text>
@@ -457,10 +913,32 @@ const ContentItem: React.FC<ContentItemProps> = ({ contentId }) => {
           <Text>{formatDate(metadata.timestamp)}</Text>
           <Text>•</Text>
           {/* Display appropriate metadata based on content type */}
-          {metadata.contentType === ContentType.TEXT && (
-            <Text>{metadata.metadata.size ? `${formatFileSize(metadata.metadata.size)} (${metadata.metadata.size} chars)` : '0 Bytes'}</Text>
+          {effectiveContentType === ContentType.TEXT && (
+            <Text>
+              {(() => {
+                // Calculate size from actual text data if metadata size is 0 or missing
+                const metadataSize = metadata.metadata.size;
+                if (metadataSize && metadataSize > 0) {
+                  return `${formatFileSize(metadataSize)} (${metadataSize} chars)`;
+                }
+                
+                // Fallback: try to calculate from actual text content if available
+                if (typeof content.data === 'string') {
+                  const actualSize = content.data.length;
+                  return `${formatFileSize(actualSize)} (${actualSize} chars)`;
+                }
+                
+                // If we have a blob, estimate size from blob size
+                if (content.data instanceof Blob) {
+                  const blobSize = content.data.size;
+                  return `${formatFileSize(blobSize)} (${blobSize} bytes)`;
+                }
+                
+                return '0 Bytes';
+              })()}
+            </Text>
           )}
-          {metadata.contentType === ContentType.IMAGE && (
+          {effectiveContentType === ContentType.IMAGE && (
             <Text>
               {formatFileSize(metadata.metadata.size)}
               {metadata.metadata.imageInfo?.width && metadata.metadata.imageInfo?.height &&
@@ -468,18 +946,18 @@ const ContentItem: React.FC<ContentItemProps> = ({ contentId }) => {
               {metadata.metadata.imageInfo?.format && ` • ${metadata.metadata.imageInfo.format}`}
             </Text>
           )}
-          {metadata.contentType === ContentType.FILE && (
+          {effectiveContentType === ContentType.FILE && (
             <Text>{formatFileSize(metadata.metadata.size)}</Text>
           )}
-          {metadata.contentType === ContentType.OTHER && (
+          {effectiveContentType === ContentType.OTHER && (
             <Text>{formatFileSize(metadata.metadata.size)}</Text>
           )}
           {/* Fallback for when content type is not recognized or metadata is missing */}
-          {(!metadata.contentType ||
-            (metadata.contentType !== ContentType.TEXT &&
-             metadata.contentType !== ContentType.IMAGE &&
-             metadata.contentType !== ContentType.FILE &&
-             metadata.contentType !== ContentType.OTHER)) && (
+          {(!effectiveContentType ||
+            (effectiveContentType !== ContentType.TEXT &&
+             effectiveContentType !== ContentType.IMAGE &&
+             effectiveContentType !== ContentType.FILE &&
+             effectiveContentType !== ContentType.OTHER)) && (
             <Text>{formatFileSize(metadata.metadata.size)}</Text>
           )}
         </HStack>
@@ -488,6 +966,6 @@ const ContentItem: React.FC<ContentItemProps> = ({ contentId }) => {
       </Box>
     </Box>
   );
-};
+});
 
 export default ContentItem;

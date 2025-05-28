@@ -70,6 +70,13 @@ export class SessionManager {
   private sessionTokens: Map<string, string> = new Map();
   
   /**
+   * Track recent join attempts to prevent rapid duplicates
+   * Key: clientId-sessionId, Value: timestamp of last join attempt
+   */
+  private recentJoinAttempts: Map<string, number> = new Map();
+  private readonly JOIN_COOLDOWN_MS = 2000; // 2 seconds cooldown between joins for same client
+  
+  /**
    * Session timeout in milliseconds
    */
   private sessionTimeout: number;
@@ -201,6 +208,30 @@ export class SessionManager {
         this.sessions.set(sessionId, session);
       }
       
+      // Smart duplicate prevention: Check for rapid re-join attempts
+      const joinKey = `${clientId}-${sessionId}`;
+      const now = Date.now();
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const _lastJoinAttempt = this.recentJoinAttempts.get(joinKey);
+      
+      // TEMPORARILY DISABLED: Rejoin protection causing login issues
+      // if (lastJoinAttempt && (now - lastJoinAttempt) < this.JOIN_COOLDOWN_MS) {
+      //   const remainingCooldown = this.JOIN_COOLDOWN_MS - (now - lastJoinAttempt);
+      //   console.log(`[REJOIN-PROTECTION] Client ${clientId} attempted to rejoin session ${sessionId} too quickly. Cooldown: ${remainingCooldown}ms remaining`);
+      //   return { success: false, error: `Please wait ${Math.ceil(remainingCooldown / 1000)} seconds before rejoining` };
+      // }
+      
+      // Update the join attempt timestamp
+      this.recentJoinAttempts.set(joinKey, now);
+      
+      // Clean up old join attempts (older than 1 minute)
+      const cutoffTime = now - 60000; // 1 minute
+      for (const [key, timestamp] of this.recentJoinAttempts.entries()) {
+        if (timestamp < cutoffTime) {
+          this.recentJoinAttempts.delete(key);
+        }
+      }
+      
       // Check if client already exists in session
       const existingClient = session.clients.get(clientId);
       if (existingClient) {
@@ -217,6 +248,12 @@ export class SessionManager {
       session.addClient(client);
       console.log(`Added client ${clientId} (${clientName}) to session ${sessionId}`);
       console.log(`Updated clients in session: ${Array.from(session.clients.keys()).join(', ')}`);
+      
+      // DEBUG: Check if there's any mechanism to sync content for new clients
+      console.log(`[DEBUG] Checking for content synchronization mechanism for new client ${clientId} in session ${sessionId}`);
+      console.log(`[DEBUG] Session object has the following properties:`, Object.keys(session));
+      // Note: There doesn't appear to be any property or method in the Session class
+      // that handles content synchronization or storage access
       
       return { success: true, token };
     } catch (error: unknown) {
@@ -261,6 +298,10 @@ export class SessionManager {
     
     // Remove session token
     this.sessionTokens.delete(clientId);
+    
+    // Clean up join attempt tracking for this client
+    const keysToDelete = Array.from(this.recentJoinAttempts.keys()).filter(key => key.startsWith(`${clientId}-`));
+    keysToDelete.forEach(key => this.recentJoinAttempts.delete(key));
     
     try {
       // Update last activity in repository

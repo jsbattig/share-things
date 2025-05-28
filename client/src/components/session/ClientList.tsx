@@ -1,3 +1,4 @@
+/* eslint-disable react/display-name, react/prop-types */
 import React, { useEffect, useState } from 'react';
 import {
   Box,
@@ -26,7 +27,7 @@ interface ClientWithStatus {
 /**
  * Client list component
  */
-const ClientList: React.FC<ClientListProps> = ({ clients }) => {
+const ClientList: React.FC<ClientListProps> = React.memo(({ clients }) => {
   const { socket, connectionStatus } = useSocket();
   const [clientsWithStatus, setClientsWithStatus] = useState<ClientWithStatus[]>([]);
   
@@ -144,6 +145,6 @@ const ClientList: React.FC<ClientListProps> = ({ clients }) => {
       ))}
     </List>
   );
-};
+});
 
 export default ClientList;

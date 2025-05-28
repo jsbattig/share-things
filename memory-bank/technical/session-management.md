@@ -1,8 +1,16 @@
-# Session Management
+# Session Management with Persistent Storage
 
 ## Overview
 
-ShareThings implements a secure session management system that provides authentication, authorization, and session persistence while maintaining end-to-end encryption. This document outlines the session management approach, including authentication, token handling, and session expiration.
+ShareThings implements a secure session management system with **persistent SQLite storage** that provides authentication, authorization, and session persistence while maintaining end-to-end encryption. The system now supports **session recovery across server restarts** and **database-driven session state management**. This document outlines the session management approach, including authentication, token handling, session persistence, and expiration.
+
+## Key Features
+
+- **Persistent Session Storage**: SQLite database for session authentication data
+- **Session Recovery**: Sessions survive server restarts and can be recovered
+- **Repository Pattern**: Clean separation between business logic and data persistence
+- **Database Migrations**: Automatic schema upgrades and versioning
+- **Efficient Cleanup**: Database-driven session expiration and cleanup
 
 ## Session Authentication Flow
 
@@ -80,6 +88,73 @@ async function createPassphraseFingerprint(passphrase: string): Promise<{ iv: nu
     dataPart
   );
   
+## Persistent Storage Implementation
+
+### SQLiteSessionRepository
+
+The session management system uses a repository pattern with SQLite for persistent storage:
+
+```typescript
+export interface SessionRepository {
+  initialize(): Promise<void>;
+  findById(sessionId: string): Promise<SessionAuthRecord | null>;
+  save(session: SessionAuthRecord): Promise<void>;
+  update(session: SessionAuthRecord): Promise<void>;
+  delete(sessionId: string): Promise<void>;
+  findAll(): Promise<SessionAuthRecord[]>;
+  findExpired(expiryTime: number): Promise<string[]>;
+  close(): Promise<void>;
+}
+```
+
+### Database Schema
+
+```sql
+CREATE TABLE sessions (
+  session_id TEXT PRIMARY KEY,
+  fingerprint_iv BLOB NOT NULL,
+  fingerprint_data BLOB NOT NULL,
+  created_at TEXT NOT NULL,
+  last_activity TEXT NOT NULL
+);
+
+CREATE INDEX idx_sessions_last_activity ON sessions(last_activity);
+```
+
+### Session Authentication Record
+
+```typescript
+export interface SessionAuthRecord {
+  sessionId: string;
+  fingerprint: PassphraseFingerprint;
+  createdAt: Date;
+  lastActivity: Date;
+}
+
+export interface PassphraseFingerprint {
+  iv: number[];
+  data: number[];
+}
+```
+
+### Database Migrations
+
+The system includes automatic schema migrations:
+
+```typescript
+// Schema versioning table
+CREATE TABLE schema_version (
+  version INTEGER PRIMARY KEY,
+  description TEXT NOT NULL,
+  applied_at TEXT NOT NULL
+);
+
+// Migration 1: Initial schema
+if (currentVersion < 1) {
+  // Create sessions table and indexes
+  // Update schema version
+}
+```
   // Return fingerprint
   return {
     iv: Array.from(iv),
@@ -123,27 +198,22 @@ Sessions expire after a period of inactivity:
 5. Clients automatically attempt to rejoin when a session expires
 
 ```typescript
-// Server-side session cleanup
-private cleanupExpiredSessions(): void {
+// Database-driven session cleanup
+private async cleanupExpiredSessions(): Promise<void> {
   const now = new Date();
   console.log(`[SessionManager] Running cleanup check at ${now.toISOString()}`);
   
-  for (const [sessionId, auth] of this.sessionAuth.entries()) {
-    const elapsed = now.getTime() - auth.lastActivity.getTime();
-    const elapsedSeconds = Math.floor(elapsed / 1000);
+  try {
+    // Find expired sessions using database query
+    const expiredSessionIds = await this.sessionRepository.findExpired(this.sessionTimeout);
     
-    // Log sessions that are getting close to timeout
-    if (elapsed > (this.sessionTimeout * 0.8) && elapsed <= this.sessionTimeout) {
-      console.log(`[SessionManager] Session ${sessionId} approaching timeout (inactive for ${elapsedSeconds}s, timeout at ${this.sessionTimeout / 1000}s)`);
-    }
-    
-    if (elapsed > this.sessionTimeout) {
-      // Get session
+    for (const sessionId of expiredSessionIds) {
+      console.log(`[SessionManager] Session ${sessionId} expired`);
+      
+      // Get session from memory (if active)
       const session = this.sessions.get(sessionId);
       
-      console.log(`[SessionManager] Session ${sessionId} expired (inactive for ${elapsedSeconds}s)`);
-      
-      // If session exists, disconnect all clients
+      // If session exists in memory, disconnect all clients
       if (session) {
         const clientCount = session.clients.size;
         console.log(`[SessionManager] Disconnecting ${clientCount} clients from expired session ${sessionId}`);
@@ -159,84 +229,110 @@ private cleanupExpiredSessions(): void {
           // Remove client token
           this.sessionTokens.delete(clientId);
         }
+        
+        // Remove session from memory
+        this.sessions.delete(sessionId);
       }
       
-      // Remove session
-      this.sessions.delete(sessionId);
-      this.sessionAuth.delete(sessionId);
+      // Remove session from database
+      await this.sessionRepository.delete(sessionId);
       
-      // Log successful cleanup
       console.log(`[SessionManager] Successfully removed expired session ${sessionId}`);
     }
+  } catch (error) {
+    console.error('[SessionManager] Error cleaning up expired sessions:', error);
   }
 }
 ```
 
-## Server-Side Session Management
+## Server-Side Session Management with Persistent Storage
 
-The server manages sessions using the `SessionManager` class:
+The server manages sessions using the `SessionManager` class with persistent SQLite storage:
 
 ```typescript
 class SessionManager {
-  // Session storage
+  // In-memory session storage (for active sessions)
   private sessions: Map<string, Session> = new Map();
-  private sessionAuth: Map<string, SessionAuth> = new Map();
+  
+  // Persistent storage
+  private sessionRepository: SessionRepository;
+  
+  // In-memory token management (for performance)
   private sessionTokens: Map<string, string> = new Map();
   
   // Configuration
   private sessionTimeout: number;
   
-  constructor(config: { sessionTimeout?: number } = {}) {
+  constructor(config: SessionManagerConfig = {}) {
     this.sessionTimeout = config.sessionTimeout || 10 * 60 * 1000; // Default 10 minutes
+    
+    // Initialize SQLite repository
+    const dbPath = config.dbPath || process.env.SQLITE_DB_PATH || './data/sessions.db';
+    this.sessionRepository = new SQLiteSessionRepository(dbPath);
     
     // Start cleanup interval
     setInterval(() => this.cleanupExpiredSessions(), 60 * 1000); // Check every minute
   }
   
-  // Join session
+  async initialize(): Promise<void> {
+    // Initialize repository and load existing sessions
+    await this.sessionRepository.initialize();
+    await this.loadSessionsFromRepository();
+  }
+  
+  // Join session with persistent storage
   async joinSession(
     sessionId: string,
-    fingerprint: any,
+    fingerprint: PassphraseFingerprint,
     clientId: string,
     clientName: string,
     socket: Socket
   ): Promise<SessionJoinResult> {
-    // Check if session exists
-    if (this.sessionAuth.has(sessionId)) {
-      // Verify fingerprint
-      const storedAuth = this.sessionAuth.get(sessionId)!;
-      if (!this.compareFingerprints(fingerprint, storedAuth.fingerprint)) {
-        return { success: false, error: 'Invalid passphrase' };
+    try {
+      // Check if session exists in persistent storage
+      const sessionRecord = await this.sessionRepository.findById(sessionId);
+      
+      if (sessionRecord) {
+        // Verify fingerprint against stored data
+        if (!this.compareFingerprints(fingerprint, sessionRecord.fingerprint)) {
+          return { success: false, error: 'Invalid passphrase' };
+        }
+        
+        // Update last activity in database
+        sessionRecord.lastActivity = new Date();
+        await this.sessionRepository.update(sessionRecord);
+      } else {
+        // Create new session record in database
+        const newSessionRecord: SessionAuthRecord = {
+          sessionId,
+          fingerprint,
+          createdAt: new Date(),
+          lastActivity: new Date()
+        };
+        
+        await this.sessionRepository.save(newSessionRecord);
       }
-    } else {
-      // Create new session auth
-      this.sessionAuth.set(sessionId, {
-        fingerprint,
-        createdAt: new Date(),
-        lastActivity: new Date()
-      });
+      
+      // Generate session token (stored in-memory for performance)
+      const token = this.generateSessionToken();
+      this.sessionTokens.set(clientId, token);
+      
+      // Get or create in-memory session
+      let session = this.sessions.get(sessionId);
+      if (!session) {
+        session = new Session(sessionId);
+        this.sessions.set(sessionId, session);
+      }
+      
+      // Add client to session
+      const client = new Client(clientId, clientName, socket);
+      session.addClient(client);
+      
+      return { success: true, token };
+    } catch (error) {
+      console.error(`Error joining session ${sessionId}:`, error);
+      return { success: false, error: 'Internal server error' };
     }
-    
-    // Update last activity
-    const auth = this.sessionAuth.get(sessionId)!;
-    auth.lastActivity = new Date();
-    
-    // Generate session token
-    const token = this.generateSessionToken();
-    this.sessionTokens.set(clientId, token);
-    
-    // Get or create session
-    let session = this.sessions.get(sessionId);
-    if (!session) {
-      session = new Session(sessionId);
-      this.sessions.set(sessionId, session);
-    }
-    
-    // Add client to session
-    const client = new Client(clientId, clientName, socket);
-    session.addClient(client);
-    
-    return { success: true, token };
   }
   
   // Validate session token
@@ -533,3 +629,57 @@ SESSION_TIMEOUT=600000  # 10 minutes in milliseconds
 const sessionManager = new SessionManager({
   sessionTimeout: parseInt(process.env.SESSION_TIMEOUT || '600000')
 });
+## Configuration
+
+### Environment Variables
+
+The persistent session management system supports the following configuration options:
+
+```bash
+# Database Configuration
+SQLITE_DB_PATH=./data/sessions.db          # Path to SQLite session database
+SESSION_TIMEOUT=600000                     # Session timeout in milliseconds (default: 10 minutes)
+
+# Storage Configuration  
+STORAGE_PATH=./data/sessions               # Base path for chunk storage
+MAX_ITEMS_PER_SESSION=100                  # Maximum content items per session
+
+# Server Configuration
+NODE_ENV=production                        # Environment mode
+PORT=3001                                  # Server port
+CORS_ORIGIN=*                             # CORS origin configuration
+```
+
+### Database Management
+
+**Initialization**
+```typescript
+// Initialize session manager with persistent storage
+const sessionManager = new SessionManager({
+  sessionTimeout: parseInt(process.env.SESSION_TIMEOUT || '600000'),
+  dbPath: process.env.SQLITE_DB_PATH || './data/sessions.db'
+});
+
+await sessionManager.initialize();
+```
+
+**Backup and Recovery**
+```bash
+# Backup session database
+cp ./data/sessions.db ./backups/sessions-$(date +%Y%m%d).db
+
+# Restore from backup
+cp ./backups/sessions-20231201.db ./data/sessions.db
+```
+
+**Database Maintenance**
+```sql
+-- Check database integrity
+PRAGMA integrity_check;
+
+-- Vacuum database to reclaim space
+VACUUM;
+
+-- Analyze query performance
+PRAGMA optimize;
+```

@@ -53,3 +53,10 @@ logs
 /test/e2e/functional/test/e2e/functional/.npm-cache
 /test/e2e/functional/.npm-cache
 *.exit
+
+# Database files
+/server/data/
+/data/
+*.db
+*.db-shm
+*.db-wal

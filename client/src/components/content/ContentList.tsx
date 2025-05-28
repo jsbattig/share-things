@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+/* eslint-disable react/display-name, react/prop-types */
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   Box,
   Flex,
@@ -29,7 +30,7 @@ import ContentItem from './ContentItem';
 /**
  * Content list component
  */
-const ContentList: React.FC = () => {
+const ContentList: React.FC = React.memo(() => {
   // State
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -43,26 +44,28 @@ const ContentList: React.FC = () => {
   // Get content list
   const contentList = getContentList();
   
-  // Sort content list
-  const sortedContentList = [...contentList].sort((a, b) => {
-    if (sortOrder === 'asc') {
-      return a.timestamp - b.timestamp;
-    } else {
-      return b.timestamp - a.timestamp;
-    }
-  });
+  // Sort content list - memoized for performance
+  const sortedContentList = useMemo(() => {
+    return [...contentList].sort((a, b) => {
+      if (sortOrder === 'asc') {
+        return a.timestamp - b.timestamp;
+      } else {
+        return b.timestamp - a.timestamp;
+      }
+    });
+  }, [contentList, sortOrder]);
   
   /**
-   * Toggles sort order
+   * Toggles sort order - memoized callback
    */
-  const toggleSortOrder = () => {
+  const toggleSortOrder = useCallback(() => {
     setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-  };
+  }, [sortOrder]);
   
   /**
-   * Clears all content
+   * Clears all content - memoized callback
    */
-  const clearAllContent = () => {
+  const clearAllContent = useCallback(() => {
     // Show loading state while clearing content
     setIsLoading(true);
     
@@ -77,7 +80,7 @@ const ContentList: React.FC = () => {
     
     // Reset loading state
     setIsLoading(false);
-  };
+  }, [toast]);
   
   // Show loading state
   if (isLoading) {
@@ -148,6 +151,6 @@ const ContentList: React.FC = () => {
       </VStack>
     </Box>
   );
-};
+});
 
 export default ContentList;

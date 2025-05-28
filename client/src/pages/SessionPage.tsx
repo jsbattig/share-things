@@ -50,7 +50,7 @@ const SessionPage: React.FC = () => {
   
   // Context
   const { socket, isConnected, connectionStatus, joinSession, leaveSession, rejoinSession, ensureConnected } = useSocket();
-  const { clearContents } = useContentStore();
+  const { clearContents, clearSessionStorage, getCachedContentIds, restoreCachedContent } = useContentStore();
   
   // Load session info from localStorage
   useEffect(() => {
@@ -91,12 +91,24 @@ const SessionPage: React.FC = () => {
         setIsJoining(true);
         setError('');
         
+        // Mark that we're attempting to join to prevent duplicate attempts
+        hasJoined.current = true;
+        
         console.log('Joining session...');
+        
+        // KISS: Get cached content IDs to report to server
+        const cachedContentIds = getCachedContentIds();
+        console.log(`[SessionPage] Reporting ${cachedContentIds.length} cached content IDs to server:`, cachedContentIds);
+        
+        // For now, use the existing joinSession (server will get empty array)
+        // TODO: Modify joinSession to accept cachedContentIds parameter
         const response = await joinSession(sessionId, clientName, passphrase);
         setClients(response.clients || []);
         
-        // Mark that we've joined
-        hasJoined.current = true;
+        // KISS: Restore cached content using existing mechanisms
+        console.log('[SessionPage] Restoring cached content after successful join');
+        const restoredIds = restoreCachedContent();
+        console.log(`[SessionPage] Restored ${restoredIds.length} content items from cache`);
         
         toast({
           title: 'Joined session',
@@ -108,6 +120,9 @@ const SessionPage: React.FC = () => {
       } catch (error) {
         console.error('Error joining session:', error);
         setError(error instanceof Error ? error.message : 'Failed to join session');
+        
+        // Reset join flag on error
+        hasJoined.current = false;
         
         // Clear session info
         localStorage.removeItem('sessionId');
@@ -125,50 +140,28 @@ const SessionPage: React.FC = () => {
     };
     
     join();
-  }, [isConnected, sessionId, clientName, passphrase, joinSession, toast, navigate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, sessionId, clientName, passphrase]);
   
   // Handle manual reconnection when connection status changes
   useEffect(() => {
     if (connectionStatus === 'disconnected' && sessionId && clientName && passphrase) {
       console.log('[SessionPage] Connection lost, will attempt to rejoin when reconnected');
     } else if (connectionStatus === 'connected' && sessionId && clientName && passphrase) {
-      // Check if we need to rejoin the session
-      if (socket && clients.length === 0) {
+      // Check if we need to rejoin the session - but only if we haven't already joined
+      if (socket && clients.length === 0 && !hasJoined.current) {
         console.log('[SessionPage] Connected but no clients, attempting to rejoin session');
         rejoinSession(sessionId, clientName, passphrase);
       }
     }
-  }, [connectionStatus, sessionId, clientName, passphrase, socket, clients.length, rejoinSession]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionStatus, sessionId, clientName, passphrase, socket]);
   
-  // Add a visibility change handler to force reconnection when the page becomes visible
+  // Initial connection check only (visibility change is handled by SocketContext)
   useEffect(() => {
     if (!sessionId || !clientName || !passphrase) return;
     
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'visible') {
-        console.log('[SessionPage] Page became visible, verifying connection...');
-        
-        // Force connection check and rejoin if needed
-        const isConnected = await ensureConnected(sessionId);
-        console.log(`[SessionPage] Connection check result: ${isConnected ? 'connected' : 'disconnected'}`);
-        
-        if (!isConnected) {
-          // If we failed to connect, show a message
-          toast({
-            title: 'Connection issue',
-            description: 'Reconnecting to session...',
-            status: 'warning',
-            duration: 3000,
-            isClosable: true
-          });
-        }
-      }
-    };
-    
-    // Add visibility change listener
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    // Also do an initial connection check when this effect runs
+    // Do an initial connection check when this effect runs
     if (document.visibilityState === 'visible') {
       ensureConnected(sessionId)
         .then(connected => {
@@ -178,12 +171,7 @@ const SessionPage: React.FC = () => {
           console.error('[SessionPage] Error during initial connection check:', err);
         });
     }
-    
-    // Clean up
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [sessionId, clientName, passphrase, toast, ensureConnected]);
+  }, [sessionId, clientName, passphrase, ensureConnected]);
   
   // Set up socket event listeners separately
   useEffect(() => {
@@ -306,7 +294,8 @@ const SessionPage: React.FC = () => {
     return () => {
       socket.off('session-expired', handleSessionExpired);
     };
-  }, [socket, isConnected, sessionId, clientName, passphrase, toast, navigate, rejoinSession]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket, isConnected, sessionId, clientName, passphrase]);
   
   /**
    * Leaves the session
@@ -328,6 +317,9 @@ const SessionPage: React.FC = () => {
       
       // Clear content store
       clearContents();
+      
+      // Clear sessionStorage to remove any cached content
+      clearSessionStorage();
       
       // Navigate to home
       navigate('/');

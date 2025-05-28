@@ -86,6 +86,9 @@ interface ContentStoreContextType {
   getContentList: () => SharedContent[];
   removeContent: (contentId: string) => boolean;
   clearContents: () => void;
+  clearSessionStorage: () => void;
+  getCachedContentIds: () => string[];
+  restoreCachedContent: () => string[];
 }
 
 // Create context
@@ -99,8 +102,21 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const [contents, setContents] = useState<Map<string, ContentEntry>>(new Map());
   const [chunkStores, setChunkStores] = useState<Map<string, ChunkStore>>(new Map());
   
-  // Use a ref to store chunks directly - this will persist between renders
+  // Use refs to store state directly - this will persist between renders and avoid stale closures
+  const contentsRef = React.useRef<Map<string, ContentEntry>>(new Map());
   const chunkStoresRef = React.useRef<Map<string, ChunkStore>>(new Map());
+  
+  // Track reassembly operations to prevent multiple simultaneous reassemblies
+  const reassemblyInProgress = React.useRef<Set<string>>(new Set());
+  
+  // Keep refs in sync with state
+  React.useEffect(() => {
+    contentsRef.current = contents;
+  }, [contents]);
+  
+  React.useEffect(() => {
+    chunkStoresRef.current = chunkStores;
+  }, [chunkStores]);
   
   // Socket context
   const { socket } = useSocket();
@@ -195,6 +211,17 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         // DEBUG: Log all content IDs to help diagnose metadata issues
         console.log(`[ContentStore] All content IDs in store:`, Array.from(contents.keys()));
         
+        // DIAGNOSTIC: Log detailed state for debugging
+        console.log(`[DIAGNOSTIC] Content store state:`, {
+          contentId: serializedChunk.contentId,
+          contentsMapSize: contents.size,
+          chunkStoresMapSize: chunkStoresRef.current.size,
+          contentExists: contentExists,
+          chunkStoreExists: chunkStoresRef.current.has(serializedChunk.contentId as string),
+          allContentIds: Array.from(contents.keys()),
+          allChunkStoreIds: Array.from(chunkStoresRef.current.keys())
+        });
+        
         // Create a properly typed SerializedChunk object from the received data
         const typedChunk: import('../utils/chunking').SerializedChunk = {
           contentId: serializedChunk.contentId as string,
@@ -222,8 +249,18 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
           // Use setTimeout to ensure state updates have been processed
           setTimeout(async () => {
             try {
-              await decryptAndReassembleContent(chunk.contentId, passphrase);
-              console.log(`[ContentStore] Reassembly completed successfully for ${chunk.contentId}`);
+              // Check if reassembly is already in progress to prevent multiple calls
+              if (!reassemblyInProgress.current.has(chunk.contentId)) {
+                reassemblyInProgress.current.add(chunk.contentId);
+                try {
+                  await decryptAndReassembleContent(chunk.contentId, passphrase);
+                  console.log(`[ContentStore] Reassembly completed successfully for ${chunk.contentId}`);
+                } finally {
+                  reassemblyInProgress.current.delete(chunk.contentId);
+                }
+              } else {
+                console.log(`[STORE] Reassembly already in progress for ${chunk.contentId.substring(0, 8)}, skipping duplicate call`);
+              }
               
               // Double-check that the content is marked as complete
               setContents(prev => {
@@ -268,60 +305,78 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
    * @param content Content metadata
    * @param data Optional content data
    */
-  const addContent = (content: SharedContent, data?: Blob | string) => {
+  // Create stable function references that don't depend on state
+  const addContent = React.useCallback((content: SharedContent, data?: Blob | string) => {
     console.log('[ContentStore] Adding content:', content.contentId, 'Type:', content.contentType);
-    console.log('[ContentStore] Current content count before adding:', contents.size);
-    console.log('[ContentStore] Current content IDs before adding:', Array.from(contents.keys()));
     
+    // Use refs to check current state without causing re-renders
+    const currentContents = contentsRef.current;
+    
+    // Check for existing content to prevent duplicates
+    if (currentContents.has(content.contentId)) {
+      console.log(`[ContentStore] Content ${content.contentId} already exists, skipping duplicate`);
+      return;
+    }
+
+    console.log('[ContentStore] Current content count before adding:', currentContents.size);
+    console.log('[ContentStore] Current content IDs before adding:', Array.from(currentContents.keys()));
+
     setContents(prevContents => {
       const newContents = new Map(prevContents);
-      
-      // Check if content already exists
-      if (newContents.has(content.contentId)) {
-        console.log('[ContentStore] Content already exists in store:', content.contentId);
-      }
-      
-      newContents.set(content.contentId, {
+      const contentEntry: ContentEntry = {
         metadata: content,
         data,
         lastAccessed: new Date(),
-        isComplete: !content.isChunked || (data !== undefined)
-      });
-      
+        isComplete: !content.isChunked
+      };
+
+      newContents.set(content.contentId, contentEntry);
+
       console.log('[ContentStore] Content added to store:', content.contentId);
       console.log('[ContentStore] New content count:', newContents.size);
       console.log('[ContentStore] All content IDs after adding:', Array.from(newContents.keys()));
+
       return newContents;
     });
 
-    // Create chunk store if chunked content
-    if (content.isChunked && !data) {
+    // Initialize chunk store for chunked content
+    if (content.isChunked) {
       console.log('[ContentStore] Creating chunk store for chunked content:', content.contentId);
       setChunkStores(prevChunkStores => {
         const newChunkStores = new Map(prevChunkStores);
-        
         newChunkStores.set(content.contentId, {
           chunks: new Map(),
-          totalChunks: content.totalChunks || 0, // Default to 0 if undefined
+          totalChunks: content.totalChunks || 0,
           receivedChunks: 0
         });
-        
         return newChunkStores;
       });
     }
-  };
+  }, []);
+
 
   /**
    * Adds a chunk to the store
    * @param chunk Content chunk
    * @returns Promise that resolves to true if all chunks are received
    */
-  const addChunk = async (chunk: ContentChunk): Promise<boolean> => {
+  const addChunk = React.useCallback(async (chunk: ContentChunk): Promise<boolean> => {
     console.log(`[addChunk] Processing chunk ${chunk.chunkIndex}/${chunk.totalChunks} for content ${chunk.contentId}`);
     
+    // Use refs to get current state without causing re-renders
+    const currentContents = contentsRef.current;
+    const currentChunkStores = chunkStoresRef.current;
+    
     // Check if content metadata exists for this chunk
-    const contentExists = contents.has(chunk.contentId);
+    const contentExists = currentContents.has(chunk.contentId);
     console.log(`[addChunk] Content metadata exists for ${chunk.contentId}: ${contentExists}`);
+    
+    // Check if this chunk already exists to prevent duplicate processing
+    const existingChunkStore = currentChunkStores.get(chunk.contentId);
+    if (existingChunkStore && existingChunkStore.chunks.has(chunk.chunkIndex)) {
+      console.log(`[addChunk] Chunk ${chunk.chunkIndex} already exists for content ${chunk.contentId}, skipping duplicate`);
+      return existingChunkStore.receivedChunks === existingChunkStore.totalChunks;
+    }
     
     // If content metadata doesn't exist, try to find it by matching the first part of the ID
     if (!contentExists) {
@@ -445,7 +500,17 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         // Add a slightly longer delay to ensure content metadata is available
         setTimeout(async () => {
           try {
-            await decryptAndReassembleContent(chunk.contentId, passphrase);
+            // Check if reassembly is already in progress to prevent multiple calls
+            if (!reassemblyInProgress.current.has(chunk.contentId)) {
+              reassemblyInProgress.current.add(chunk.contentId);
+              try {
+                await decryptAndReassembleContent(chunk.contentId, passphrase);
+              } finally {
+                reassemblyInProgress.current.delete(chunk.contentId);
+              }
+            } else {
+              console.log(`[STORE] Reassembly already in progress for ${chunk.contentId.substring(0, 8)}, skipping duplicate call`);
+            }
           } catch(error) {
             console.error(`[addChunk] Error during immediate reassembly: ${error}`);
             
@@ -454,7 +519,17 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
             setTimeout(async () => {
               try {
                 console.log(`[addChunk] Retrying reassembly for content ${chunk.contentId} after delay`);
-                await decryptAndReassembleContent(chunk.contentId, passphrase);
+                // Check if reassembly is already in progress to prevent multiple calls
+                if (!reassemblyInProgress.current.has(chunk.contentId)) {
+                  reassemblyInProgress.current.add(chunk.contentId);
+                  try {
+                    await decryptAndReassembleContent(chunk.contentId, passphrase);
+                  } finally {
+                    reassemblyInProgress.current.delete(chunk.contentId);
+                  }
+                } else {
+                  console.log(`[STORE] Reassembly already in progress for ${chunk.contentId.substring(0, 8)}, skipping retry call`);
+                }
               } catch(retryError) {
                 console.error(`[addChunk] Error during retry reassembly: ${retryError}`);
               }
@@ -469,7 +544,8 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
     
     return false;
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /**
    * Decrypts and reassembles chunked content
@@ -598,15 +674,52 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         const clientName = localStorage.getItem('clientName');
         const socketId = socket?.id; // Use the current socket directly
         
+        // Try to determine content type from chunk data if available
+        let defaultContentType = ContentType.TEXT; // Default to text instead of image
+        let defaultMimeType = 'text/plain';
+        
+        // If we have chunk data, try to detect the type from the first chunk
+        if (chunkStore.chunks.size > 0) {
+          try {
+            const firstChunk = chunkStore.chunks.get(0);
+            if (firstChunk && firstChunk.encryptedData) {
+              // Decrypt first chunk to check data signature
+              const keyMaterial = await deriveKeyFromPassphrase(passphrase);
+              const decryptedData = await decryptData(keyMaterial, firstChunk.encryptedData, firstChunk.iv);
+              
+              // Check for common image signatures
+              const dataView = new Uint8Array(decryptedData);
+              const signature = Array.from(dataView.slice(0, 8)).map((b: number) => b.toString(16).padStart(2, '0')).join('');
+              
+              if (signature.startsWith('89504e47')) { // PNG
+                defaultContentType = ContentType.IMAGE;
+                defaultMimeType = 'image/png';
+              } else if (signature.startsWith('ffd8ff')) { // JPEG
+                defaultContentType = ContentType.IMAGE;
+                defaultMimeType = 'image/jpeg';
+              } else if (signature.startsWith('47494638')) { // GIF
+                defaultContentType = ContentType.IMAGE;
+                defaultMimeType = 'image/gif';
+              } else if (signature.startsWith('25504446')) { // PDF
+                defaultContentType = ContentType.FILE;
+                defaultMimeType = 'application/pdf';
+              }
+              // If no image signature detected, keep as text
+            }
+          } catch (error) {
+            console.log(`[decryptAndReassemble] Could not detect content type from data, defaulting to text`);
+          }
+        }
+        
         effectiveContent = {
           metadata: {
             contentId: contentId,
             senderId: socketId || 'unknown',
             senderName: clientName || 'Unknown Sender',
-            contentType: ContentType.IMAGE, // Assume image as default
+            contentType: defaultContentType,
             timestamp: Date.now(),
             metadata: {
-              mimeType: 'image/png', // Default mime type
+              mimeType: defaultMimeType,
               size: 0, // Will be updated after reassembly
               fileName: possibleFilename, // Use a more descriptive filename
             },
@@ -618,7 +731,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
           isComplete: false
         };
         
-        console.log(`[decryptAndReassemble] Created fallback content with sender: ${effectiveContent.metadata.senderName} (${effectiveContent.metadata.senderId})`);
+        console.log(`[decryptAndReassemble] Created fallback content with sender: ${effectiveContent.metadata.senderName} (${effectiveContent.metadata.senderId}), detected type: ${defaultContentType}`);
       }
       
       // Log content info
@@ -653,12 +766,32 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       for (const chunk of orderedChunks) {
         try {
           console.log(`[decryptAndReassemble] Decrypting chunk ${chunk.chunkIndex}`);
+          
+          // DIAGNOSTIC: Log encryption details before decryption
+          console.log(`[DIAGNOSTIC] Chunk ${chunk.chunkIndex} encryption details:`, {
+            encryptedDataLength: chunk.encryptedData.byteLength,
+            ivLength: chunk.iv.byteLength,
+            encryptedDataType: chunk.encryptedData.constructor.name,
+            ivType: chunk.iv.constructor.name,
+            keyType: key.constructor.name
+          });
+          
           // Decrypt chunk
           const decryptedChunk = await decryptData(key, chunk.encryptedData, chunk.iv);
           decryptedChunks.push(decryptedChunk);
           console.log(`[decryptAndReassemble] Chunk ${chunk.chunkIndex} decrypted successfully, size: ${decryptedChunk.byteLength} bytes`);
         } catch (error) {
           console.error(`[decryptAndReassemble] Error decrypting chunk ${chunk.chunkIndex}:`, error);
+          
+          // DIAGNOSTIC: Log detailed error information
+          console.error(`[DIAGNOSTIC] Decryption failure details:`, {
+            chunkIndex: chunk.chunkIndex,
+            encryptedDataLength: chunk.encryptedData?.byteLength || 'undefined',
+            ivLength: chunk.iv?.byteLength || 'undefined',
+            errorMessage: error instanceof Error ? error.message : String(error),
+            errorStack: error instanceof Error ? error.stack : 'No stack trace'
+          });
+          
           throw error;
         }
       }
@@ -666,8 +799,36 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Use a more direct approach for all images regardless of size
       console.log(`[decryptAndReassemble] Total chunks to reassemble: ${decryptedChunks.length}`);
       
+      // Detect actual content type from decrypted data for legacy content
+      const firstDecryptedChunk = new Uint8Array(decryptedChunks[0]);
+      const header = firstDecryptedChunk.slice(0, 8);
+      const hexSignature = Array.from(header).map((b: number) => b.toString(16).padStart(2, '0')).join('');
+      console.log(`[decryptAndReassemble] Data signature: ${hexSignature}`);
+      
+      let detectedContentType = effectiveContent.metadata.contentType;
+      let detectedMimeType = effectiveContent.metadata.metadata.mimeType;
+      
+      // Check for PNG signature: 89 50 4E 47 0D 0A 1A 0A
+      if (header[0] === 0x89 && header[1] === 0x50 && header[2] === 0x4E && header[3] === 0x47) {
+        detectedContentType = ContentType.IMAGE;
+        detectedMimeType = 'image/png';
+        console.log(`[decryptAndReassemble] Detected PNG image, overriding content type from ${effectiveContent.metadata.contentType} to image`);
+      }
+      // Check for JPEG signature: FF D8 FF
+      else if (header[0] === 0xFF && header[1] === 0xD8 && header[2] === 0xFF) {
+        detectedContentType = ContentType.IMAGE;
+        detectedMimeType = 'image/jpeg';
+        console.log(`[decryptAndReassemble] Detected JPEG image, overriding content type from ${effectiveContent.metadata.contentType} to image`);
+      }
+      // Check for GIF signature: 47 49 46 38
+      else if (header[0] === 0x47 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x38) {
+        detectedContentType = ContentType.IMAGE;
+        detectedMimeType = 'image/gif';
+        console.log(`[decryptAndReassemble] Detected GIF image, overriding content type from ${effectiveContent.metadata.contentType} to image`);
+      }
+      
       // For images, use a more memory-efficient approach with Blobs
-      if (effectiveContent.metadata.contentType === ContentType.IMAGE) {
+      if (detectedContentType === ContentType.IMAGE) {
         console.log(`[decryptAndReassemble] Using direct Blob approach for image data`);
         
         try {
@@ -676,7 +837,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
           console.log(`[decryptAndReassemble] Created ${chunkBlobs.length} chunk blobs`);
           
           // Create a single Blob from all chunk Blobs
-          const mimeType = effectiveContent.metadata.metadata.mimeType || 'image/png';
+          const mimeType = detectedMimeType || 'image/png';
           console.log(`[decryptAndReassemble] Creating final blob with MIME type: ${mimeType}`);
           
           // Create the blob with explicit type
@@ -711,10 +872,12 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
             const updatedContent: ContentEntry = {
               metadata: {
                 ...latestContent.metadata,
-                // Ensure metadata has the correct size
+                contentType: detectedContentType,
+                // Ensure metadata has the correct size and MIME type
                 metadata: {
                   ...latestContent.metadata.metadata,
                   size: reassembledBlob.size,
+                  mimeType: detectedMimeType,
                   imageInfo: latestContent.metadata.contentType === ContentType.IMAGE ? {
                     // Safely copy existing image info properties or create default ones
                     width: latestContent.metadata.metadata.imageInfo?.width || 800,
@@ -1013,7 +1176,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
    * @param contentId Content ID
    * @returns Content entry or undefined if not found
    */
-  const getContent = (contentId: string): ContentEntry | undefined => {
+  const getContent = React.useCallback((contentId: string): ContentEntry | undefined => {
     const content = contents.get(contentId);
     
     // Don't update last accessed time during render as it causes infinite loops
@@ -1021,22 +1184,22 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // like copying, downloading, etc.
     
     return content;
-  };
+  }, [contents]);
 
   /**
    * Gets a list of all content
    * @returns Array of content metadata
    */
-  const getContentList = (): SharedContent[] => {
+  const getContentList = React.useCallback((): SharedContent[] => {
     return Array.from(contents.values()).map(entry => entry.metadata);
-  };
+  }, [contents]);
 
   /**
    * Removes content from the store
    * @param contentId Content ID
    * @returns True if content was removed
    */
-  const removeContent = (contentId: string): boolean => {
+  const removeContent = React.useCallback((contentId: string): boolean => {
     const content = contents.get(contentId);
     
     if (!content) {
@@ -1048,18 +1211,19 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // 1. Revoke all URL objects for this content (don't preserve any URLs when explicitly removing content)
     urlRegistry.revokeAllUrls(contentId, false);
     
-    // 2. Remove content from contents map
-    setContents(prevContents => {
-      const newContents = new Map(prevContents);
-      newContents.delete(contentId);
-      return newContents;
-    });
-    
-    // 3. Remove chunk store from chunkStores map
-    setChunkStores(prevChunkStores => {
-      const newChunkStores = new Map(prevChunkStores);
-      newChunkStores.delete(contentId);
-      return newChunkStores;
+    // 2. & 3. Remove content and chunk store - batch these updates
+    React.startTransition(() => {
+      setContents(prevContents => {
+        const newContents = new Map(prevContents);
+        newContents.delete(contentId);
+        return newContents;
+      });
+      
+      setChunkStores(prevChunkStores => {
+        const newChunkStores = new Map(prevChunkStores);
+        newChunkStores.delete(contentId);
+        return newChunkStores;
+      });
     });
     
     // 4. Remove from chunkStoresRef.current
@@ -1072,12 +1236,12 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     chunkTrackingService.cleanupChunks(contentId);
     
     return true;
-  };
+  }, [contents, urlRegistry, chunkTrackingService]);
 
   /**
    * Clears all content from the store
    */
-  const clearContents = () => {
+  const clearContents = React.useCallback(() => {
     // Get all content IDs
     const contentIds = Array.from(contents.keys());
     
@@ -1087,11 +1251,13 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       chunkTrackingService.cleanupChunks(contentId);
     });
     
-    // Clear all content and chunk stores
-    setContents(new Map());
-    setChunkStores(new Map());
+    // Clear all content and chunk stores - batch these updates
+    React.startTransition(() => {
+      setContents(new Map());
+      setChunkStores(new Map());
+    });
     chunkStoresRef.current.clear();
-  };
+  }, [contents, urlRegistry, chunkTrackingService]);
 
   /**
    * Updates the last accessed time for a content item
@@ -1099,7 +1265,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
    * like copying, downloading, etc., not during rendering
    * @param contentId Content ID
    */
-  const updateContentLastAccessed = (contentId: string): void => {
+  const updateContentLastAccessed = React.useCallback((contentId: string): void => {
     const content = contents.get(contentId);
     
     if (content) {
@@ -1112,19 +1278,84 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         return newContents;
       });
     }
-  };
+  }, [contents]);
 
   /**
    * Gets a chunk store for a content ID
    * @param contentId Content ID
    * @returns Chunk store or undefined if not found
    */
-  const getChunkStore = (contentId: string): ChunkStore | undefined => {
+  const getChunkStore = React.useCallback((contentId: string): ChunkStore | undefined => {
     return chunkStoresRef.current.get(contentId);
-  };
+  }, []);
 
-  // Context value
-  const value: ContentStoreContextType = {
+  /**
+   * Completely clears sessionStorage for debugging
+   */
+  const clearSessionStorage = React.useCallback(() => {
+    try {
+      sessionStorage.removeItem('contentStoreState');
+    } catch (error) {
+      console.error('[STORE] Error clearing sessionStorage:', error);
+    }
+  }, []);
+
+  /**
+   * Gets cached content IDs for session sync
+   */
+  const getCachedContentIds = React.useCallback((): string[] => {
+    return Array.from(contents.keys());
+  }, [contents]);
+
+  /**
+   * Restores cached content by emitting to self using existing handlers
+   * Returns array of content IDs that were restored
+   */
+  const restoreCachedContent = React.useCallback((): string[] => {
+    const restoredIds: string[] = [];
+    
+    try {
+      const savedState = sessionStorage.getItem('contentStoreState');
+      if (!savedState) {
+        return restoredIds;
+      }
+
+      const parsedState = JSON.parse(savedState);
+      const parsedContents = parsedState.contents || [];
+      
+      // Emit each cached content to self using existing handlers
+      for (const [contentId, contentEntry] of parsedContents) {
+        if (contentEntry.metadata && contentEntry.isComplete) {
+          // KISS: Check if this is a serialized blob placeholder (which means no actual blob data)
+          const isSerializedBlobPlaceholder = contentEntry.data &&
+            typeof contentEntry.data === 'object' &&
+            contentEntry.data._blobType &&
+            contentEntry.data._blobData === null;
+          
+          if (isSerializedBlobPlaceholder) {
+            // KISS: This is a blob placeholder without actual data - mark as incomplete
+            addContent(contentEntry.metadata, undefined);
+            restoredIds.push(contentId);
+          } else if (contentEntry.data) {
+            // Use the existing addContent function to restore cached content with actual data
+            addContent(contentEntry.metadata, contentEntry.data);
+            restoredIds.push(contentId);
+          } else {
+            // No data at all
+            addContent(contentEntry.metadata, undefined);
+            restoredIds.push(contentId);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[STORE] Error restoring cached content:', error);
+    }
+    
+    return restoredIds;
+  }, [addContent]);
+
+  // Context value - properly memoized to prevent unnecessary re-renders
+  const value: ContentStoreContextType = React.useMemo(() => ({
     contents,
     addContent,
     addChunk,
@@ -1133,8 +1364,24 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     updateContentLastAccessed,
     getContentList,
     removeContent,
-    clearContents
-  };
+    clearContents,
+    clearSessionStorage,
+    getCachedContentIds,
+    restoreCachedContent
+  }), [
+    contents,
+    addContent,
+    addChunk,
+    getContent,
+    getChunkStore,
+    updateContentLastAccessed,
+    getContentList,
+    removeContent,
+    clearContents,
+    clearSessionStorage,
+    getCachedContentIds,
+    restoreCachedContent
+  ]);
 
   // Set up periodic cleanup for orphaned chunks and URLs
   useEffect(() => {
@@ -1193,7 +1440,8 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return () => {
       clearInterval(cleanupInterval);
     };
-  }, [contents, chunkTrackingService, urlRegistry]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chunkTrackingService, urlRegistry]);
 
   return (
     <ContentStoreContext.Provider value={value}>

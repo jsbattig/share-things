@@ -1,3 +1,4 @@
+/* eslint-disable react/display-name, react/prop-types */
 import React, { useState, useRef, useEffect } from 'react';
 import {
   Box,
@@ -58,7 +59,7 @@ interface SharePanelProps {
 /**
  * Share panel component
  */
-const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
+const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphrase }) => {
   // State
   const [text, setText] = useState<string>('');
   const [isSharing, setIsSharing] = useState<boolean>(false);
@@ -692,6 +693,6 @@ const SharePanel: React.FC<SharePanelProps> = ({ sessionId, passphrase }) => {
       )}
     </Box>
   );
-};
+});
 
 export default SharePanel;
