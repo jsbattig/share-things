@@ -307,19 +307,13 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
    */
   // Create stable function references that don't depend on state
   const addContent = React.useCallback((content: SharedContent, data?: Blob | string) => {
-    console.log('[ContentStore] Adding content:', content.contentId, 'Type:', content.contentType);
-    
     // Use refs to check current state without causing re-renders
     const currentContents = contentsRef.current;
     
     // Check for existing content to prevent duplicates
     if (currentContents.has(content.contentId)) {
-      console.log(`[ContentStore] Content ${content.contentId} already exists, skipping duplicate`);
       return;
     }
-
-    console.log('[ContentStore] Current content count before adding:', currentContents.size);
-    console.log('[ContentStore] Current content IDs before adding:', Array.from(currentContents.keys()));
 
     setContents(prevContents => {
       const newContents = new Map(prevContents);
@@ -331,11 +325,6 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       };
 
       newContents.set(content.contentId, contentEntry);
-
-      console.log('[ContentStore] Content added to store:', content.contentId);
-      console.log('[ContentStore] New content count:', newContents.size);
-      console.log('[ContentStore] All content IDs after adding:', Array.from(newContents.keys()));
-
       return newContents;
     });
 
@@ -1181,7 +1170,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const contentKeys = React.useMemo(() => Array.from(contents.keys()).sort().join(','), [contents]);
 
   const getContent = React.useCallback((contentId: string): ContentEntry | undefined => {
-    const content = contentsRef.current.get(contentId);
+    const content = contents.get(contentId);
     
     // Don't update last accessed time during render as it causes infinite loops
     // Instead, we'll update it only when content is actually accessed for operations
@@ -1196,7 +1185,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
    * @returns Array of content metadata
    */
   const getContentList = React.useCallback((): SharedContent[] => {
-    return Array.from(contentsRef.current.values()).map(entry => entry.metadata);
+    return Array.from(contents.values()).map(entry => entry.metadata);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentKeys]); // contentKeys used intentionally for performance optimization
 
