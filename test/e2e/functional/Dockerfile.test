@@ -1,0 +1,32 @@
+FROM linner.ddns.net:4443/docker.io.proxy/node:18-alpine
+
+# Install system dependencies for canvas in Alpine Linux
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    make \
+    g++ \
+    cairo-dev \
+    pango-dev \
+    jpeg-dev \
+    giflib-dev \
+    librsvg-dev \
+    pkgconfig \
+    pixman-dev
+
+WORKDIR /app
+
+# Set environment variables for node-gyp
+ENV PYTHON=/usr/bin/python3
+
+# Copy package files
+COPY package*.json ./
+
+# Install npm dependencies
+RUN npm install
+
+# Copy test files
+COPY . .
+
+# Default command
+CMD ["npm", "test"]

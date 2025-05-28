@@ -192,21 +192,18 @@ echo -e "${YELLOW}Skipping client unit tests...${NC}"
 CLIENT_TEST_EXIT_CODE=0
 echo -e "${GREEN}Client unit tests skipped.${NC}"
 
+# Build functional test container with canvas dependencies
+echo -e "${YELLOW}Building functional test container...${NC}"
+podman build -t share-things-functional-test -f test/e2e/functional/Dockerfile.test ./test/e2e/functional
+
 # Run functional tests
 echo -e "${YELLOW}Running functional tests...${NC}"
-
-# Create a temporary container to run the functional tests
-# Use the --cache flag to specify a cache directory within the mounted volume
 podman run --rm --name share-things-functional-tests \
   --network host \
-  -v ./test:/app/test:Z \
-  -w /app/test/e2e/functional \
   -e VITE_API_URL=http://localhost:3001 \
   -e VITE_SOCKET_URL=http://localhost:3001 \
-  share-things-frontend-test \
-  sh -c "mkdir -p .npm-cache && \
-         npm install --cache=./.npm-cache ts-jest @types/jest blob-polyfill uuid @types/uuid socket.io-client && \
-         NODE_OPTIONS=--experimental-vm-modules npx jest --config=jest.config.js simple-test.test.ts"
+  share-things-functional-test \
+  sh -c "NODE_OPTIONS=--experimental-vm-modules npx jest --config=jest.config.js simple-test.test.ts"
 
 FUNCTIONAL_TEST_EXIT_CODE=$?
 
