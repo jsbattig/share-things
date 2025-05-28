@@ -1188,7 +1188,8 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // like copying, downloading, etc.
     
     return content;
-  }, [contentCount]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contentCount]); // contentCount used intentionally for performance optimization
 
   /**
    * Gets a list of all content
@@ -1196,7 +1197,8 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
    */
   const getContentList = React.useCallback((): SharedContent[] => {
     return Array.from(contentsRef.current.values()).map(entry => entry.metadata);
-  }, [contentKeys]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contentKeys]); // contentKeys used intentionally for performance optimization
 
   /**
    * Removes content from the store
