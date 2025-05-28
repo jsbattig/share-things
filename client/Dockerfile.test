@@ -10,7 +10,7 @@ ENV TS_NODE_TRANSPILE_ONLY=true
 # Copy package files and install all dependencies (including dev dependencies)
 COPY package*.json ./
 RUN npm install
-RUN npm install crypto-js @types/crypto-js
+RUN npm install crypto-js @types/crypto-js blob-polyfill
 RUN npm install -D ts-jest @types/jest jest-environment-jsdom
 
 # Copy source code
