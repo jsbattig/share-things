@@ -46,6 +46,7 @@ interface SocketContextType {
   rejoinSession: (sessionId: string, clientName: string, passphrase: string) => Promise<void>;
   ensureConnected: (sessionId: string) => Promise<boolean>;
   removeContent: (sessionId: string, contentId: string) => Promise<{ success: boolean; error?: string }>;
+  isJoining: boolean;
 }
 
 // Create context
@@ -72,6 +73,17 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   
   // Reference to prevent multiple simultaneous rejoin attempts
   const isRejoining = useRef<boolean>(false);
+  
+  // Global join state management to prevent duplicate requests and Promise conflicts
+  const joinState = useRef<{
+    isJoining: boolean;
+    currentJoinPromise: Promise<JoinResponse> | null;
+    sessionId: string | null;
+  }>({
+    isJoining: false,
+    currentJoinPromise: null,
+    sessionId: null
+  });
   
   // Function to clear content when connection is lost
   
@@ -398,6 +410,12 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const rejoinSession = async (sessionId: string, clientName: string, passphrase: string) => {
     if (!socket || !socket.connected) return;
     
+    // Prevent rejoin if main join is in progress
+    if (joinState.current.isJoining) {
+      console.log('[Socket] Main join in progress, skipping rejoin attempt');
+      return;
+    }
+    
     // Prevent multiple simultaneous rejoin attempts
     if (isRejoining.current) {
       console.log('[Socket] Rejoin already in progress, skipping duplicate attempt');
@@ -408,38 +426,18 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       isRejoining.current = true;
       console.log(`[Socket] Rejoining session ${sessionId} as ${clientName}`);
       
-      // Create passphrase fingerprint
-      const fingerprint = await generateFingerprint(passphrase);
+      // Use the main joinSession function to ensure consistency
+      await joinSession(sessionId, clientName, passphrase);
+      console.log('[Socket] Successfully rejoined session via main joinSession');
       
-      // Add timeout to prevent infinite waiting on rejoin
-      const rejoinTimeoutId = setTimeout(() => {
-        isRejoining.current = false;
-        console.error('[Socket] Rejoin session timeout - no response from server');
-      }, 10000); // 10 second timeout for rejoin
-      
-      // Join session
-      socket.emit('join', { sessionId, clientName, fingerprint }, (response: JoinResponse) => {
-        clearTimeout(rejoinTimeoutId); // Clear timeout on response
-        isRejoining.current = false; // Reset flag when response received
-        
-        if (response.success) {
-          // Update session token
-          if (response.token) {
-            localStorage.setItem('sessionToken', response.token);
-          }
-          console.log('[Socket] Successfully rejoined session');
-          
-          // Notify application that we've rejoined
-          if (socket) {
-            socket.emit('client-rejoined', { sessionId, clientName });
-          }
-        } else {
-          console.error('[Socket] Failed to rejoin session:', response.error);
-        }
-      });
+      // Notify application that we've rejoined
+      if (socket) {
+        socket.emit('client-rejoined', { sessionId, clientName });
+      }
     } catch (error) {
-      isRejoining.current = false; // Reset flag on error
       console.error('[Socket] Error rejoining session:', error);
+    } finally {
+      isRejoining.current = false;
     }
   };
 
@@ -462,13 +460,9 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   /**
-   * Join a session
-   * @param sessionId Session ID
-   * @param clientName Client name
-   * @param passphrase Session passphrase
-   * @returns Promise that resolves with session data
+   * Performs the actual join session operation (internal helper)
    */
-  const joinSession = async (sessionId: string, clientName: string, passphrase: string): Promise<JoinResponse> => {
+  const performJoinSession = async (sessionId: string, clientName: string, passphrase: string): Promise<JoinResponse> => {
     if (!socket) {
       throw new Error('Socket not initialized');
     }
@@ -478,11 +472,9 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const fingerprint = await generateFingerprint(passphrase);
 
       // Join session
-      // We already checked that socket is not null above
       const socketInstance = socket;
       return new Promise<JoinResponse>((resolve, reject) => {
         // Get cached content IDs from sessionStorage directly
-        // (We can't use ContentStore context here due to provider ordering)
         let cachedContentIds: string[] = [];
         try {
           const savedState = sessionStorage.getItem('contentStoreState');
@@ -509,14 +501,15 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           fingerprint,
           cachedContentIds
         }, (response: JoinResponse) => {
-          clearTimeout(timeoutId); // Clear timeout on successful response
+          console.log('[SocketContext] JOIN CALLBACK RECEIVED:', response); // DEBUG LOG
+          clearTimeout(timeoutId);
           
           if (response.success && response.token) {
-            // Store session token
             localStorage.setItem('sessionToken', response.token);
-            
+            console.log('[SocketContext] Join Promise resolving with success');
             resolve(response);
           } else {
+            console.log('[SocketContext] Join Promise rejecting with error:', response.error);
             reject(new Error(response.error || 'Failed to join session'));
           }
         });
@@ -524,6 +517,54 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     } catch (error) {
       console.error('Error creating passphrase fingerprint:', error);
       throw new Error('Failed to create passphrase fingerprint');
+    }
+  };
+
+  /**
+   * Join a session with Promise deduplication to prevent duplicate requests
+   * @param sessionId Session ID
+   * @param clientName Client name
+   * @param passphrase Session passphrase
+   * @returns Promise that resolves with session data
+   */
+  const joinSession = async (sessionId: string, clientName: string, passphrase: string): Promise<JoinResponse> => {
+    // If already joining the same session, return existing Promise
+    if (joinState.current.isJoining && joinState.current.sessionId === sessionId) {
+      console.log('[SocketContext] Join already in progress for same session, returning existing Promise');
+      return joinState.current.currentJoinPromise!;
+    }
+
+    // If joining a different session, wait for current to complete
+    if (joinState.current.isJoining && joinState.current.sessionId !== sessionId) {
+      console.log('[SocketContext] Different join in progress, waiting for completion');
+      try {
+        await joinState.current.currentJoinPromise;
+      } catch (error) {
+        // Ignore errors from previous join, continue with new one
+        console.log('[SocketContext] Previous join failed, continuing with new join');
+      }
+    }
+
+    // Set join state
+    joinState.current.isJoining = true;
+    joinState.current.sessionId = sessionId;
+
+    // Create the actual join Promise
+    const joinPromise = performJoinSession(sessionId, clientName, passphrase);
+    joinState.current.currentJoinPromise = joinPromise;
+
+    try {
+      const result = await joinPromise;
+      console.log('[SocketContext] Join completed successfully');
+      return result;
+    } catch (error) {
+      console.error('[SocketContext] Join failed:', error);
+      throw error;
+    } finally {
+      // Reset join state
+      joinState.current.isJoining = false;
+      joinState.current.currentJoinPromise = null;
+      joinState.current.sessionId = null;
     }
   };
 
@@ -750,7 +791,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     sendChunk,
     rejoinSession,
     ensureConnected,
-    removeContent
+    removeContent,
+    isJoining: joinState.current.isJoining
   };
 
   return (
