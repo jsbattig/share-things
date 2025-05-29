@@ -17,18 +17,46 @@ A real-time content sharing application with end-to-end encryption.
 
 ShareThings consists of:
 
-1. React frontend with Chakra UI
-2. Express backend with Socket.IO
-3. End-to-end encryption using CryptoJS library
+1. **Frontend**: React 18 with TypeScript, Chakra UI, and Vite
+2. **Backend**: Node.js with Express, Socket.IO, and TypeScript
+3. **Database**: SQLite with better-sqlite3
+4. **Encryption**: End-to-end encryption using CryptoJS library
+5. **Build Tools**: Vite for frontend, TypeScript compilation for backend
+6. **Testing**: Jest for unit and integration testing
 
-## Docker Deployment
+## Technology Stack
 
-ShareThings is designed to be deployed using Docker (or Podman on Rocky Linux). The deployment architecture uses containers for both the client and server components, with HAProxy handling SSL termination and routing.
+### Frontend Technologies
+- **React 18** - Modern React with hooks and concurrent features
+- **TypeScript** - Type-safe JavaScript development
+- **Chakra UI** - Modern, accessible component library
+- **Vite** - Fast build tool and development server
+- **Framer Motion** - Animation library for smooth UI transitions
+- **React Router** - Client-side routing
+- **Socket.IO Client** - Real-time WebSocket communication
+
+### Backend Technologies
+- **Node.js 18** - JavaScript runtime
+- **Express 5** - Web application framework
+- **TypeScript** - Type-safe server development
+- **Socket.IO** - Real-time bidirectional communication
+- **SQLite** - Lightweight, serverless database
+- **better-sqlite3** - High-performance SQLite driver
+
+### Development & Testing
+- **Jest** - Testing framework for unit and integration tests
+- **ESLint** - Code linting and style enforcement
+- **Concurrently** - Run multiple npm scripts simultaneously
+- **Podman** - Containerization for deployment
+
+## Podman Deployment
+
+ShareThings is designed to be deployed using Podman. The deployment architecture uses containers for both the client and server components, with HAProxy handling SSL termination and routing.
 
 ### Prerequisites
 
-- Docker or Podman (for Rocky Linux)
-- Docker Compose or Podman Compose
+- Podman
+- Podman Compose
 - Git (to clone the repository)
 
 ### Quick Start
@@ -44,17 +72,21 @@ chmod +x setup.sh
 ```
 
 The setup script will:
-1. Detect your OS and recommend the appropriate container engine (Docker or Podman)
-2. Create necessary configuration files
-3. Configure environment variables
-4. Build and start the containers
+1. Create necessary configuration files
+2. Configure environment variables
+3. Build and start the Podman containers
 
-### Rocky Linux Specific Instructions
-
-On Rocky Linux, the setup script will automatically detect the OS and recommend using Podman instead of Docker. Here's what you need to know:
+### Installation Instructions
 
 1. **Install Podman and Podman Compose**:
    ```bash
+   # On Rocky Linux/RHEL/CentOS
+   sudo dnf install podman podman-compose
+   
+   # On Ubuntu/Debian
+   sudo apt-get install podman podman-compose
+   
+   # On Fedora
    sudo dnf install podman podman-compose
    ```
 
@@ -65,7 +97,6 @@ On Rocky Linux, the setup script will automatically detect the OS and recommend 
    ```
 
 3. **Follow the prompts**:
-   - Confirm using Podman when prompted
    - Enter your hostname or leave blank for auto-detection
    - Specify if you're using custom ports for HAProxy
    - Choose whether to expose ports to the host
@@ -93,7 +124,7 @@ On Rocky Linux, the setup script will automatically detect the OS and recommend 
                   │                   │
          ┌────────▼───────┐   ┌───────▼────────┐
          │    Frontend    │   │     Backend    │
-         │  (Nginx + SPA) │   │  (Node.js +    │
+         │ (Node.js + SPA)│   │  (Node.js +    │
          │                │   │   Socket.IO)   │
          └────────────────┘   └────────────────┘
 ```
@@ -101,10 +132,10 @@ On Rocky Linux, the setup script will automatically detect the OS and recommend 
 ### Container Configuration
 
 The setup creates two containers:
-1. **Frontend Container**: Nginx serving the built React application
-2. **Backend Container**: Node.js running the Express and Socket.IO server
+1. **Frontend Container**: Node.js static server serving the built React application
+2. **Backend Container**: Node.js running the Express and Socket.IO server with SQLite database
 
-Both containers are configured to communicate with each other through an internal Docker/Podman network.
+Both containers are configured to communicate with each other through an internal Podman network.
 
 ### HAProxy Configuration
 
@@ -119,20 +150,6 @@ The setup script generates a template HAProxy configuration file that you can cu
 
 After deployment, you can manage your containers with these commands:
 
-**For Docker:**
-```bash
-# Check container status
-docker ps --filter label=com.docker.compose.project=share-things
-
-# View logs
-docker logs share-things-frontend
-docker logs share-things-backend
-
-# Restart containers
-cd /path/to/share-things && docker-compose down && docker-compose up -d
-```
-
-**For Podman (Rocky Linux):**
 ```bash
 # Check container status
 podman ps --filter label=io.podman.compose.project=share-things
@@ -143,6 +160,19 @@ podman logs share-things-backend
 
 # Restart containers
 cd /path/to/share-things && podman-compose -f build/config/podman-compose.yml down && podman-compose -f build/config/podman-compose.yml up -d
+
+# Stop all containers
+podman-compose -f build/config/podman-compose.yml down
+
+# Start containers
+podman-compose -f build/config/podman-compose.yml up -d
+
+# View container resource usage
+podman stats
+
+# Access container shell
+podman exec -it share-things-backend /bin/bash
+podman exec -it share-things-frontend /bin/bash
 ```
 
 ### Troubleshooting
@@ -161,8 +191,8 @@ If you encounter issues:
    podman port share-things-backend
    ```
 
-3. **SELinux issues (Rocky Linux)**:
-   If you encounter permission errors, you may need to set the correct SELinux context:
+3. **SELinux issues**:
+   If you encounter permission errors on SELinux-enabled systems, you may need to set the correct SELinux context:
    ```bash
    sudo chcon -Rt container_file_t /path/to/share-things
    ```
@@ -171,6 +201,36 @@ If you encounter issues:
    - Check HAProxy logs: `sudo tail -f /var/log/haproxy.log`
    - Verify your HAProxy configuration matches the ports exposed by your containers
    - See [HAPROXY.md](HAPROXY.md) for detailed troubleshooting
+
+## Environment Configuration
+
+ShareThings uses environment variables for configuration. The setup script automatically creates the necessary configuration files, but you can customize them as needed:
+
+### Root Directory Configuration (`.env`)
+- `API_URL` - Base URL for API requests
+- `SOCKET_URL` - Base URL for WebSocket connections
+- `CORS_ORIGIN` - Allowed CORS origins
+- `SESSION_TIMEOUT` - Session timeout in milliseconds
+- `SESSION_EXPIRY` - Session expiry time in milliseconds
+- `LOG_LEVEL` - Logging level (info, debug, error)
+- `RATE_LIMIT_WINDOW` - Rate limiting window in milliseconds
+- `RATE_LIMIT_MAX` - Maximum requests per window
+
+### Client Configuration
+The client uses Vite environment variables:
+- `VITE_API_URL` - Backend API URL
+- `VITE_SOCKET_URL` - WebSocket server URL
+- `VITE_API_PORT` - API port number
+- `VITE_ENABLE_ANALYTICS` - Enable/disable analytics
+- `VITE_ENABLE_LOGGING` - Enable/disable client-side logging
+- `VITE_MAX_FILE_SIZE` - Maximum file size for uploads
+- `VITE_DEFAULT_CHUNK_SIZE` - Default chunk size for file transfers
+
+### Server Configuration
+The server uses standard Node.js environment variables:
+- `PORT` - Server port (default: 3001)
+- `NODE_ENV` - Environment mode (development/production)
+- Database and storage configurations are handled automatically
 
 ## Project Structure
 
@@ -183,23 +243,31 @@ share-things/
 │   ├── public/            # Static assets
 │   ├── src/               # Source code
 │   │   ├── components/    # React components
+│   │   │   ├── content/   # Content-related components
+│   │   │   └── session/   # Session-related components
 │   │   ├── contexts/      # React contexts
 │   │   ├── pages/         # Page components
+│   │   ├── services/      # Client-side services
 │   │   ├── utils/         # Utility functions
-│   │   └── ...
+│   │   └── __tests__/     # Client-side tests
 │   └── ...
 ├── server/                # Express backend
 │   ├── src/               # Source code
-│   │   ├── domain/        # Domain models
+│   │   ├── domain/        # Domain models and interfaces
+│   │   ├── infrastructure/# Infrastructure layer (storage, config)
+│   │   ├── repositories/  # Data access layer
 │   │   ├── routes/        # API routes
 │   │   ├── services/      # Business logic
 │   │   ├── socket/        # Socket.IO handlers
-│   │   └── ...
+│   │   ├── __tests__/     # Server-side tests
+│   │   └── __mocks__/     # Test mocks
+│   ├── scripts/           # Utility scripts
 │   └── ...
 ├── test/                  # Test files and configuration
 │   ├── config/            # Test configuration
 │   ├── e2e/               # End-to-end tests
-│   └── unit/              # Unit tests
+│   │   └── functional/    # Functional tests
+│   └── misc/              # Miscellaneous test utilities
 ├── setup/                 # Setup modules
 ├── plans/                 # Project planning documents
 │   └── ...                # Planning documents and implementation plans
@@ -207,8 +275,11 @@ share-things/
 │   ├── architecture/      # Architecture documentation
 │   ├── technical/         # Technical documentation
 │   └── ...
+├── data/                  # Application data directory
+├── logs/                  # Application logs
+├── backups/               # Backup files
 ├── setup.sh               # Main setup script
-└── test-setup.sh          # Setup test script
+└── cleanup-and-restart.sh # Cleanup and restart script
 ```
 
 ### Project Documentation
@@ -225,7 +296,7 @@ ShareThings uses GitHub Actions for continuous integration and deployment. The b
 
 1. **Lint**: Runs linting checks on the codebase
 2. **Build and Test**: Builds the application and runs unit tests
-3. **Dockered Build and Tests**: Runs tests in Docker containers (Integration tests)
+3. **Container Build and Tests**: Runs tests in Podman containers (Integration tests)
 4. **Test Setup**: Verifies the setup script works correctly in various scenarios
 5. **Deploy to Production**: Automatically deploys to the production server when all other workflows succeed
 
@@ -242,6 +313,99 @@ ShareThings implements several security measures:
 3. **Token-based Authentication**: Secure session tokens for request authorization
 4. **Session Expiration**: Inactive sessions are automatically expired
 
+## Additional Files
+
+The project includes several additional configuration and documentation files:
+
+- [`HAPROXY.md`](HAPROXY.md) - HAProxy configuration guide
+- [`FILE-STRUCTURE.md`](FILE-STRUCTURE.md) - Detailed file structure documentation
+- [`cleanup-and-restart.sh`](cleanup-and-restart.sh) - Utility script for cleanup and restart operations
+- [`setup.sh`](setup.sh) - Main setup and deployment script
+- [`fix-eslint-typescript-plugin.sh`](fix-eslint-typescript-plugin.sh) - ESLint TypeScript plugin fix script
+
+## Database
+
+ShareThings uses SQLite as its database backend, providing:
+- Session management and persistence
+- Content metadata storage
+- Chunk tracking for large files
+- Migration support for schema updates
+
+The database is automatically initialized on first run and includes proper migration handling for updates.
+
+## Development Setup
+
+For local development without Docker:
+
+### Prerequisites
+- Node.js 18 or higher
+- npm or yarn package manager
+
+### Local Development
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/jsbattig/share-things.git
+   cd share-things
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   # Install root dependencies
+   npm install
+   
+   # Install client dependencies
+   cd client && npm install && cd ..
+   
+   # Install server dependencies
+   cd server && npm install && cd ..
+   ```
+
+3. **Start development servers**:
+   ```bash
+   # Start both client and server in development mode
+   npm start
+   ```
+   
+   Or start them separately:
+   ```bash
+   # Terminal 1 - Start the backend
+   cd server && npm run dev
+   
+   # Terminal 2 - Start the frontend
+   cd client && npm run dev
+   ```
+
+4. **Access the application**:
+   - Frontend: http://localhost:5173 (Vite dev server)
+   - Backend API: http://localhost:3001
+
+### Running Tests
+```bash
+# Run all tests
+npm run test:all
+
+# Run server tests only
+cd server && npm test
+
+# Run client tests only
+cd client && npm test
+
+# Run end-to-end tests
+npm run test:e2e
+```
+
+### Building for Production
+```bash
+# Build both client and server
+npm run build
+
+# Build client only
+cd client && npm run build
+
+# Build server only
+cd server && npm run build
+```
+
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the ISC License.

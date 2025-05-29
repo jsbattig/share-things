@@ -14,6 +14,7 @@ interface ContentRow {
   createdAt: number;
   encryptionIv: Buffer;
   mime_type: string | null;
+  additional_metadata?: string | null;
   additionalMetadata?: string | null;
   isComplete?: number;
 }
@@ -54,7 +55,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
         total_chunks INTEGER NOT NULL,
         total_size INTEGER,
         created_at INTEGER NOT NULL,
-        encryption_iv BLOB
+        encryption_iv BLOB,
+        additional_metadata TEXT
       );
       
       CREATE TABLE IF NOT EXISTS chunks (
@@ -67,6 +69,18 @@ export class FileSystemChunkStorage implements IChunkStorage {
       CREATE INDEX IF NOT EXISTS idx_content_session ON content(session_id);
       CREATE INDEX IF NOT EXISTS idx_content_created ON content(created_at);
     `);
+
+    // Add migration for additional_metadata column if it doesn't exist
+    try {
+      await this.db.run('ALTER TABLE content ADD COLUMN additional_metadata TEXT');
+      console.log('[DEBUG] Added additional_metadata column to content table');
+    } catch (error: unknown) {
+      // Column already exists or other error - this is expected for new databases
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (!errorMessage.includes('duplicate column name')) {
+        console.log('[DEBUG] additional_metadata column already exists or other migration issue:', errorMessage);
+      }
+    }
 
     this.isInitialized = true;
   }
@@ -98,8 +112,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
     if (chunkIndex === totalChunks - 1) {
       await this.db.run(
         `INSERT OR REPLACE INTO content
-         (id, session_id, content_type, mime_type, total_chunks, total_size, created_at, encryption_iv)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, session_id, content_type, mime_type, total_chunks, total_size, created_at, encryption_iv, additional_metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         contentId,
         sessionId,
         contentType || 'unknown',
@@ -107,7 +121,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
         totalChunks,
         size,
         Date.now(),
-        Buffer.from(iv)
+        Buffer.from(iv),
+        null // Will be updated when we have the full metadata
       );
     }
   }
@@ -161,7 +176,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
          total_size as totalSize,
          created_at as createdAt,
          encryption_iv as encryptionIv,
-         mime_type
+         mime_type,
+         additional_metadata
        FROM content
        WHERE session_id = ?
        ORDER BY created_at DESC
@@ -179,8 +195,20 @@ export class FileSystemChunkStorage implements IChunkStorage {
       createdAt: row.createdAt,
       isComplete: true,
       encryptionIv: row.encryptionIv ? new Uint8Array(row.encryptionIv) : new Uint8Array(12),
-      additionalMetadata: row.mime_type ? JSON.stringify({ mimeType: row.mime_type }) : null
+      additionalMetadata: row.additional_metadata || (row.mime_type ? JSON.stringify({ mimeType: row.mime_type }) : null)
     }));
+  }
+
+  async updateContentMetadata(contentId: string, metadata: Record<string, unknown>): Promise<void> {
+    if (!this.isInitialized || !this.db) {
+      throw new Error('Storage not initialized');
+    }
+
+    await this.db.run(
+      'UPDATE content SET additional_metadata = ? WHERE id = ?',
+      JSON.stringify(metadata),
+      contentId
+    );
   }
 
   async deleteContent(contentId: string): Promise<void> {

@@ -163,4 +163,28 @@ export class ServerController {
   getPort(): number {
     return this.port;
   }
+
+  /**
+   * Gets stored content for a session (mock implementation for testing)
+   * @param sessionId Session ID
+   */
+  async getStoredContent(sessionId: string): Promise<any[]> {
+    // Mock implementation for testing
+    // In a real implementation, this would query the server's database
+    console.log(`Getting stored content for session: ${sessionId}`);
+    
+    // Return mock content for testing
+    return [
+      {
+        contentId: 'mock-content-1',
+        sessionId: sessionId,
+        contentType: 'image',
+        metadata: {
+          mimeType: 'image/png',
+          size: 12345
+        },
+        timestamp: Date.now()
+      }
+    ];
+  }
 }

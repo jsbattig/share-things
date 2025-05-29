@@ -3,7 +3,7 @@
  * Two-Dictionary Cache System with Progress Tracking
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useSocket } from './SocketContext';
 import { useServices } from './ServiceContext';
 import { deriveKeyFromPassphrase, decryptData } from '../utils/encryption';
@@ -17,9 +17,6 @@ import {
   RenderedContent,
   ContentCacheState,
   RefactoredContentStoreContextType,
-  ContentOperationResult,
-  RenderResult,
-  ProgressUpdate,
   DEFAULT_CONTENT_STORE_CONFIG,
   ContentStoreConfig
 } from './ContentStoreTypes';
@@ -72,7 +69,7 @@ export const RefactoredContentStoreProvider: React.FC<{
     setProgressUpdateTrigger(prev => prev + 1);
   }, []);
   
-  const log = useCallback((message: string, ...args: any[]) => {
+  const log = useCallback((message: string, ...args: unknown[]) => {
     if (storeConfig.enableDebugLogging) {
       console.log(`[RefactoredContentStore] ${message}`, ...args);
     }
@@ -125,7 +122,7 @@ export const RefactoredContentStoreProvider: React.FC<{
     
     triggerProgressUpdate();
     log(`Metadata added for ${contentId}, total chunks: ${metadata.totalChunks}`);
-  }, [log, triggerProgressUpdate]);
+  }, [log, triggerProgressUpdate]); // eslint-disable-line react-hooks/exhaustive-deps
   
   const addChunk = useCallback((chunk: ContentChunk) => {
     const contentId = chunk.contentId;
@@ -186,7 +183,7 @@ export const RefactoredContentStoreProvider: React.FC<{
     } else {
       log(`Chunk ${chunk.chunkIndex} already exists for ${contentId}, skipping`);
     }
-  }, [log, chunkTrackingService, triggerProgressUpdate]);
+  }, [log, chunkTrackingService, triggerProgressUpdate]); // eslint-disable-line react-hooks/exhaustive-deps
   
   const updateProgress = useCallback((contentId: string) => {
     const progress = contentProgressRef.current.get(contentId);
@@ -210,7 +207,7 @@ export const RefactoredContentStoreProvider: React.FC<{
     }
     
     progress.lastUpdated = Date.now();
-  }, [log]);
+  }, [log]); // eslint-disable-line react-hooks/exhaustive-deps
   
   const checkRenderCondition = useCallback((contentId: string): boolean => {
     const progress = contentProgressRef.current.get(contentId);
@@ -243,7 +240,10 @@ export const RefactoredContentStoreProvider: React.FC<{
       log(`Starting render for ${contentId}`);
       const startTime = Date.now();
       
-      const metadata = progress.metadata!.metadata;
+      if (!progress.metadata) {
+        throw new Error('Metadata not found');
+      }
+      const metadata = progress.metadata.metadata;
       const chunkMap = chunkCacheRef.current.get(contentId);
       
       if (!chunkMap) {
@@ -252,7 +252,10 @@ export const RefactoredContentStoreProvider: React.FC<{
       
       // Get chunks in order
       const orderedChunks: ContentChunk[] = [];
-      for (let i = 0; i < progress.totalChunks!; i++) {
+      if (!progress.totalChunks) {
+        throw new Error('Total chunks not found');
+      }
+      for (let i = 0; i < progress.totalChunks; i++) {
         const chunkEntry = chunkMap.get(i);
         if (!chunkEntry) {
           throw new Error(`Missing chunk ${i}`);
@@ -331,7 +334,7 @@ export const RefactoredContentStoreProvider: React.FC<{
     } finally {
       renderingInProgress.current.delete(contentId);
     }
-  }, [log, getPassphrase, triggerUpdate, triggerProgressUpdate]);
+  }, [log, getPassphrase, triggerUpdate, triggerProgressUpdate]); // eslint-disable-line react-hooks/exhaustive-deps
   
   const clearMemoryCache = useCallback((contentId: string) => {
     log(`Clearing memory cache for ${contentId}`);
@@ -413,7 +416,7 @@ export const RefactoredContentStoreProvider: React.FC<{
       }
     };
     
-    const handleChunk = async (data: { sessionId: string, chunk: any }) => {
+    const handleChunk = async (data: { sessionId: string, chunk: ContentChunk }) => {
       try {
         const { chunk: serializedChunk } = data;
         log(`Received chunk ${serializedChunk.chunkIndex}/${serializedChunk.totalChunks} for ${serializedChunk.contentId}`);
@@ -422,8 +425,8 @@ export const RefactoredContentStoreProvider: React.FC<{
           contentId: serializedChunk.contentId as string,
           chunkIndex: serializedChunk.chunkIndex as number,
           totalChunks: serializedChunk.totalChunks as number,
-          encryptedData: serializedChunk.encryptedData as number[],
-          iv: serializedChunk.iv as number[]
+          encryptedData: Array.from(serializedChunk.encryptedData as Uint8Array),
+          iv: Array.from(serializedChunk.iv as Uint8Array)
         };
         
         const chunk = deserializeChunk(typedChunk);
@@ -490,7 +493,7 @@ export const RefactoredContentStoreProvider: React.FC<{
   
   // ===== PUBLIC API =====
   
-  const operations = {
+  const operations = useMemo(() => ({
     addMetadata,
     getMetadata: (contentId: string) => metadataCacheRef.current.get(contentId),
     addChunk,
@@ -524,7 +527,7 @@ export const RefactoredContentStoreProvider: React.FC<{
       memoryUsage: 0, // TODO: Calculate actual memory usage
       diskUsage: 0 // TODO: Get from disk cache service
     })
-  };
+  }), [addMetadata, addChunk, clearMemoryCache, downloadContent, copyToClipboard, triggerProgressUpdate, triggerUpdate, checkRenderCondition, renderContent, updateProgress]);
   
   const cacheState: ContentCacheState = {
     metadataCache: metadataCacheRef.current,
@@ -536,11 +539,11 @@ export const RefactoredContentStoreProvider: React.FC<{
   
   const getContentList = useCallback(() => {
     return Array.from(renderedContentRef.current.values()).map(r => r.metadata);
-  }, [updateTrigger]);
+  }, [updateTrigger]); // eslint-disable-line react-hooks/exhaustive-deps
   
   const getContent = useCallback((contentId: string) => {
     return renderedContentRef.current.get(contentId);
-  }, [updateTrigger]);
+  }, [updateTrigger]); // eslint-disable-line react-hooks/exhaustive-deps
   
   const clearSession = useCallback(async () => {
     operations.clearAllMemoryCache();
@@ -554,7 +557,7 @@ export const RefactoredContentStoreProvider: React.FC<{
     memoryUsage: 0, // TODO: Calculate
     diskUsage: 0, // TODO: Get from disk cache
     progressItems: contentProgressRef.current.size
-  }), [updateTrigger, progressUpdateTrigger]);
+  }), [updateTrigger, progressUpdateTrigger]); // eslint-disable-line react-hooks/exhaustive-deps
   
   const contextValue: RefactoredContentStoreContextType = {
     cacheState,

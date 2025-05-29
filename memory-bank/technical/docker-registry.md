@@ -1,14 +1,14 @@
-# Docker Registry Configuration
+# Container Registry Configuration
 
 ## Overview
 
-This document outlines the Docker registry configuration for the ShareThings project, including registry requirements and best practices.
+This document outlines the container registry configuration for the ShareThings project, including registry requirements and best practices for Podman deployments.
 
 ## Registry Requirements
 
 ### Approved Registry
 
-For all ShareThings deployments, the **only** approved Docker registry is:
+For all ShareThings deployments, the **only** approved container registry is:
 
 ```
 linner.ddns.net:4443/docker.io.proxy
@@ -16,7 +16,7 @@ linner.ddns.net:4443/docker.io.proxy
 
 ### Registry Usage
 
-All Dockerfiles and container configurations MUST use the approved registry for pulling base images. For example:
+All Containerfiles/Dockerfiles and Podman configurations MUST use the approved registry for pulling base images. For example:
 
 ```dockerfile
 # CORRECT - Using the approved registry
@@ -39,17 +39,17 @@ Using the approved registry provides several benefits:
 
 ## Implementation
 
-### Dockerfile Configuration
+### Containerfile/Dockerfile Configuration
 
-All Dockerfiles should specify the full registry path:
+All Containerfiles and Dockerfiles should specify the full registry path:
 
 ```dockerfile
 FROM linner.ddns.net:4443/docker.io.proxy/node:18-alpine
 ```
 
-### Docker Compose Configuration
+### Podman Compose Configuration
 
-Docker Compose files should also use the full registry path for any images:
+Podman Compose files should also use the full registry path for any images:
 
 ```yaml
 services:
@@ -76,4 +76,4 @@ If you encounter issues with the registry:
 
 ## Important Note
 
-**NEVER use docker.io directly** in any Dockerfile, Docker Compose file, or script in this project. Always use the approved registry.
+**NEVER use docker.io directly** in any Containerfile, Dockerfile, Podman Compose file, or script in this project. Always use the approved registry.

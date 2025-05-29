@@ -90,6 +90,7 @@ interface ContentStoreContextType {
   getCachedContentIds: () => string[];
   restoreCachedContent: () => string[];
   isContentComplete: (contentId: string) => boolean;
+  updateSessionPassphrase: (passphrase: string) => void;
 }
 
 // Create context
@@ -131,10 +132,28 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
   
   // Store socket in a ref to avoid dependency issues
   
-  // Get passphrase from localStorage
-  const getPassphrase = (): string => {
-    return localStorage.getItem('passphrase') || '';
+  // Store the session passphrase using a ref for immediate access
+  // This ensures all users in the session use the same passphrase for content encryption/decryption
+  const sessionPassphraseRef = React.useRef<string>('');
+  
+  // Get session passphrase - this should be the same for all users in the session
+  const getSessionPassphrase = (): string => {
+    // If we have a stored session passphrase, use it
+    if (sessionPassphraseRef.current) {
+      console.log(`[ContentStore] Using stored session passphrase: ${sessionPassphraseRef.current.substring(0, 2)}***`);
+      return sessionPassphraseRef.current;
+    }
+    // Otherwise fall back to localStorage (for backward compatibility)
+    const fallbackPassphrase = localStorage.getItem('passphrase') || '';
+    console.log(`[ContentStore] Using fallback passphrase from localStorage: ${fallbackPassphrase.substring(0, 2)}***`);
+    return fallbackPassphrase;
   };
+  
+  // Update session passphrase when joining a session
+  const updateSessionPassphrase = useCallback((passphrase: string) => {
+    console.log(`[ContentStore] Setting session passphrase for content encryption: ${passphrase.substring(0, 2)}***`);
+    sessionPassphraseRef.current = passphrase;
+  }, []);
 
   // Set up socket event listeners
   useEffect(() => {
@@ -146,7 +165,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       
       // Store current sessionId
       currentSessionId.current = sessionId;
-      const passphrase = getPassphrase();
+      const passphrase = getSessionPassphrase();
       
       // CRITICAL DIAGNOSTIC: Log content metadata timing
       console.log(`[METADATA-TIMING] Content metadata received for ${content.contentId}`);
@@ -237,7 +256,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         // Store current sessionId
         currentSessionId.current = data.sessionId;
         const { chunk: serializedChunk } = data;
-        const passphrase = getPassphrase();
+        const passphrase = getSessionPassphrase();
         
         console.log(`[ContentStore] Received chunk data:`, serializedChunk);
         console.log(`[CHUNK-TIMING] Chunk ${serializedChunk.chunkIndex}/${serializedChunk.totalChunks} received for ${serializedChunk.contentId}`);
@@ -659,6 +678,32 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
    */
   const decryptAndReassembleContent = async (contentId: string, passphrase: string): Promise<void> => {
     console.log(`[decryptAndReassemble] Starting reassembly for content ${contentId}`);
+    
+    // COMPREHENSIVE GUARD: Check if content is already complete and has valid blob/data
+    const existingContent = contents.get(contentId);
+    if (existingContent && existingContent.isComplete && existingContent.data) {
+      // Check if data is a valid Blob or string
+      const hasValidData = (existingContent.data instanceof Blob && existingContent.data.size > 0) ||
+                          (typeof existingContent.data === 'string' && existingContent.data.length > 0);
+      
+      if (hasValidData) {
+        console.log(`[decryptAndReassemble] Content ${contentId} already complete with valid data (${typeof existingContent.data}), skipping reassembly`);
+        return;
+      }
+    }
+    
+    // ADDITIONAL GUARD: Check contentsRef for existing complete content
+    const existingContentRef = contentsRef.current.get(contentId);
+    if (existingContentRef && existingContentRef.isComplete && existingContentRef.data) {
+      const hasValidDataRef = (existingContentRef.data instanceof Blob && existingContentRef.data.size > 0) ||
+                             (typeof existingContentRef.data === 'string' && existingContentRef.data.length > 0);
+      
+      if (hasValidDataRef) {
+        console.log(`[decryptAndReassemble] Content ${contentId} already complete in ref with valid data (${typeof existingContentRef.data}), skipping reassembly`);
+        return;
+      }
+    }
+    
     console.log(`[decryptAndReassemble] Current contents map has ${contents.size} entries`);
     console.log(`[decryptAndReassemble] Current content IDs before reassembly:`, Array.from(contents.keys()));
     console.log(`[decryptAndReassemble] Current chunkStores map has ${chunkStores.size} entries`);
@@ -868,6 +913,8 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Derive key from passphrase
       const key = await deriveKeyFromPassphrase(passphrase);
       console.log(`[decryptAndReassemble] Key derived from passphrase`);
+      console.log(`[decryptAndReassemble] Using passphrase: ${passphrase ? `${passphrase.substring(0, 2)}***` : 'undefined'}`);
+      console.log(`[decryptAndReassemble] Passphrase length: ${passphrase ? passphrase.length : 0}`);
       
       // Decrypt and concatenate chunks
       const decryptedChunks: ArrayBuffer[] = [];
@@ -941,6 +988,10 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       const header = firstDecryptedChunk.slice(0, 8);
       const hexSignature = Array.from(header).map((b: number) => b.toString(16).padStart(2, '0')).join('');
       console.log(`[decryptAndReassemble] Data signature: ${hexSignature}`);
+      console.log(`[decryptAndReassemble] First chunk size: ${firstDecryptedChunk.byteLength} bytes`);
+      console.log(`[decryptAndReassemble] Header bytes: [${Array.from(header).join(', ')}]`);
+      console.log(`[decryptAndReassemble] Expected PNG signature: 89504e470d0a1a0a`);
+      console.log(`[decryptAndReassemble] Expected PNG bytes: [137, 80, 78, 71, 13, 10, 26, 10]`);
       
       let detectedContentType = effectiveContent.metadata.contentType;
       let detectedMimeType = effectiveContent.metadata.metadata.mimeType;
@@ -1289,6 +1340,18 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       chunkTrackingService.markContentDisplayed(contentId);
       
       console.log(`[decryptAndReassemble] Content ${contentId} successfully reassembled and stored`);
+      
+      // Force a final state update to ensure UI reactivity
+      setContents(prevContents => {
+        const newContents = new Map(prevContents);
+        const currentContent = newContents.get(contentId);
+        if (currentContent) {
+          console.log(`[decryptAndReassemble] Final UI update for content ${contentId}`);
+          // Create a new object to force React to detect the change
+          newContents.set(contentId, { ...currentContent });
+        }
+        return newContents;
+      });
     } catch (error) {
       console.error('[decryptAndReassemble] Error decrypting and reassembling content:', error);
       
@@ -1346,51 +1409,6 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return Array.from(contents.values()).map(entry => entry.metadata);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contentKeys, contentStates]); // contentKeys and contentStates used intentionally for performance optimization
-
-  /**
-   * Removes content from the store
-   * @param contentId Content ID
-   * @returns True if content was removed
-   */
-  const removeContent = React.useCallback(async (contentId: string): Promise<boolean> => {
-    const content = contents.get(contentId);
-    
-    if (!content) {
-      console.log(`[DELETION-DEBUG] Content ${contentId} not found for removal`);
-      return false;
-    }
-    
-    console.log(`[DELETION-DEBUG] Starting removal of content: ${contentId}`);
-    console.log(`[DELETION-DEBUG] Content metadata:`, content.metadata);
-    console.log(`[DELETION-DEBUG] Content is complete: ${content.isComplete}`);
-    console.log(`[DELETION-DEBUG] Current contents count: ${contents.size}`);
-    console.log(`[DELETION-DEBUG] Current chunk stores count: ${chunkStoresRef.current.size}`);
-    
-    // CRITICAL FIX: First notify the server to remove the content
-    console.log(`[DELETION-DEBUG] Step 1: Notifying server to remove content from session`);
-    try {
-      const sessionId = currentSessionId.current || localStorage.getItem('sessionId');
-      if (socketContext && socket && sessionId) {
-        const result = await socketContext.removeContent(sessionId, contentId);
-        if (!result.success) {
-          console.error(`[DELETION-DEBUG] Server failed to remove content: ${result.error}`);
-          // Continue with local cleanup even if server removal fails
-        } else {
-          console.log(`[DELETION-DEBUG] Server successfully removed content ${contentId}`);
-        }
-      } else {
-        console.warn(`[DELETION-DEBUG] No active session found, performing local cleanup only`);
-      }
-    } catch (error) {
-      console.error(`[DELETION-DEBUG] Error communicating with server:`, error);
-      // Continue with local cleanup even if server communication fails
-    }
-    
-    // Perform local cleanup (this will also be triggered by the content-removed event)
-    performLocalContentCleanup(contentId);
-    
-    return true;
-  }, [contents, socketContext, socket]);
 
   /**
    * Performs local cleanup of content (used both for local removal and when receiving content-removed events)
@@ -1451,6 +1469,51 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     
     console.log(`[DELETION-DEBUG] Local cleanup completed for ${contentId}`);
   }, [urlRegistry, chunkTrackingService]);
+
+  /**
+   * Removes content from the store
+   * @param contentId Content ID
+   * @returns True if content was removed
+   */
+  const removeContent = React.useCallback(async (contentId: string): Promise<boolean> => {
+    const content = contents.get(contentId);
+    
+    if (!content) {
+      console.log(`[DELETION-DEBUG] Content ${contentId} not found for removal`);
+      return false;
+    }
+    
+    console.log(`[DELETION-DEBUG] Starting removal of content: ${contentId}`);
+    console.log(`[DELETION-DEBUG] Content metadata:`, content.metadata);
+    console.log(`[DELETION-DEBUG] Content is complete: ${content.isComplete}`);
+    console.log(`[DELETION-DEBUG] Current contents count: ${contents.size}`);
+    console.log(`[DELETION-DEBUG] Current chunk stores count: ${chunkStoresRef.current.size}`);
+    
+    // CRITICAL FIX: First notify the server to remove the content
+    console.log(`[DELETION-DEBUG] Step 1: Notifying server to remove content from session`);
+    try {
+      const sessionId = currentSessionId.current || localStorage.getItem('sessionId');
+      if (socketContext && socket && sessionId) {
+        const result = await socketContext.removeContent(sessionId, contentId);
+        if (!result.success) {
+          console.error(`[DELETION-DEBUG] Server failed to remove content: ${result.error}`);
+          // Continue with local cleanup even if server removal fails
+        } else {
+          console.log(`[DELETION-DEBUG] Server successfully removed content ${contentId}`);
+        }
+      } else {
+        console.warn(`[DELETION-DEBUG] No active session found, performing local cleanup only`);
+      }
+    } catch (error) {
+      console.error(`[DELETION-DEBUG] Error communicating with server:`, error);
+      // Continue with local cleanup even if server communication fails
+    }
+    
+    // Perform local cleanup (this will also be triggered by the content-removed event)
+    performLocalContentCleanup(contentId);
+    
+    return true;
+  }, [contents, socketContext, socket, performLocalContentCleanup]);
 
   /**
    * Clears all content from the store
@@ -1582,7 +1645,8 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     clearSessionStorage,
     getCachedContentIds,
     restoreCachedContent,
-    isContentComplete
+    isContentComplete,
+    updateSessionPassphrase
   }), [
     contents,
     addContent,
@@ -1596,7 +1660,8 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     clearSessionStorage,
     getCachedContentIds,
     restoreCachedContent,
-    isContentComplete
+    isContentComplete,
+    updateSessionPassphrase
   ]);
 
   // Set up periodic cleanup for orphaned chunks and URLs

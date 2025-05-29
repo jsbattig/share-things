@@ -24,6 +24,7 @@ import {
 import { FaLock, FaEye, FaEyeSlash, FaShare, FaRandom } from 'react-icons/fa';
 import { v4 as uuidv4 } from 'uuid';
 import { useSocket } from '../contexts/SocketContext';
+import { useContentStore } from '../contexts/ContentStoreContext';
 
 /**
  * Home page component
@@ -41,6 +42,7 @@ const HomePage: React.FC = () => {
   const navigate = useNavigate();
   const toast = useToast();
   const { joinSession } = useSocket();
+  const { updateSessionPassphrase } = useContentStore();
   
   /**
    * Generates a random session ID
@@ -82,6 +84,9 @@ const HomePage: React.FC = () => {
     try {
       // Join session with Socket.IO
       await joinSession(sessionId, clientName, passphrase);
+      
+      // Set the session passphrase for content encryption/decryption
+      updateSessionPassphrase(passphrase);
       
       // Store session info in localStorage
       localStorage.setItem('sessionId', sessionId);

@@ -151,3 +151,65 @@ if (typeof global.crypto === 'undefined' || !global.crypto.subtle) {
   
   console.log('Enhanced WebCrypto mock installed for Node.js environment');
 }
+
+// Add Blob polyfill for Node.js
+if (typeof global.Blob === 'undefined') {
+  global.Blob = class MockBlob {
+    private data: any;
+    public size: number;
+    public type: string;
+
+    constructor(data: any[] = [], options: { type?: string } = {}) {
+      this.data = data;
+      // Calculate size more accurately
+      this.size = data.reduce((acc, item) => {
+        if (typeof item === 'string') {
+          return acc + item.length;
+        } else if (item instanceof ArrayBuffer) {
+          return acc + item.byteLength;
+        } else if (item && item.length !== undefined) {
+          return acc + item.length;
+        }
+        return acc;
+      }, 0);
+      this.type = options.type || '';
+    }
+
+    arrayBuffer(): Promise<ArrayBuffer> {
+      // Create ArrayBuffer from the actual data
+      const buffer = new ArrayBuffer(this.size);
+      const view = new Uint8Array(buffer);
+      
+      let offset = 0;
+      for (const item of this.data) {
+        if (typeof item === 'string') {
+          // Convert string to bytes
+          for (let i = 0; i < item.length; i++) {
+            view[offset++] = item.charCodeAt(i);
+          }
+        } else if (item instanceof ArrayBuffer) {
+          // Copy ArrayBuffer data
+          const itemView = new Uint8Array(item);
+          view.set(itemView, offset);
+          offset += item.byteLength;
+        } else if (item instanceof Buffer) {
+          // Copy Buffer data
+          view.set(item, offset);
+          offset += item.length;
+        } else if (item && item.length !== undefined) {
+          // Copy array-like data
+          view.set(item, offset);
+          offset += item.length;
+        }
+      }
+      
+      return Promise.resolve(buffer);
+    }
+
+    text(): Promise<string> {
+      return Promise.resolve(this.data.join(''));
+    }
+  } as any;
+  
+  console.log('Blob polyfill installed for Node.js environment');
+}

@@ -13,6 +13,7 @@ export default {
       }
     ]
   },
+  setupFilesAfterEnv: ['<rootDir>/setupTests.ts'],
   forceExit: true,
   detectOpenHandles: true,
   verbose: true

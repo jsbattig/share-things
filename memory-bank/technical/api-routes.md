@@ -111,9 +111,9 @@ https://yourdomain.com:15001/health
 
 HAProxy routes these requests directly to the backend container on port 3001.
 
-### Production with Docker and Nginx (No HAProxy)
+### Production with Podman Containers
 
-In production with Docker and Nginx (no HAProxy), the client accesses the API endpoints through the frontend container's Nginx server:
+In production with Podman containers, the client accesses the API endpoints through the frontend container:
 
 ```
 https://yourdomain.com/api/sessions

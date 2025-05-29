@@ -988,7 +988,7 @@ In production with HAProxy:
 - HAProxy routes WebSocket connections directly to the backend container
 - Environment variables are set to domain with specific port: `VITE_SOCKET_URL=https://yourdomain.com:15001`
 
-### Production with Docker and Nginx (No HAProxy)
+### Production with Podman Containers
 
 ```mermaid
 graph LR
@@ -996,9 +996,9 @@ graph LR
     B -->|"ws://backend:3001/socket.io"| C[Backend Container]
 ```
 
-In production with Docker and Nginx (no HAProxy):
+In production with Podman containers:
 - The client connects to the frontend container
-- Nginx proxies WebSocket connections to the backend container
+- Frontend container routes WebSocket connections to the backend container
 - Environment variables are set to domain without port: `VITE_SOCKET_URL=https://yourdomain.com`
 
 ## Token-Based Authentication

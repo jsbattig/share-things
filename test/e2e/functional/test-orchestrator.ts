@@ -61,6 +61,27 @@ export class TestOrchestrator {
   }
   
   /**
+   * Gets the server controller for direct access
+   */
+  getServer(): ServerController {
+    return this.serverController;
+  }
+  
+  /**
+   * Gets the first client emulator
+   */
+  getClient1(): ClientEmulator {
+    return this.clientEmulators[0];
+  }
+  
+  /**
+   * Gets the second client emulator
+   */
+  getClient2(): ClientEmulator {
+    return this.clientEmulators[1];
+  }
+  
+  /**
    * Runs all tests
    */
   async runTests(): Promise<void> {

@@ -216,9 +216,13 @@ describe('Real Image Session Reload Test', () => {
       console.log(`[Test] Emitting 'content' event to server with sessionId: ${sessionId}`);
       console.log(`[Test] Content payload size: ${JSON.stringify(content).length} characters`);
       
+      // Extract the data from content object and send it separately
+      const { data: contentData, ...contentWithoutData } = content;
+      
       socket.emit('content', {
         sessionId,
-        content
+        content: contentWithoutData,
+        data: contentData  // Send the base64 data separately
       }, (response: any) => {
         clearTimeout(timeout);
         if (response.success) {

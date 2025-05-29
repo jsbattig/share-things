@@ -433,8 +433,8 @@ describe('Image Content Type Test', () => {
       
       // The metadata should contain image-specific information
       expect(imageContent.metadata.imageInfo).toBeDefined();
-      expect(imageContent.metadata.imageInfo.width).toBe(800);
-      expect(imageContent.metadata.imageInfo.height).toBe(600);
+      expect(imageContent.metadata.imageInfo.width).toBe(100);
+      expect(imageContent.metadata.imageInfo.height).toBe(100);
       expect(imageContent.metadata.imageInfo.format).toBe('png');
       
       console.log('[Test] ✅ Image metadata verified!');

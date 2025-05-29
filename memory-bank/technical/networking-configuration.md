@@ -2,7 +2,7 @@
 
 ## Overview
 
-ShareThings supports multiple deployment configurations with different networking setups. This document details how the application's networking is configured in different environments, including development, production with HAProxy, and production with Docker and Nginx.
+ShareThings supports multiple deployment configurations with different networking setups. This document details how the application's networking is configured in different environments, including development, production with HAProxy, and production with Podman containers.
 
 ## Deployment Configurations
 
@@ -10,7 +10,7 @@ ShareThings can be deployed in several configurations:
 
 1. **Development**: Direct connection to the backend server
 2. **Production with HAProxy**: HAProxy routes traffic to frontend and backend containers
-3. **Production with Docker and Nginx**: Nginx in the frontend container proxies API and WebSocket requests to the backend container
+3. **Production with Podman**: Podman containers with Node.js static server for frontend
 
 ## Network Flow Diagrams
 
@@ -46,7 +46,7 @@ In production with HAProxy:
 - The client application is served by the frontend container through HAProxy's `client_front`
 - API requests and Socket.IO connections go directly to the backend container through HAProxy's `api_front`
 
-### Production with Docker and Nginx
+### Production with Podman
 
 ```mermaid
 graph LR
@@ -58,10 +58,10 @@ graph LR
     B -->|"http://backend:3001/socket.io"| C
 ```
 
-In production with Docker and Nginx (no HAProxy):
-- The frontend container serves the client application
-- The frontend container's Nginx proxies API and Socket.IO requests to the backend container
-- All traffic goes through the frontend container
+In production with Podman containers:
+- The frontend container serves the client application using Node.js static server
+- API and Socket.IO requests are handled by the backend container
+- Containers communicate through Podman network
 
 ## Client Configuration
 
@@ -148,7 +148,7 @@ backend sharethings_front
     option httpchk GET /
     
     # Server definition - point to frontend container
-    server frontend docker-host:8080 check
+    server frontend podman-host:15000 check
 ```
 
 #### sharethings_back
@@ -167,50 +167,38 @@ backend sharethings_back
     stick on src
     
     # Server definition - point to backend container
-    server backend docker-host:3001 check
+    server backend podman-host:3001 check
 ```
 
-## Nginx Configuration
+## Frontend Container Configuration
 
-Nginx in the frontend container is configured to proxy API and Socket.IO requests to the backend:
+The frontend container uses a Node.js static server to serve the built React application. The static server is configured to handle routing and serve static files efficiently.
 
-### API Proxy
+### Static Server Configuration
 
-```nginx
-# Proxy API requests to backend
-location /api {
-    proxy_pass http://backend:3001;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection 'upgrade';
-    proxy_set_header Host $host;
-    proxy_cache_bypass $http_upgrade;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
-```
+```javascript
+// static-server.js
+const express = require('express');
+const path = require('path');
+const compression = require('compression');
 
-### Socket.IO Proxy
+const app = express();
+const port = process.env.PORT || 15000;
 
-```nginx
-# Proxy Socket.IO requests to backend
-location /socket.io {
-    proxy_pass http://backend:3001;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection 'upgrade';
-    proxy_set_header Host $host;
-    proxy_cache_bypass $http_upgrade;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    
-    # WebSocket specific settings
-    proxy_read_timeout 86400;
-    proxy_connect_timeout 60s;
-    proxy_send_timeout 60s;
-}
+// Enable gzip compression
+app.use(compression());
+
+// Serve static files from the public directory
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Handle client-side routing
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.listen(port, () => {
+  console.log(`Static server running on port ${port}`);
+});
 ```
 
 ## Environment-Specific Configurations
@@ -233,15 +221,16 @@ In production with HAProxy:
   VITE_SOCKET_URL=https://yourdomain.com:15001
   ```
 
-### Production with Docker and Nginx (No HAProxy)
+### Production with Podman
 
-In production with Docker and Nginx (no HAProxy):
-- Client accesses everything through the frontend container
-- Nginx proxies API and Socket.IO requests to the backend
-- Environment variables set to domain without port:
+In production with Podman containers:
+- Client accesses frontend through the frontend container
+- API and Socket.IO requests go directly to the backend container
+- Environment variables configured based on deployment setup:
   ```
-  VITE_API_URL=https://yourdomain.com
-  VITE_SOCKET_URL=https://yourdomain.com
+  VITE_API_URL=auto
+  VITE_SOCKET_URL=auto
+  VITE_API_PORT=3001
   ```
 
 ## Configuration Synchronization
@@ -250,12 +239,12 @@ To ensure all components work together correctly, the following must be synchron
 
 1. **Client Environment Variables**: Set to the appropriate URL based on deployment configuration
 2. **HAProxy Configuration**: Configure to route traffic to the correct containers
-3. **Nginx Configuration**: Configure to proxy API and Socket.IO paths to backend
+3. **Podman Network**: Ensure containers can communicate through Podman network
 4. **Backend Port**: Set to the port the backend container is listening on (3001)
 
 ## Security Considerations
 
-1. **SSL Termination**: In production, SSL termination should be handled by HAProxy or Nginx
+1. **SSL Termination**: In production, SSL termination should be handled by HAProxy
 2. **CORS Configuration**: CORS must be properly configured on the backend to allow requests from the frontend
 3. **WebSocket Security**: WebSocket connections must be properly secured with authentication
-4. **Proxy Headers**: Proxy headers must be properly set to preserve client information
+4. **Container Security**: Podman containers should run with appropriate security contexts and user permissions

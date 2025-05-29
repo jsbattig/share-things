@@ -50,7 +50,7 @@ const SessionPage: React.FC = () => {
   
   // Context
   const { socket, isConnected, connectionStatus, joinSession, leaveSession, rejoinSession, ensureConnected } = useSocket();
-  const { clearContents } = useContentStore();
+  const { clearContents, updateSessionPassphrase } = useContentStore();
   
   // Load session info from localStorage
   useEffect(() => {
@@ -99,6 +99,10 @@ const SessionPage: React.FC = () => {
         // Join session
         const response = await joinSession(sessionId, clientName, passphrase);
         setClients(response.clients || []);
+        
+        // Set the session passphrase for content encryption/decryption
+        updateSessionPassphrase(passphrase);
+        console.log('[SessionPage] Session passphrase set for content operations');
         
         console.log('[SessionPage] Successfully joined session');
         

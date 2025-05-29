@@ -349,6 +349,11 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
             // Mark content as complete since it's a single chunk
             await chunkStorage.markContentComplete(content.contentId);
             
+            // Update the metadata with the full content metadata
+            if (content.metadata) {
+              await chunkStorage.updateContentMetadata(content.contentId, content.metadata);
+            }
+            
             console.log(`Non-chunked content ${content.contentId} saved to storage`);
           }
         } catch (storageError) {

@@ -3,7 +3,7 @@
  * This file contains all the interfaces for the two-dictionary cache system
  */
 
-import { ContentType, SharedContent, ContentChunk } from './ContentStoreContext';
+import { SharedContent, ContentChunk } from './ContentStoreContext';
 
 // ===== CACHE ENTRY TYPES =====
 
