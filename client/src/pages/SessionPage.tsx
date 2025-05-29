@@ -145,7 +145,8 @@ const SessionPage: React.FC = () => {
       console.log('[SessionPage] Connection lost, will attempt to rejoin when reconnected');
     } else if (connectionStatus === 'connected' && sessionId && clientName && passphrase) {
       // Check if we need to rejoin the session - but only if we haven't already joined
-      if (socket && clients.length === 0 && !hasJoined.current) {
+      // AND we're not currently in the process of joining
+      if (socket && clients.length === 0 && !hasJoined.current && !isJoining) {
         console.log('[SessionPage] Connected but no clients, attempting to rejoin session');
         rejoinSession(sessionId, clientName, passphrase);
       }

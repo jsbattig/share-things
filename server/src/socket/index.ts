@@ -116,6 +116,19 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
           joinedAt: client.connectedAt
         })) : [];
 
+        // CRITICAL FIX: Send callback BEFORE content transmission to prevent timeout
+        if (callback) {
+          console.log(`[CALLBACK-DEBUG] Sending join success callback to client ${socket.id}`);
+          callback({
+            success: true,
+            token: result.token,
+            clients: clientsList
+          });
+          console.log(`[CALLBACK-DEBUG] Join callback sent successfully to client ${socket.id}`);
+        } else {
+          console.log(`[CALLBACK-DEBUG] WARNING: No callback provided for join request from client ${socket.id}`);
+        }
+
         // Get existing content for this session
         try {
           const chunkStorage = await chunkStoragePromise;
@@ -165,7 +178,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
               }
             });
 
-            // Send chunks with small delays to prevent overwhelming the client
+            // Send chunks at full speed - client can handle rapid processing
             for (let i = 0; i < content.totalChunks; i++) {
               const chunkData = await chunkStorage.getChunk(content.contentId, i);
               const chunkMetadata = await chunkStorage.getChunkMetadata(content.contentId, i);
@@ -181,16 +194,8 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
                     iv: Array.from(chunkMetadata.iv)
                   }
                 });
-                
-                // Small delay between chunks to prevent overwhelming the client
-                if (i < content.totalChunks - 1) {
-                  await new Promise(resolve => setTimeout(resolve, 10));
-                }
               }
             }
-            
-            // Small delay between content items
-            await new Promise(resolve => setTimeout(resolve, 50));
           }
 
           console.log(`Finished sending existing content to client ${socket.id}`);
@@ -198,15 +203,15 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
           console.error(`Error retrieving content from storage for session ${sessionId}:`, storageError);
         }
 
-        if (callback) {
-          callback({
-            success: true,
-            token: result.token,
-            clients: clientsList
-          });
-        }
+        // CRITICAL FIX: Broadcast to existing clients that a new user has joined
+        socket.to(sessionId).emit('client-joined', {
+          clientId: socket.id,
+          clientName: clientName,
+          sessionId: sessionId
+        });
 
         console.log(`Client ${clientName} (${socket.id}) joined session ${sessionId}`);
+        console.log(`[USER-LIST-FIX] Broadcasted client-joined event to existing clients in session ${sessionId}`);
       } catch (error) {
         console.error('Error in join handler:', error);
         if (callback) {

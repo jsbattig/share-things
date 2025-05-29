@@ -237,8 +237,33 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
             parsedData = new Blob([decryptedData], { type: content.metadata.mimeType });
           }
           
-          // Add decrypted content to store
-          addContent(content, parsedData);
+          // CRITICAL FIX: Update existing content with decrypted data instead of calling addContent
+          setContents(prevContents => {
+            const newContents = new Map(prevContents);
+            const existingContent = newContents.get(content.contentId);
+            
+            if (existingContent) {
+              // Update existing content with decrypted data
+              newContents.set(content.contentId, {
+                ...existingContent,
+                data: parsedData,
+                isComplete: true,
+                lastAccessed: new Date()
+              });
+              console.log(`[RENDER-FIX] Updated existing content ${content.contentId} with decrypted data`);
+            } else {
+              // Create new content entry with data
+              newContents.set(content.contentId, {
+                metadata: content,
+                data: parsedData,
+                isComplete: true,
+                lastAccessed: new Date()
+              });
+              console.log(`[RENDER-FIX] Created new content ${content.contentId} with decrypted data`);
+            }
+            
+            return newContents;
+          });
         } catch (error) {
           console.error('Error decrypting content:', error);
           // Add content without data as a fallback

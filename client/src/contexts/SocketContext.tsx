@@ -411,8 +411,15 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // Create passphrase fingerprint
       const fingerprint = await generateFingerprint(passphrase);
       
+      // Add timeout to prevent infinite waiting on rejoin
+      const rejoinTimeoutId = setTimeout(() => {
+        isRejoining.current = false;
+        console.error('[Socket] Rejoin session timeout - no response from server');
+      }, 10000); // 10 second timeout for rejoin
+      
       // Join session
       socket.emit('join', { sessionId, clientName, fingerprint }, (response: JoinResponse) => {
+        clearTimeout(rejoinTimeoutId); // Clear timeout on response
         isRejoining.current = false; // Reset flag when response received
         
         if (response.success) {
@@ -490,12 +497,20 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           cachedContentIds = [];
         }
         
+        // Add timeout to prevent infinite waiting
+        const timeoutId = setTimeout(() => {
+          console.error('[SocketContext] Join session timeout - no response from server');
+          reject(new Error('Join session timeout - server did not respond'));
+        }, 15000); // 15 second timeout
+        
         socketInstance.emit('join', {
           sessionId,
           clientName,
           fingerprint,
           cachedContentIds
         }, (response: JoinResponse) => {
+          clearTimeout(timeoutId); // Clear timeout on successful response
+          
           if (response.success && response.token) {
             // Store session token
             localStorage.setItem('sessionToken', response.token);
