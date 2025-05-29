@@ -531,7 +531,9 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     // If already joining the same session, return existing Promise
     if (joinState.current.isJoining && joinState.current.sessionId === sessionId) {
       console.log('[SocketContext] Join already in progress for same session, returning existing Promise');
-      return joinState.current.currentJoinPromise!;
+      if (joinState.current.currentJoinPromise) {
+        return joinState.current.currentJoinPromise;
+      }
     }
 
     // If joining a different session, wait for current to complete

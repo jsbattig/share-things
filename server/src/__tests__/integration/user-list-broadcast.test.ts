@@ -1,8 +1,28 @@
 import { Server } from 'socket.io';
-import { createServer } from 'http';
+import { createServer, Server as HttpServer } from 'http';
 import { io as Client, Socket as ClientSocket } from 'socket.io-client';
+import { AddressInfo } from 'net';
 import { setupSocketHandlers } from '../../socket';
 import { SessionManager, PassphraseFingerprint } from '../../services/SessionManager';
+
+// Type for client events in tests
+interface ClientEvent {
+  event: string;
+  data: {
+    clientName?: string;
+    sessionId?: string;
+    [key: string]: unknown;
+  };
+}
+
+// Type for join result
+interface JoinResult {
+  success: boolean;
+  token?: string;
+  error?: string;
+  clients?: Array<{ name: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+}
 
 // Mock fingerprint generation for testing
 function createMockFingerprint(passphrase: string): PassphraseFingerprint {
@@ -16,7 +36,7 @@ function createMockFingerprint(passphrase: string): PassphraseFingerprint {
 }
 
 describe('User List Broadcast Integration Tests', () => {
-  let httpServer: any;
+  let httpServer: HttpServer;
   let io: Server;
   let sessionManager: SessionManager;
   let clientSocket1: ClientSocket;
@@ -48,7 +68,7 @@ describe('User List Broadcast Integration Tests', () => {
     // Start server
     await new Promise<void>((resolve) => {
       httpServer.listen(() => {
-        const port = (httpServer.address() as any).port;
+        const port = (httpServer.address() as AddressInfo).port;
         serverUrl = `http://localhost:${port}`;
         resolve();
       });
@@ -81,9 +101,9 @@ describe('User List Broadcast Integration Tests', () => {
     const fingerprint = createMockFingerprint(passphrase);
 
     // Track events received by each client
-    const client1Events: any[] = [];
-    const client2Events: any[] = [];
-    const client3Events: any[] = [];
+    const client1Events: ClientEvent[] = [];
+    const client2Events: ClientEvent[] = [];
+    const client3Events: ClientEvent[] = [];
 
     // Connect first client
     clientSocket1 = Client(serverUrl);
@@ -98,7 +118,7 @@ describe('User List Broadcast Integration Tests', () => {
     });
 
     // Client 1 joins session
-    const joinResult1 = await new Promise<any>((resolve) => {
+    const joinResult1 = await new Promise<JoinResult>((resolve) => {
       clientSocket1.emit('join', {
         sessionId,
         clientName: 'Client1',
@@ -108,7 +128,7 @@ describe('User List Broadcast Integration Tests', () => {
 
     expect(joinResult1.success).toBe(true);
     expect(joinResult1.clients).toHaveLength(1);
-    expect(joinResult1.clients[0].name).toBe('Client1');
+    expect(joinResult1.clients?.[0]?.name).toBe('Client1');
 
     // Connect second client
     clientSocket2 = Client(serverUrl);
@@ -123,7 +143,7 @@ describe('User List Broadcast Integration Tests', () => {
     });
 
     // Client 2 joins session - this should trigger broadcast to Client 1
-    const joinResult2 = await new Promise<any>((resolve) => {
+    const joinResult2 = await new Promise<JoinResult>((resolve) => {
       clientSocket2.emit('join', {
         sessionId,
         clientName: 'Client2',
@@ -159,7 +179,7 @@ describe('User List Broadcast Integration Tests', () => {
     });
 
     // Client 3 joins session - this should trigger broadcast to Client 1 and Client 2
-    const joinResult3 = await new Promise<any>((resolve) => {
+    const joinResult3 = await new Promise<JoinResult>((resolve) => {
       clientSocket3.emit('join', {
         sessionId,
         clientName: 'Client3',
