@@ -84,11 +84,12 @@ interface ContentStoreContextType {
   getChunkStore: (contentId: string) => ChunkStore | undefined;
   updateContentLastAccessed: (contentId: string) => void;
   getContentList: () => SharedContent[];
-  removeContent: (contentId: string) => boolean;
+  removeContent: (contentId: string) => Promise<boolean>;
   clearContents: () => void;
   clearSessionStorage: () => void;
   getCachedContentIds: () => string[];
   restoreCachedContent: () => string[];
+  isContentComplete: (contentId: string) => boolean;
 }
 
 // Create context
@@ -109,6 +110,9 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // Track reassembly operations to prevent multiple simultaneous reassemblies
   const reassemblyInProgress = React.useRef<Set<string>>(new Set());
   
+  // Store current sessionId
+  const currentSessionId = React.useRef<string | null>(null);
+  
   // Keep refs in sync with state
   React.useEffect(() => {
     contentsRef.current = contents;
@@ -119,7 +123,8 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, [chunkStores]);
   
   // Socket context
-  const { socket } = useSocket();
+  const socketContext = useSocket();
+  const { socket } = socketContext;
   
   // Services
   const { chunkTrackingService, urlRegistry } = useServices();
@@ -137,8 +142,16 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     // Handle content received
     const handleContent = async (data: { sessionId: string, content: SharedContent, data?: string }) => {
-      const { content, data: contentData } = data;
+      const { sessionId, content, data: contentData } = data;
+      
+      // Store current sessionId
+      currentSessionId.current = sessionId;
       const passphrase = getPassphrase();
+      
+      // CRITICAL DIAGNOSTIC: Log content metadata timing
+      console.log(`[METADATA-TIMING] Content metadata received for ${content.contentId}`);
+      console.log(`[METADATA-TIMING] Current timestamp: ${Date.now()}`);
+      console.log(`[METADATA-TIMING] Content is chunked: ${content.isChunked}, Total chunks: ${content.totalChunks}`);
       
       // Enhanced debug logging for content metadata
       console.log(`[ContentStore] Received content ID: ${content.contentId}, Timestamp: ${content.timestamp}, Type: ${typeof content.timestamp}`);
@@ -148,6 +161,28 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       
       // DEBUG: Log existing content IDs before adding new content
       console.log(`[ContentStore] Existing content IDs before adding:`, Array.from(contents.keys()));
+      
+      // CRITICAL FIX: Immediately store the content metadata in both state and ref
+      console.log(`[METADATA-FIX] Storing content metadata immediately for ${content.contentId}`);
+      
+      // Update the ref immediately for synchronous access
+      const newContentEntry: ContentEntry = {
+        metadata: content,
+        isComplete: !content.isChunked, // Non-chunked content is immediately complete
+        lastAccessed: new Date(),
+        data: undefined // Will be set when chunks are reassembled
+      };
+      
+      contentsRef.current.set(content.contentId, newContentEntry);
+      console.log(`[METADATA-FIX] Content metadata stored in ref, count: ${contentsRef.current.size}`);
+      
+      // Also update state for UI reactivity
+      setContents(prevContents => {
+        const newContents = new Map(prevContents);
+        newContents.set(content.contentId, newContentEntry);
+        console.log(`[METADATA-FIX] Content metadata stored in state, count: ${newContents.size}`);
+        return newContents;
+      });
       
       // Add content to store
       if (contentData) {
@@ -199,14 +234,24 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // Handle chunk received
     const handleChunk = async (data: { sessionId: string, chunk: { contentId: string; [key: string]: unknown } }) => {
       try {
+        // Store current sessionId
+        currentSessionId.current = data.sessionId;
         const { chunk: serializedChunk } = data;
         const passphrase = getPassphrase();
         
         console.log(`[ContentStore] Received chunk data:`, serializedChunk);
+        console.log(`[CHUNK-TIMING] Chunk ${serializedChunk.chunkIndex}/${serializedChunk.totalChunks} received for ${serializedChunk.contentId}`);
         
-        // Check if content metadata exists before processing chunk
-        const contentExists = contents.has(serializedChunk.contentId as string);
+        // CRITICAL FIX: Simple but effective race condition handling
+        // Check if content metadata exists, if not, process chunk anyway
+        // The addChunk function will handle missing metadata gracefully
+        // Use contentsRef for immediate synchronous access
+        const contentExists = contentsRef.current.has(serializedChunk.contentId as string);
         console.log(`[ContentStore] Content metadata exists for ${serializedChunk.contentId}: ${contentExists}`);
+        
+        if (!contentExists) {
+          console.log(`[RACE-CONDITION-FIX] Metadata missing for chunk ${serializedChunk.chunkIndex}, will process anyway`);
+        }
         
         // DEBUG: Log all content IDs to help diagnose metadata issues
         console.log(`[ContentStore] All content IDs in store:`, Array.from(contents.keys()));
@@ -246,6 +291,25 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         if (isComplete) {
           console.log(`[ContentStore] All chunks received for ${chunk.contentId}, starting reassembly`);
           
+          // CRITICAL FIX: Ensure content is marked as complete BEFORE reassembly
+          setContents(prev => {
+            const newContents = new Map(prev);
+            const content = newContents.get(chunk.contentId);
+            
+            if (content) {
+              console.log(`[COMPLETION-FIX] Marking content ${chunk.contentId} as complete before reassembly`);
+              newContents.set(chunk.contentId, {
+                ...content,
+                isComplete: true,
+                lastAccessed: new Date()
+              });
+            } else {
+              console.error(`[COMPLETION-FIX] Content ${chunk.contentId} not found in contents map during completion`);
+            }
+            
+            return newContents;
+          });
+          
           // Use setTimeout to ensure state updates have been processed
           setTimeout(async () => {
             try {
@@ -261,23 +325,6 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
               } else {
                 console.log(`[STORE] Reassembly already in progress for ${chunk.contentId.substring(0, 8)}, skipping duplicate call`);
               }
-              
-              // Double-check that the content is marked as complete
-              setContents(prev => {
-                const newContents = new Map(prev);
-                const content = newContents.get(chunk.contentId);
-                
-                if (content && !content.isComplete) {
-                  console.log(`[ContentStore] Forcing content ${chunk.contentId} to be marked as complete`);
-                  newContents.set(chunk.contentId, {
-                    ...content,
-                    isComplete: true,
-                    lastAccessed: new Date()
-                  });
-                }
-                
-                return newContents;
-              });
             } catch (error) {
               console.error(`[ContentStore] Error during reassembly for ${chunk.contentId}:`, error);
             }
@@ -288,14 +335,22 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
     };
 
+    // Handle content removal by other clients
+    const handleContentRemoved = (data: { sessionId: string, contentId: string }) => {
+      console.log(`[DELETION-DEBUG] Received content-removed event for ${data.contentId}`);
+      performLocalContentCleanup(data.contentId);
+    };
+
     // Add event listeners
     socket.on('content', handleContent);
     socket.on('chunk', handleChunk);
+    socket.on('content-removed', handleContentRemoved);
 
     // Clean up on unmount
     return () => {
       socket.off('content', handleContent);
       socket.off('chunk', handleChunk);
+      socket.off('content-removed', handleContentRemoved);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
@@ -321,10 +376,13 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         metadata: content,
         data,
         lastAccessed: new Date(),
-        isComplete: !content.isChunked
+        // UNIFIED COMPLETION LOGIC: If we have data locally, it's complete
+        // This ensures locally shared content is immediately marked as complete
+        isComplete: data ? true : !content.isChunked
       };
 
       newContents.set(content.contentId, contentEntry);
+      console.log(`[addContent] Added content ${content.contentId}, isComplete: ${contentEntry.isComplete}, hasData: ${!!data}, isChunked: ${content.isChunked}`);
       return newContents;
     });
 
@@ -359,6 +417,22 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // Check if content metadata exists for this chunk
     const contentExists = currentContents.has(chunk.contentId);
     console.log(`[addChunk] Content metadata exists for ${chunk.contentId}: ${contentExists}`);
+    
+    // CRITICAL FIX: Skip chunk processing for locally shared content that's already complete
+    if (contentExists) {
+      const existingContent = currentContents.get(chunk.contentId);
+      if (existingContent && existingContent.isComplete && existingContent.data) {
+        console.log(`[addChunk] Skipping chunk processing for locally shared content ${chunk.contentId} - already complete with data`);
+        return true; // Return true to indicate content is complete
+      }
+    }
+    
+    // ADDITIONAL FIX: Also check the contents state map for existing complete content
+    const contentsMapContent = contents.get(chunk.contentId);
+    if (contentsMapContent && contentsMapContent.isComplete && contentsMapContent.data) {
+      console.log(`[addChunk] Skipping chunk processing for content ${chunk.contentId} - already complete in contents map`);
+      return true; // Return true to indicate content is complete
+    }
     
     // Check if this chunk already exists to prevent duplicate processing
     const existingChunkStore = currentChunkStores.get(chunk.contentId);
@@ -463,7 +537,12 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
       
       // Force update the content to mark it as complete
-      const contentEntry = contents.get(chunk.contentId);
+      // CRITICAL FIX: Check contentsRef first, then fallback to contents state
+      let contentEntry = contentsRef.current.get(chunk.contentId);
+      if (!contentEntry) {
+        contentEntry = contents.get(chunk.contentId);
+      }
+      
       if (contentEntry) {
         console.log(`[addChunk] Marking content ${chunk.contentId} as complete`);
         
@@ -537,6 +616,43 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
   }, []);
 
   /**
+   * Unified function to check if content is complete
+   * Content is complete when:
+   * 1. It has data locally (for sent content or small received content), OR
+   * 2. It has metadata AND all chunks have been received (for chunked received content)
+   */
+  const isContentComplete = React.useCallback((contentId: string): boolean => {
+    const content = contentsRef.current.get(contentId);
+    const chunkStore = chunkStoresRef.current.get(contentId);
+    
+    if (!content) {
+      return false;
+    }
+    
+    // If we have data locally, it's complete regardless of chunking status
+    if (content.data) {
+      console.log(`[isContentComplete] Content ${contentId} is complete - has local data`);
+      return true;
+    }
+    
+    // If it's not chunked and we have metadata, it's complete
+    if (!content.metadata.isChunked) {
+      console.log(`[isContentComplete] Content ${contentId} is complete - not chunked with metadata`);
+      return true;
+    }
+    
+    // For chunked content, check if all chunks are received
+    if (chunkStore && content.metadata.totalChunks) {
+      const hasAllChunks = chunkStore.receivedChunks === content.metadata.totalChunks;
+      console.log(`[isContentComplete] Content ${contentId} chunked completion: ${chunkStore.receivedChunks}/${content.metadata.totalChunks} chunks = ${hasAllChunks}`);
+      return hasAllChunks;
+    }
+    
+    console.log(`[isContentComplete] Content ${contentId} is not complete - missing chunks or metadata`);
+    return false;
+  }, []);
+
+  /**
    * Decrypts and reassembles chunked content
    * @param contentId Content ID
    * @param passphrase Encryption passphrase
@@ -570,7 +686,11 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     });
     try {
       // Get content and chunk store
-      const content = contents.get(contentId);
+      // CRITICAL FIX: Check contentsRef first, then fallback to contents state
+      let content = contentsRef.current.get(contentId);
+      if (!content) {
+        content = contents.get(contentId);
+      }
       const chunkStore = chunkStoresRef.current.get(contentId);
       
       if (!chunkStore) {
@@ -778,10 +898,38 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
             encryptedDataLength: chunk.encryptedData?.byteLength || 'undefined',
             ivLength: chunk.iv?.byteLength || 'undefined',
             errorMessage: error instanceof Error ? error.message : String(error),
+            contentId: contentId,
+            passphrase: passphrase ? `${passphrase.substring(0, 2)}***` : 'undefined',
+            contentType: effectiveContent.metadata.contentType,
             errorStack: error instanceof Error ? error.stack : 'No stack trace'
           });
           
-          throw error;
+          // Mark content with decryption error for better user feedback
+          setContents(prev => {
+            const newContents = new Map(prev);
+            const content = newContents.get(contentId);
+            if (content) {
+              newContents.set(contentId, {
+                ...content,
+                data: `[Decryption failed: ${error instanceof Error ? error.message : 'Wrong passphrase or corrupted data'}]`,
+                isComplete: true,
+                lastAccessed: new Date()
+              });
+            }
+            return newContents;
+          });
+          
+          // Clean up and return early
+          console.log(`[decryptAndReassemble] Cleaning up after error for content ${contentId}`);
+          
+          // Remove from chunk stores to prevent memory leaks
+          setChunkStores(prev => {
+            const newStores = new Map(prev);
+            newStores.delete(contentId);
+            return newStores;
+          });
+          
+          return;
         }
       }
       
@@ -848,48 +996,47 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
           // Immediately update content with the blob
           console.log(`[decryptAndReassemble] Updating content with reassembled Blob`);
           
-          // CRITICAL FIX: Use the functional state update pattern to ensure we're working with the latest state
+          // CRITICAL FIX: Update both ref and state with the reassembled data
+          const latestContent = contentsRef.current.get(contentId) || effectiveContent;
+          
+          // Create a properly typed ContentEntry
+          const updatedContent: ContentEntry = {
+            metadata: {
+              ...latestContent.metadata,
+              contentType: detectedContentType,
+              // Ensure metadata has the correct size and MIME type
+              metadata: {
+                ...latestContent.metadata.metadata,
+                size: reassembledBlob.size,
+                mimeType: detectedMimeType,
+                imageInfo: latestContent.metadata.contentType === ContentType.IMAGE ? {
+                  // Safely copy existing image info properties or create default ones
+                  width: latestContent.metadata.metadata.imageInfo?.width || 800,
+                  height: latestContent.metadata.metadata.imageInfo?.height || 600,
+                  format: latestContent.metadata.metadata.imageInfo?.format || 'png',
+                  thumbnailData: latestContent.metadata.metadata.imageInfo?.thumbnailData
+                } : undefined
+              }
+            },
+            
+            data: reassembledBlob,
+            isComplete: true,
+            lastAccessed: new Date()
+          };
+          
+          // Update ref immediately for synchronous access
+          contentsRef.current.set(contentId, updatedContent);
+          console.log(`[decryptAndReassemble] Updated contentsRef with blob data`);
+          
+          // Also update state for UI reactivity
           setContents(prevContents => {
-            // Create a new map from the previous contents to maintain all existing content
             const newContents = new Map(prevContents);
-            const latestContent = prevContents.get(contentId) || effectiveContent;
+            newContents.set(contentId, updatedContent);
             
             console.log(`[decryptAndReassemble] Current content count before blob update: ${prevContents.size}`);
             console.log(`[decryptAndReassemble] Current content IDs before blob update:`, Array.from(prevContents.keys()));
-            
-            // Create a properly typed ContentEntry
-            const updatedContent: ContentEntry = {
-              metadata: {
-                ...latestContent.metadata,
-                contentType: detectedContentType,
-                // Ensure metadata has the correct size and MIME type
-                metadata: {
-                  ...latestContent.metadata.metadata,
-                  size: reassembledBlob.size,
-                  mimeType: detectedMimeType,
-                  imageInfo: latestContent.metadata.contentType === ContentType.IMAGE ? {
-                    // Safely copy existing image info properties or create default ones
-                    width: latestContent.metadata.metadata.imageInfo?.width || 800,
-                    height: latestContent.metadata.metadata.imageInfo?.height || 600,
-                    format: latestContent.metadata.metadata.imageInfo?.format || 'png',
-                    thumbnailData: latestContent.metadata.metadata.imageInfo?.thumbnailData
-                  } : undefined
-                }
-              },
-              
-              data: reassembledBlob,
-              isComplete: true,
-              lastAccessed: new Date()
-            };
-            
-            // Update just this specific content entry while preserving all others
-            newContents.set(contentId, updatedContent);
-            
-            // Log the content IDs in the new map before returning
             console.log(`[decryptAndReassemble] New content count: ${newContents.size}`);
             console.log(`[decryptAndReassemble] Content IDs in new map:`, Array.from(newContents.keys()));
-            
-            // Content has been updated with the reassembled blob
             
             return newContents;
           });
@@ -1049,26 +1196,30 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       }
       
       // Update content with reassembled data
+      console.log(`[decryptAndReassemble] Updating content with reassembled data`);
+      
+      // Get the latest content entry from ref
+      const latestContent = contentsRef.current.get(contentId) || effectiveContent;
+      
+      // Create a properly typed ContentEntry
+      const updatedEntry: ContentEntry = {
+        metadata: latestContent.metadata,
+        data: finalData,
+        isComplete: true,
+        lastAccessed: new Date()
+      };
+      
+      // Update ref immediately for synchronous access
+      contentsRef.current.set(contentId, updatedEntry);
+      console.log(`[decryptAndReassemble] Updated contentsRef with text/blob data`);
+      
+      // Also update state for UI reactivity
       setContents(prevContents => {
         const newContents = new Map(prevContents);
-        console.log(`[decryptAndReassemble] Updating content with reassembled data`);
-        console.log(`[decryptAndReassemble] Current content count before non-image update: ${prevContents.size}`);
-        console.log(`[decryptAndReassemble] Current content IDs before non-image update:`, Array.from(prevContents.keys()));
-        
-        // Get the latest content entry in case it was updated
-        const latestContent = prevContents.get(contentId) || effectiveContent;
-        
-        // Create a properly typed ContentEntry
-        const updatedEntry: ContentEntry = {
-          metadata: latestContent.metadata,
-          data: finalData,
-          isComplete: true,
-          lastAccessed: new Date()
-        };
-        
-        // Update just this specific content entry while preserving all others
         newContents.set(contentId, updatedEntry);
         
+        console.log(`[decryptAndReassemble] Current content count before non-image update: ${prevContents.size}`);
+        console.log(`[decryptAndReassemble] Current content IDs before non-image update:`, Array.from(prevContents.keys()));
         console.log(`[decryptAndReassemble] New content count after non-image update: ${newContents.size}`);
         console.log(`[decryptAndReassemble] Content IDs after non-image update:`, Array.from(newContents.keys()));
         console.log(`[decryptAndReassemble] Content updated with data, isComplete set to true`);
@@ -1168,6 +1319,13 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // Create stable references that only change when content count changes
   const contentCount = contents.size;
   const contentKeys = React.useMemo(() => Array.from(contents.keys()).sort().join(','), [contents]);
+  const contentStates = React.useMemo(() => {
+    // Create a hash of content states to detect when content is updated (not just added/removed)
+    return Array.from(contents.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([id, entry]) => `${id}:${entry.isComplete}:${!!entry.data}`)
+      .join('|');
+  }, [contents]);
 
   const getContent = React.useCallback((contentId: string): ContentEntry | undefined => {
     const content = contents.get(contentId);
@@ -1178,7 +1336,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     
     return content;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contentCount]); // contentCount used intentionally for performance optimization
+  }, [contentCount, contentKeys, contentStates]); // contentCount, contentKeys, and contentStates used intentionally for performance optimization
 
   /**
    * Gets a list of all content
@@ -1187,51 +1345,112 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
   const getContentList = React.useCallback((): SharedContent[] => {
     return Array.from(contents.values()).map(entry => entry.metadata);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contentKeys]); // contentKeys used intentionally for performance optimization
+  }, [contentKeys, contentStates]); // contentKeys and contentStates used intentionally for performance optimization
 
   /**
    * Removes content from the store
    * @param contentId Content ID
    * @returns True if content was removed
    */
-  const removeContent = React.useCallback((contentId: string): boolean => {
+  const removeContent = React.useCallback(async (contentId: string): Promise<boolean> => {
     const content = contents.get(contentId);
     
     if (!content) {
+      console.log(`[DELETION-DEBUG] Content ${contentId} not found for removal`);
       return false;
     }
     
-    console.log(`[ContentStore] Removing content: ${contentId}`);
+    console.log(`[DELETION-DEBUG] Starting removal of content: ${contentId}`);
+    console.log(`[DELETION-DEBUG] Content metadata:`, content.metadata);
+    console.log(`[DELETION-DEBUG] Content is complete: ${content.isComplete}`);
+    console.log(`[DELETION-DEBUG] Current contents count: ${contents.size}`);
+    console.log(`[DELETION-DEBUG] Current chunk stores count: ${chunkStoresRef.current.size}`);
+    
+    // CRITICAL FIX: First notify the server to remove the content
+    console.log(`[DELETION-DEBUG] Step 1: Notifying server to remove content from session`);
+    try {
+      const sessionId = currentSessionId.current || localStorage.getItem('sessionId');
+      if (socketContext && socket && sessionId) {
+        const result = await socketContext.removeContent(sessionId, contentId);
+        if (!result.success) {
+          console.error(`[DELETION-DEBUG] Server failed to remove content: ${result.error}`);
+          // Continue with local cleanup even if server removal fails
+        } else {
+          console.log(`[DELETION-DEBUG] Server successfully removed content ${contentId}`);
+        }
+      } else {
+        console.warn(`[DELETION-DEBUG] No active session found, performing local cleanup only`);
+      }
+    } catch (error) {
+      console.error(`[DELETION-DEBUG] Error communicating with server:`, error);
+      // Continue with local cleanup even if server communication fails
+    }
+    
+    // Perform local cleanup (this will also be triggered by the content-removed event)
+    performLocalContentCleanup(contentId);
+    
+    return true;
+  }, [contents, socketContext, socket]);
+
+  /**
+   * Performs local cleanup of content (used both for local removal and when receiving content-removed events)
+   */
+  const performLocalContentCleanup = React.useCallback((contentId: string) => {
+    console.log(`[DELETION-DEBUG] Performing local cleanup for content: ${contentId}`);
     
     // 1. Revoke all URL objects for this content (don't preserve any URLs when explicitly removing content)
+    console.log(`[DELETION-DEBUG] Step 1: Revoking URLs for ${contentId}`);
     urlRegistry.revokeAllUrls(contentId, false);
     
     // 2. & 3. Remove content and chunk store - batch these updates
+    console.log(`[DELETION-DEBUG] Step 2-3: Removing from state maps`);
     React.startTransition(() => {
       setContents(prevContents => {
         const newContents = new Map(prevContents);
-        newContents.delete(contentId);
+        const wasDeleted = newContents.delete(contentId);
+        console.log(`[DELETION-DEBUG] Content deleted from contents map: ${wasDeleted}, new size: ${newContents.size}`);
         return newContents;
       });
       
       setChunkStores(prevChunkStores => {
         const newChunkStores = new Map(prevChunkStores);
-        newChunkStores.delete(contentId);
+        const wasDeleted = newChunkStores.delete(contentId);
+        console.log(`[DELETION-DEBUG] Chunk store deleted from chunk stores map: ${wasDeleted}, new size: ${newChunkStores.size}`);
         return newChunkStores;
       });
     });
     
     // 4. Remove from chunkStoresRef.current
     if (chunkStoresRef.current.has(contentId)) {
-      console.log(`[ContentStore] Removing content from chunkStoresRef: ${contentId}`);
-      chunkStoresRef.current.delete(contentId);
+      console.log(`[DELETION-DEBUG] Step 4: Removing content from chunkStoresRef: ${contentId}`);
+      const wasDeleted = chunkStoresRef.current.delete(contentId);
+      console.log(`[DELETION-DEBUG] Removed from chunkStoresRef: ${wasDeleted}, new size: ${chunkStoresRef.current.size}`);
+    } else {
+      console.log(`[DELETION-DEBUG] Step 4: Content ${contentId} not found in chunkStoresRef`);
     }
     
     // 5. Clean up any remaining chunks in tracking service
+    console.log(`[DELETION-DEBUG] Step 5: Cleaning up chunks in tracking service`);
     chunkTrackingService.cleanupChunks(contentId);
     
-    return true;
-  }, [contents, urlRegistry, chunkTrackingService]);
+    // 6. CRITICAL: Clear from sessionStorage to prevent resurrection on reload
+    console.log(`[DELETION-DEBUG] Step 6: Clearing from sessionStorage to prevent resurrection`);
+    try {
+      const cachedState = sessionStorage.getItem('contentStoreState');
+      if (cachedState) {
+        const parsedState = JSON.parse(cachedState);
+        if (parsedState.contents && parsedState.contents[contentId]) {
+          delete parsedState.contents[contentId];
+          sessionStorage.setItem('contentStoreState', JSON.stringify(parsedState));
+          console.log(`[DELETION-DEBUG] Removed ${contentId} from sessionStorage cache`);
+        }
+      }
+    } catch (error) {
+      console.error(`[DELETION-DEBUG] Error clearing sessionStorage:`, error);
+    }
+    
+    console.log(`[DELETION-DEBUG] Local cleanup completed for ${contentId}`);
+  }, [urlRegistry, chunkTrackingService]);
 
   /**
    * Clears all content from the store
@@ -1362,7 +1581,8 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     clearContents,
     clearSessionStorage,
     getCachedContentIds,
-    restoreCachedContent
+    restoreCachedContent,
+    isContentComplete
   }), [
     contents,
     addContent,
@@ -1375,7 +1595,8 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     clearContents,
     clearSessionStorage,
     getCachedContentIds,
-    restoreCachedContent
+    restoreCachedContent,
+    isContentComplete
   ]);
 
   // Set up periodic cleanup for orphaned chunks and URLs

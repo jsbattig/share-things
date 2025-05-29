@@ -49,15 +49,16 @@ const DEFAULT_OPTIONS: ChunkingOptions = {
 export async function chunkAndEncryptBlob(
   blob: Blob,
   passphrase: string,
-  options: ChunkingOptions = {}
+  options: ChunkingOptions = {},
+  existingContentId?: string
 ): Promise<{ chunks: Chunk[]; contentId: string }> {
   // Merge options with defaults
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const chunkSize = opts.chunkSize || DEFAULT_OPTIONS.chunkSize || 64 * 1024;
   const onProgress = opts.onProgress || DEFAULT_OPTIONS.onProgress || ((): void => { /* Fallback progress handler */ });
   
-  // Generate content ID
-  const contentId = uuidv4();
+  // Use existing content ID or generate new one
+  const contentId = existingContentId || uuidv4();
   
   // Calculate total chunks
   const totalChunks = Math.ceil(blob.size / chunkSize);

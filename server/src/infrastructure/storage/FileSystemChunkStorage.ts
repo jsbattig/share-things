@@ -207,6 +207,19 @@ export class FileSystemChunkStorage implements IChunkStorage {
     }
   }
 
+  async getReceivedChunkCount(contentId: string): Promise<number> {
+    if (!this.isInitialized || !this.db) {
+      throw new Error('Storage not initialized');
+    }
+
+    const result = await this.db.get<{ count: number }>(
+      'SELECT COUNT(*) as count FROM chunks WHERE content_id = ?',
+      contentId
+    );
+
+    return result?.count || 0;
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async markContentComplete(_contentId: string): Promise<void> {
     // Content is automatically marked complete when last chunk is saved

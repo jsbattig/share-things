@@ -131,6 +131,13 @@ export interface IChunkStorage {
   listContent(sessionId: string, limit?: number): Promise<ContentMetadata[]>;
 
   /**
+   * Get the number of chunks received for a content item
+   * @param contentId ID of the content
+   * @returns Number of chunks received
+   */
+  getReceivedChunkCount(contentId: string): Promise<number>;
+
+  /**
    * Mark content as complete
    * @param contentId ID of the content
    */

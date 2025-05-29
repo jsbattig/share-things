@@ -319,18 +319,20 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
               // Reset uploading state for non-chunked files
               setIsSharing(false);
             } else {
-              // For large files, use chunking
+              // For large files, use chunking - pass the original content ID to maintain consistency
               const { chunks, contentId } = await chunkAndEncryptBlob(
                 new Blob([data as ArrayBuffer], { type: file.type }),
-                passphrase
+                passphrase,
+                {},
+                content.contentId
               );
               
-              // Log content ID differences
+              // Log content ID consistency
+              console.log(`[ShareFile] Using consistent content ID: ${contentId}`);
               console.log(`[ShareFile] Original content ID: ${content.contentId}`);
-              console.log(`[ShareFile] Chunking generated content ID: ${contentId}`);
               console.log(`[ShareFile] Sender info - ID: ${content.senderId}, Name: ${content.senderName}`);
               
-              // Send content metadata first
+              // Send content metadata first - now using the same ID throughout
               const encryptedContent = {
                 ...content,
                 contentId

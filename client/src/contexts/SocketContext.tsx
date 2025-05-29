@@ -45,6 +45,7 @@ interface SocketContextType {
   sendChunk: (sessionId: string, chunk: ChunkData) => void;
   rejoinSession: (sessionId: string, clientName: string, passphrase: string) => Promise<void>;
   ensureConnected: (sessionId: string) => Promise<boolean>;
+  removeContent: (sessionId: string, contentId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 // Create context
@@ -695,6 +696,32 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
 
+  /**
+   * Remove content from the session
+   * @param sessionId Session ID
+   * @param contentId Content ID to remove
+   * @returns Promise with success status
+   */
+  const removeContent = (sessionId: string, contentId: string): Promise<{ success: boolean; error?: string }> => {
+    return new Promise((resolve) => {
+      if (socket && isConnected) {
+        console.log(`[SocketContext] Requesting removal of content ${contentId} from session ${sessionId}`);
+        
+        socket.emit('remove-content', { sessionId, contentId }, (response: { success: boolean; error?: string }) => {
+          if (response.success) {
+            console.log(`[SocketContext] Content ${contentId} successfully removed from server`);
+          } else {
+            console.error(`[SocketContext] Failed to remove content ${contentId}:`, response.error);
+          }
+          resolve(response);
+        });
+      } else {
+        console.error('[SocketContext] Cannot remove content: socket not connected');
+        resolve({ success: false, error: 'Socket not connected' });
+      }
+    });
+  };
+
   // Context value
   const value: SocketContextType = {
     socket,
@@ -707,7 +734,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     sendContent,
     sendChunk,
     rejoinSession,
-    ensureConnected
+    ensureConnected,
+    removeContent
   };
 
   return (

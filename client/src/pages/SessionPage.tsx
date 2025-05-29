@@ -50,7 +50,7 @@ const SessionPage: React.FC = () => {
   
   // Context
   const { socket, isConnected, connectionStatus, joinSession, leaveSession, rejoinSession, ensureConnected } = useSocket();
-  const { clearContents, clearSessionStorage, getCachedContentIds, restoreCachedContent } = useContentStore();
+  const { clearContents } = useContentStore();
   
   // Load session info from localStorage
   useEffect(() => {
@@ -96,19 +96,11 @@ const SessionPage: React.FC = () => {
         
         console.log('Joining session...');
         
-        // KISS: Get cached content IDs to report to server
-        const cachedContentIds = getCachedContentIds();
-        console.log(`[SessionPage] Reporting ${cachedContentIds.length} cached content IDs to server:`, cachedContentIds);
-        
-        // For now, use the existing joinSession (server will get empty array)
-        // TODO: Modify joinSession to accept cachedContentIds parameter
+        // Join session
         const response = await joinSession(sessionId, clientName, passphrase);
         setClients(response.clients || []);
         
-        // KISS: Restore cached content using existing mechanisms
-        console.log('[SessionPage] Restoring cached content after successful join');
-        const restoredIds = restoreCachedContent();
-        console.log(`[SessionPage] Restored ${restoredIds.length} content items from cache`);
+        console.log('[SessionPage] Successfully joined session');
         
         toast({
           title: 'Joined session',
@@ -317,9 +309,6 @@ const SessionPage: React.FC = () => {
       
       // Clear content store
       clearContents();
-      
-      // Clear sessionStorage to remove any cached content
-      clearSessionStorage();
       
       // Navigate to home
       navigate('/');

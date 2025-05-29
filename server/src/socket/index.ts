@@ -434,9 +434,14 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
             }
           );
 
-          // Mark content as complete if this is the last chunk
-          if (chunk.chunkIndex === chunk.totalChunks - 1) {
+          // Check if all chunks have been received
+          const receivedChunks = await chunkStorage.getReceivedChunkCount(chunk.contentId);
+          console.log(`Content ${chunk.contentId} now has ${receivedChunks}/${chunk.totalChunks} chunks`);
+          
+          // Mark content as complete if all chunks have been received
+          if (receivedChunks === chunk.totalChunks) {
             await chunkStorage.markContentComplete(chunk.contentId);
+            console.log(`Content ${chunk.contentId} marked as complete - all ${chunk.totalChunks} chunks received`);
           }
 
           console.log(`Chunk ${chunk.chunkIndex}/${chunk.totalChunks} for content ${chunk.contentId} saved to storage`);

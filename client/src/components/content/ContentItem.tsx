@@ -696,13 +696,13 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   /**
    * Deletes content
    */
-  const deleteContent = () => {
+  const deleteContent = async () => {
     try {
       // Mark content as being deleted in tracking service
       chunkTrackingService.cleanupChunks(contentId);
       
       // Remove content (this will also revoke URLs)
-      removeContent(contentId);
+      await removeContent(contentId);
       
       toast({
         title: 'Content removed',
