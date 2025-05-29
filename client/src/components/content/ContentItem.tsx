@@ -531,14 +531,87 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
       } else if (content.data instanceof Blob) {
         // Copy image or file content
         if (metadata.contentType === ContentType.IMAGE) {
-          // For images, use the clipboard API
-          const clipboardItems = [
-            new ClipboardItem({
-              [content.data.type]: content.data
-            })
-          ];
+          console.log('Attempting to copy image to clipboard:', {
+            blobSize: content.data.size,
+            blobType: content.data.type,
+            clipboardItemSupported: typeof ClipboardItem !== 'undefined',
+            clipboardWriteSupported: !!navigator.clipboard?.write,
+            isSecureContext: window.isSecureContext
+          });
           
-          await navigator.clipboard.write(clipboardItems);
+          // For images, try multiple approaches in order of preference
+          let copySuccess = false;
+          
+          // Approach 1: Try ClipboardItem API if supported
+          if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+            try {
+              console.log('Trying ClipboardItem API...');
+              const clipboardItems = [
+                new ClipboardItem({
+                  [content.data.type]: content.data
+                })
+              ];
+              
+              await navigator.clipboard.write(clipboardItems);
+              console.log('ClipboardItem API succeeded');
+              copySuccess = true;
+            } catch (clipboardError) {
+              console.warn('ClipboardItem API failed:', clipboardError);
+              // Continue to fallback approaches
+            }
+          }
+          
+          // Approach 2: Try converting to PNG and using ClipboardItem (some browsers are picky about formats)
+          if (!copySuccess && typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+            try {
+              console.log('Trying ClipboardItem with PNG conversion...');
+              // Create a canvas to convert the image to PNG
+              const canvas = document.createElement('canvas');
+              const ctx = canvas.getContext('2d');
+              const img = document.createElement('img');
+              
+              await new Promise<void>((resolve, reject) => {
+                img.onload = () => {
+                  canvas.width = img.width;
+                  canvas.height = img.height;
+                  ctx?.drawImage(img, 0, 0);
+                  
+                  canvas.toBlob(async (blob) => {
+                    if (blob) {
+                      try {
+                        const clipboardItems = [new ClipboardItem({ 'image/png': blob })];
+                        await navigator.clipboard.write(clipboardItems);
+                        console.log('ClipboardItem with PNG conversion succeeded');
+                        copySuccess = true;
+                        resolve();
+                      } catch (error) {
+                        console.warn('ClipboardItem with PNG conversion failed:', error);
+                        reject(error);
+                      }
+                    } else {
+                      reject(new Error('Failed to convert to PNG blob'));
+                    }
+                  }, 'image/png');
+                };
+                img.onerror = reject;
+                img.src = URL.createObjectURL(content.data as Blob);
+              });
+            } catch (conversionError) {
+              console.warn('PNG conversion approach failed:', conversionError);
+              // Continue to URL fallback
+            }
+          }
+          
+          // Approach 3: Fallback to URL copy
+          if (!copySuccess) {
+            console.log('Falling back to URL copy...');
+            const url = urlRegistry.createUrl(contentId, content.data);
+            await navigator.clipboard.writeText(url);
+            console.log('URL copy succeeded');
+            
+            // Clean up the URL after a delay
+            setTimeout(() => urlRegistry.revokeUrl(contentId, url), 5000);
+          }
         } else {
           // For other file types, create a temporary link and copy the URL
           const url = urlRegistry.createUrl(contentId, content.data);
