@@ -97,6 +97,237 @@ perform_installation() {
     cleanup_backup_files
 }
 
+# Detect and backup existing data before update
+detect_and_backup_existing_data() {
+    log_info "Detecting and backing up existing data..."
+    
+    # Create backup directory with timestamp
+    BACKUP_DIR="./backups/data/$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$BACKUP_DIR"
+    
+    # Check if containers are running and have data
+    if podman ps | grep -q "share-things-backend"; then
+        log_info "Found running backend container, backing up container data..."
+        
+        # Backup data from running container
+        if podman exec share-things-backend test -d /app/data; then
+            podman exec share-things-backend tar -czf /tmp/container-data-backup.tar.gz -C /app data
+            podman cp share-things-backend:/tmp/container-data-backup.tar.gz "$BACKUP_DIR/container-data-backup.tar.gz"
+            podman exec share-things-backend rm -f /tmp/container-data-backup.tar.gz
+            log_success "Container data backed up to $BACKUP_DIR/container-data-backup.tar.gz"
+        else
+            log_info "No container data directory found"
+        fi
+    fi
+    
+    # Check if host data directory exists
+    if [ -d "./data" ]; then
+        log_info "Found host data directory, backing up..."
+        cp -r "./data" "$BACKUP_DIR/host-data"
+        log_success "Host data backed up to $BACKUP_DIR/host-data"
+    else
+        log_info "No host data directory found"
+    fi
+    
+    # Store backup location for potential restoration
+    echo "$BACKUP_DIR" > "/tmp/data-backup-location"
+    log_success "Data backup completed at $BACKUP_DIR"
+}
+
+# Capture volume configuration from running containers
+capture_volume_configuration() {
+    log_info "Capturing volume configuration from running containers..."
+    
+    # Create volume config directory
+    mkdir -p "/tmp/volume-config"
+    
+    # Check backend container mounts
+    if podman ps | grep -q "share-things-backend"; then
+        podman inspect share-things-backend --format '{{range .Mounts}}{{.Source}}:{{.Destination}}:{{.Type}} {{end}}' > "/tmp/volume-config/backend-mounts.txt" 2>/dev/null || echo "no-mounts" > "/tmp/volume-config/backend-mounts.txt"
+        log_info "Backend container mounts: $(cat /tmp/volume-config/backend-mounts.txt)"
+    else
+        echo "no-container" > "/tmp/volume-config/backend-mounts.txt"
+    fi
+    
+    # Check frontend container mounts
+    if podman ps | grep -q "share-things-frontend"; then
+        podman inspect share-things-frontend --format '{{range .Mounts}}{{.Source}}:{{.Destination}}:{{.Type}} {{end}}' > "/tmp/volume-config/frontend-mounts.txt" 2>/dev/null || echo "no-mounts" > "/tmp/volume-config/frontend-mounts.txt"
+        log_info "Frontend container mounts: $(cat /tmp/volume-config/frontend-mounts.txt)"
+    else
+        echo "no-container" > "/tmp/volume-config/frontend-mounts.txt"
+    fi
+    
+    log_success "Volume configuration captured"
+}
+
+# Ensure host data directory exists and has proper structure
+ensure_host_data_directory() {
+    log_info "Ensuring host data directory exists with proper structure..."
+    
+    # Create host data directory structure
+    mkdir -p "./data/sessions"
+    
+    # Set proper permissions
+    chmod -R 755 "./data"
+    
+    # If we have a backup and no current data, restore from backup
+    if [ -f "/tmp/data-backup-location" ] && [ ! -f "./data/sessions.db" ]; then
+        BACKUP_DIR=$(cat /tmp/data-backup-location)
+        
+        if [ -f "$BACKUP_DIR/container-data-backup.tar.gz" ]; then
+            log_info "Restoring data from container backup..."
+            cd "./data"
+            tar -xzf "$BACKUP_DIR/container-data-backup.tar.gz" --strip-components=1
+            cd - > /dev/null
+            log_success "Data restored from container backup"
+        elif [ -d "$BACKUP_DIR/host-data" ]; then
+            log_info "Restoring data from host backup..."
+            cp -r "$BACKUP_DIR/host-data"/* "./data/"
+            log_success "Data restored from host backup"
+        fi
+    fi
+    
+    log_success "Host data directory prepared at ./data"
+}
+
+# Create update compose file with persistent data volumes
+create_update_compose_with_data_volumes() {
+    log_info "Creating update compose file with persistent data volumes..."
+    
+    # Ensure host data directory exists
+    ensure_host_data_directory
+    
+    # Set default values for ports if not provided
+    FRONTEND_PORT=${FRONTEND_PORT:-15000}
+    BACKEND_PORT=${BACKEND_PORT:-15001}
+    API_PORT=${API_PORT:-15001}
+    
+    # Create the directory if it doesn't exist
+    mkdir -p "$(pwd)/build/config"
+    
+    # Create update compose file with data volumes
+    COMPOSE_UPDATE_PATH="$(pwd)/build/config/podman-compose.update-with-data.yml"
+    
+    cat > "$COMPOSE_UPDATE_PATH" << EOF
+# Update configuration for ShareThings with Data Persistence
+version: '3'
+
+services:
+  backend:
+    build:
+      context: ../../server
+      dockerfile: Dockerfile
+      args:
+        - PORT=${API_PORT}
+    container_name: share-things-backend
+    hostname: backend
+    environment:
+      - NODE_ENV=development
+      - PORT=${API_PORT}
+      - SQLITE_DB_PATH=/app/data/sessions.db
+      - STORAGE_PATH=/app/data/sessions
+    ports:
+      - "${BACKEND_PORT}:${API_PORT}"
+    volumes:
+      - ../../data:/app/data:Z
+    restart: always
+    networks:
+      app_network:
+        aliases:
+          - backend
+
+  frontend:
+    build:
+      context: ../../client
+      dockerfile: Dockerfile
+      args:
+        - API_URL=${PROTOCOL}://${HOSTNAME}
+        - SOCKET_URL=${PROTOCOL}://${HOSTNAME}
+        - API_PORT=${API_PORT}
+        - VITE_API_PORT=${API_PORT}
+    container_name: share-things-frontend
+    environment:
+      - API_PORT=${API_PORT}
+    ports:
+      - "${FRONTEND_PORT}:15000"
+    restart: always
+    depends_on:
+      - backend
+    networks:
+      app_network:
+        aliases:
+          - frontend
+
+networks:
+  app_network:
+    driver: bridge
+EOF
+    
+    log_success "Update compose file with data volumes created at $COMPOSE_UPDATE_PATH"
+    echo "$COMPOSE_UPDATE_PATH" > "/tmp/update-compose-path"
+}
+
+# Verify data integrity after update
+verify_data_integrity_after_update() {
+    log_info "Verifying data integrity after update..."
+    
+    # Wait for containers to be ready
+    sleep 10
+    
+    # Check if backend container can access data
+    if podman ps | grep -q "share-things-backend"; then
+        # Check if data directory is accessible
+        if podman exec share-things-backend test -d /app/data; then
+            log_success "Backend container can access data directory"
+            
+            # Check if database exists and is accessible
+            if podman exec share-things-backend test -f /app/data/sessions.db; then
+                log_success "Session database is accessible"
+            else
+                log_warning "Session database not found"
+            fi
+            
+            # Check if sessions directory exists
+            if podman exec share-things-backend test -d /app/data/sessions; then
+                log_success "Sessions directory is accessible"
+                
+                # List sessions for verification
+                SESSION_COUNT=$(podman exec share-things-backend find /app/data/sessions -mindepth 1 -maxdepth 1 -type d | wc -l)
+                log_info "Found $SESSION_COUNT session directories"
+            else
+                log_warning "Sessions directory not found"
+            fi
+        else
+            log_error "Backend container cannot access data directory"
+            return 1
+        fi
+    else
+        log_error "Backend container is not running"
+        return 1
+    fi
+    
+    # Verify host data directory is properly mounted
+    if [ -d "./data" ]; then
+        log_success "Host data directory exists"
+        
+        # Check if the container data matches host data
+        HOST_DB_SIZE=$(stat -c%s "./data/sessions.db" 2>/dev/null || echo "0")
+        CONTAINER_DB_SIZE=$(podman exec share-things-backend stat -c%s /app/data/sessions.db 2>/dev/null || echo "0")
+        
+        if [ "$HOST_DB_SIZE" = "$CONTAINER_DB_SIZE" ]; then
+            log_success "Host and container database sizes match ($HOST_DB_SIZE bytes)"
+        else
+            log_warning "Host ($HOST_DB_SIZE) and container ($CONTAINER_DB_SIZE) database sizes differ"
+        fi
+    else
+        log_error "Host data directory does not exist"
+        return 1
+    fi
+    
+    log_success "Data integrity verification completed"
+    return 0
+}
+
 # Perform update
 perform_update() {
     echo "=== Starting update process with detailed logging ==="
@@ -122,6 +353,13 @@ perform_update() {
     # Capture current configuration
     echo "Step 3: Capturing current configuration..."
     capture_current_configuration
+    
+    # NEW: Data persistence steps
+    echo "Step 3a: Detecting and backing up existing data..."
+    detect_and_backup_existing_data
+    
+    echo "Step 3b: Capturing volume configuration..."
+    capture_volume_configuration
     
     # Determine which compose file to use
     if [ -f build/config/podman-compose.prod.yml ]; then
@@ -230,65 +468,13 @@ EOL
     export VITE_API_PORT="${API_PORT}"
     log_info "Using environment variables: FRONTEND_PORT=$FRONTEND_PORT, BACKEND_PORT=$BACKEND_PORT, API_PORT=$API_PORT, VITE_API_PORT=$VITE_API_PORT"
     
-    # Build and run containers with explicitly passed environment variables
-    log_info "Step 8: Building containers with comprehensive configuration..."
-    # Use a fixed path without command substitution
-    COMPOSE_UPDATE_PATH="$(pwd)/build/config/podman-compose.update.yml"
+    # NEW: Create update compose file with data persistence
+    log_info "Step 8: Creating update compose file with data persistence..."
+    create_update_compose_with_data_volumes
     
-    # Create the directory if it doesn't exist
-    mkdir -p "$(pwd)/build/config"
-    
-    # Create the update compose file
-    cat > "$COMPOSE_UPDATE_PATH" << EOF
-# Update configuration for ShareThings Podman Compose
-version: '3'
-
-services:
-  backend:
-    build:
-      context: ../../server
-      dockerfile: Dockerfile
-      args:
-        - PORT=${API_PORT}
-    container_name: share-things-backend
-    hostname: backend
-    environment:
-      - NODE_ENV=development
-      - PORT=${API_PORT}
-    ports:
-      - "${BACKEND_PORT}:${API_PORT}"
-    restart: always
-    networks:
-      app_network:
-        aliases:
-          - backend
-
-  frontend:
-    build:
-      context: ../../client
-      dockerfile: Dockerfile
-      args:
-        - API_URL=${PROTOCOL}://${HOSTNAME}
-        - SOCKET_URL=${PROTOCOL}://${HOSTNAME}
-        - API_PORT=${API_PORT}
-        - VITE_API_PORT=${API_PORT}
-    container_name: share-things-frontend
-    environment:
-      - API_PORT=${API_PORT}
-    ports:
-      - "${FRONTEND_PORT}:15000"
-    restart: always
-    depends_on:
-      - backend
-    networks:
-      app_network:
-        aliases:
-          - frontend
-
-networks:
-  app_network:
-    driver: bridge
-EOF
+    # Get the path to our data-aware compose file
+    COMPOSE_UPDATE_PATH=$(cat /tmp/update-compose-path)
+    log_info "Using data-aware compose file: $COMPOSE_UPDATE_PATH"
     
     log_info "Created update compose file: $COMPOSE_UPDATE_PATH"
     echo "Running: podman-compose -f \"$COMPOSE_UPDATE_PATH\" build --no-cache"
@@ -433,6 +619,10 @@ EOF
     # Verify containers
     echo "Step 10: Verifying containers..."
     verify_containers
+    
+    # NEW: Verify data integrity after update
+    echo "Step 10a: Verifying data integrity after update..."
+    verify_data_integrity_after_update
     
     # List all images to verify they were rebuilt
     echo "Step 11: Listing all container images..."
