@@ -3,6 +3,7 @@ import { SessionManager } from '../services/SessionManager';
 import { PassphraseFingerprint } from '../services/SessionManager';
 import { FileSystemChunkStorage } from '../infrastructure/storage/FileSystemChunkStorage';
 import { storageConfig } from '../infrastructure/config/storage.config';
+import { ContentMetadata } from '../domain/ChunkStorage.interface';
 
 // Define interfaces for content and chunk data
 interface ContentData {
@@ -129,13 +130,20 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
           console.log(`[CALLBACK-DEBUG] WARNING: No callback provided for join request from client ${socket.id}`);
         }
 
-        // Get existing content for this session
+        // Get existing content for this session (first page only for initial load)
         try {
           const chunkStorage = await chunkStoragePromise;
-          console.log(`[STORAGE] Retrieving content for new client ${socket.id} in session ${sessionId}`);
+          console.log(`[STORAGE] Retrieving first page of content for new client ${socket.id} in session ${sessionId}`);
           
-          let contentList = await chunkStorage.listContent(sessionId);
-          console.log(`[DEBUG] Found ${contentList.length} content items for session ${sessionId}`);
+          // Get total count first
+          const allContentList = await chunkStorage.listContent(sessionId);
+          const totalContentCount = allContentList.length;
+          console.log(`[DEBUG] Found ${totalContentCount} total content items for session ${sessionId}`);
+
+          // Apply pagination - only send first page (default limit: 5)
+          const limit = 5;
+          let contentList = allContentList.slice(0, limit);
+          const hasMore = totalContentCount > limit;
 
           // Filter out content that the client already has cached
           if (cachedContentIds && cachedContentIds.length > 0) {
@@ -145,12 +153,12 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
           }
 
           if (contentList.length > 0) {
-            console.log(`[DEBUG] Content IDs to send: ${contentList.map(c => c.contentId).join(', ')}`);
+            console.log(`[DEBUG] Content IDs to send (first page): ${contentList.map(c => c.contentId).join(', ')}`);
           } else {
             console.log(`[DEBUG] No content found for session ${sessionId}`);
           }
 
-          console.log(`[DEBUG] About to send ${contentList.length} content items to client ${socket.id}`);
+          console.log(`[DEBUG] About to send ${contentList.length} content items (first page) to client ${socket.id}. Total: ${totalContentCount}, hasMore: ${hasMore}`);
 
           // Send content metadata first, then chunks with proper async handling
           for (const content of contentList) {
@@ -198,7 +206,16 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
             }
           }
 
-          console.log(`Finished sending existing content to client ${socket.id}`);
+          // Send pagination info to client
+          socket.emit('content-pagination-info', {
+            sessionId: sessionId,
+            totalCount: totalContentCount,
+            currentPage: 1,
+            pageSize: limit,
+            hasMore: hasMore
+          });
+
+          console.log(`Finished sending first page of content to client ${socket.id}. Total: ${totalContentCount}, sent: ${contentList.length}, hasMore: ${hasMore}`);
         } catch (storageError) {
           console.error(`Error retrieving content from storage for session ${sessionId}:`, storageError);
         }
@@ -295,10 +312,11 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
         }
 
         console.log(`[CONTENT] Client ${socket.id} sending content ${content.contentId} in session ${sessionId}`);
+        console.log(`[CONTENT-DEBUG] Client ${socket.id} socket.data.sessionId: ${socket.data.sessionId}, requested sessionId: ${sessionId}`);
 
         // Verify client is in the session
         if (socket.data.sessionId !== sessionId) {
-          console.error(`Client ${socket.id} tried to share content in session ${sessionId} but is not in it`);
+          console.error(`Client ${socket.id} tried to share content in session ${sessionId} but is not in it (socket.data.sessionId: ${socket.data.sessionId})`);
           if (callback) {
             callback({ success: false, error: 'Not in session' });
           }
@@ -333,6 +351,8 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
         // Save non-chunked content to storage
         try {
           if (!content.isChunked && contentData) {
+            console.log(`[STORAGE-DEBUG] Saving content ${content.contentId} to storage for session ${sessionId}`);
+            
             // For non-chunked content, save it as a single chunk
             const encryptedData = Buffer.from(contentData, 'base64');
             const iv = content.encryptionMetadata?.iv ? new Uint8Array(content.encryptionMetadata.iv) : new Uint8Array(12);
@@ -355,14 +375,18 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
             await chunkStorage.markContentComplete(content.contentId);
             
             // Update the metadata with the full content metadata
-            if (content.metadata) {
+            if (content.metadata && typeof chunkStorage.updateContentMetadata === 'function') {
               await chunkStorage.updateContentMetadata(content.contentId, content.metadata);
             }
             
-            console.log(`Non-chunked content ${content.contentId} saved to storage`);
+            console.log(`[STORAGE-DEBUG] Content ${content.contentId} saved successfully to storage`);
+            
+            // Verify the content was saved by checking storage
+            const savedContent = await chunkStorage.listContent(sessionId, 50);
+            console.log(`[STORAGE-DEBUG] After saving, found ${savedContent.length} items in session ${sessionId}`);
           }
         } catch (storageError) {
-          console.error(`Error saving non-chunked content to storage:`, storageError);
+          console.error(`[STORAGE-DEBUG] Error saving non-chunked content to storage:`, storageError);
         }
 
         // Broadcast to other clients in the session
@@ -574,6 +598,113 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
         console.error('Error in ping handler:', error);
         if (callback) {
           callback({ valid: false, error: 'Internal server error' });
+        }
+      }
+    });
+
+    // Handle content pagination
+    socket.on('list-content', async (data: {
+      sessionId: string;
+      offset?: number;
+      limit?: number;
+    }, callback?: (response: {
+      success: boolean;
+      content?: ContentMetadata[];
+      totalCount?: number;
+      hasMore?: boolean;
+      error?: string;
+    }) => void) => {
+      try {
+        const { sessionId, offset = 0, limit = 5 } = data;
+        
+        // Validate session membership
+        const session = sessionManager.getSession(sessionId);
+        if (!session) {
+          if (callback) {
+            callback({ success: false, error: 'Session not found' });
+          }
+          return;
+        }
+
+        const client = session.clients.get(socket.id);
+        if (!client) {
+          if (callback) {
+            callback({ success: false, error: 'Not a member of this session' });
+          }
+          return;
+        }
+
+        // Get content with pagination
+        const chunkStorage = await chunkStoragePromise;
+        
+        // Get total count first
+        const allContent = await chunkStorage.listContent(sessionId);
+        const totalCount = allContent.length;
+        
+        // Apply pagination
+        const paginatedContent = allContent.slice(offset, offset + limit);
+        const hasMore = offset + limit < totalCount;
+
+        console.log(`[PAGINATION] Session ${sessionId}: offset=${offset}, limit=${limit}, total=${totalCount}, returned=${paginatedContent.length}, hasMore=${hasMore}`);
+
+        // Send the actual content items with chunks (like during session join)
+        for (const content of paginatedContent) {
+          if (!content.isComplete) {
+            console.log(`Skipping incomplete content ${content.contentId}`);
+            continue;
+          }
+
+          // Send content metadata
+          socket.emit('content', {
+            sessionId: sessionId,
+            content: {
+              contentId: content.contentId,
+              senderId: 'server',
+              senderName: 'Server',
+              contentType: content.contentType,
+              timestamp: content.createdAt,
+              metadata: content.additionalMetadata ? JSON.parse(content.additionalMetadata) : {},
+              isChunked: content.totalChunks > 1,
+              totalChunks: content.totalChunks,
+              totalSize: content.totalSize,
+              encryptionMetadata: {
+                iv: Array.from(content.encryptionIv)
+              }
+            }
+          });
+
+          // Send chunks
+          for (let i = 0; i < content.totalChunks; i++) {
+            const chunkData = await chunkStorage.getChunk(content.contentId, i);
+            const chunkMetadata = await chunkStorage.getChunkMetadata(content.contentId, i);
+            
+            if (chunkData && chunkMetadata) {
+              socket.emit('chunk', {
+                sessionId: sessionId,
+                chunk: {
+                  contentId: content.contentId,
+                  chunkIndex: i,
+                  totalChunks: content.totalChunks,
+                  encryptedData: Array.from(chunkData),
+                  iv: Array.from(chunkMetadata.iv)
+                }
+              });
+            }
+          }
+        }
+
+        if (callback) {
+          callback({
+            success: true,
+            content: paginatedContent,
+            totalCount,
+            hasMore
+          });
+        }
+      } catch (error) {
+        console.error('Error in list-content handler:', error);
+        if (callback) {
+          callback({ success: false, error: 'Internal server error' });
         }
       }
     });

@@ -36,7 +36,7 @@ const ContentList: React.FC = React.memo(() => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   
   // Context
-  const { getContentList } = useContentStore();
+  const { getContentList, paginationInfo, loadMoreContent } = useContentStore();
   
   // Toast
   const toast = useToast();
@@ -81,6 +81,27 @@ const ContentList: React.FC = React.memo(() => {
     // Reset loading state
     setIsLoading(false);
   }, [toast]);
+
+  /**
+   * Handle load more with loading state
+   */
+  const handleLoadMore = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      await loadMoreContent();
+    } catch (error) {
+      console.error('Error loading more content:', error);
+      toast({
+        title: 'Error loading more content',
+        description: 'Please try again',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadMoreContent, toast]);
   
   // Show loading state
   if (isLoading) {
@@ -149,6 +170,34 @@ const ContentList: React.FC = React.memo(() => {
           <ContentItem key={content.contentId} contentId={content.contentId} />
         ))}
       </VStack>
+
+      {/* Pagination Controls */}
+      {paginationInfo && (
+        <Box mt={6} textAlign="center">
+          <Text fontSize="sm" color="gray.600" mb={3}>
+            Showing {contentList.length} of {paginationInfo.totalCount} items
+          </Text>
+          
+          {paginationInfo.hasMore && (
+            <Button
+              onClick={handleLoadMore}
+              isLoading={isLoading}
+              loadingText="Loading more..."
+              colorScheme="blue"
+              variant="outline"
+              size="sm"
+            >
+              Load More ({paginationInfo.totalCount - contentList.length} remaining)
+            </Button>
+          )}
+          
+          {!paginationInfo.hasMore && paginationInfo.totalCount > paginationInfo.pageSize && (
+            <Text fontSize="sm" color="gray.500">
+              All content loaded
+            </Text>
+          )}
+        </Box>
+      )}
     </Box>
   );
 });

@@ -75,9 +75,18 @@ export interface ChunkStore {
   receivedChunks: number;
 }
 
+// Pagination info interface
+interface PaginationInfo {
+  totalCount: number;
+  currentPage: number;
+  pageSize: number;
+  hasMore: boolean;
+}
+
 // Content store context interface
 interface ContentStoreContextType {
   contents: Map<string, ContentEntry>;
+  paginationInfo: PaginationInfo | null;
   addContent: (content: SharedContent, data?: Blob | string) => void;
   addChunk: (chunk: ContentChunk) => Promise<boolean>;
   getContent: (contentId: string) => ContentEntry | undefined;
@@ -91,6 +100,7 @@ interface ContentStoreContextType {
   restoreCachedContent: () => string[];
   isContentComplete: (contentId: string) => boolean;
   updateSessionPassphrase: (passphrase: string) => void;
+  loadMoreContent: () => Promise<void>;
 }
 
 // Create context
@@ -103,6 +113,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // State
   const [contents, setContents] = useState<Map<string, ContentEntry>>(new Map());
   const [chunkStores, setChunkStores] = useState<Map<string, ChunkStore>>(new Map());
+  const [paginationInfo, setPaginationInfo] = useState<PaginationInfo | null>(null);
   
   // Use refs to store state directly - this will persist between renders and avoid stale closures
   const contentsRef = React.useRef<Map<string, ContentEntry>>(new Map());
@@ -385,16 +396,35 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       performLocalContentCleanup(data.contentId);
     };
 
+    // Handle pagination info
+    const handlePaginationInfo = (data: {
+      sessionId: string;
+      totalCount: number;
+      currentPage: number;
+      pageSize: number;
+      hasMore: boolean;
+    }) => {
+      console.log(`[PAGINATION] Received pagination info: total=${data.totalCount}, page=${data.currentPage}, pageSize=${data.pageSize}, hasMore=${data.hasMore}`);
+      setPaginationInfo({
+        totalCount: data.totalCount,
+        currentPage: data.currentPage,
+        pageSize: data.pageSize,
+        hasMore: data.hasMore
+      });
+    };
+
     // Add event listeners
     socket.on('content', handleContent);
     socket.on('chunk', handleChunk);
     socket.on('content-removed', handleContentRemoved);
+    socket.on('content-pagination-info', handlePaginationInfo);
 
     // Clean up on unmount
     return () => {
       socket.off('content', handleContent);
       socket.off('chunk', handleChunk);
       socket.off('content-removed', handleContentRemoved);
+      socket.off('content-pagination-info', handlePaginationInfo);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
@@ -1656,9 +1686,57 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     return restoredIds;
   }, [addContent]);
 
+  /**
+   * Load more content using pagination
+   */
+  const loadMoreContent = useCallback(async () => {
+    if (!socket || !paginationInfo || !paginationInfo.hasMore) {
+      console.log('[PAGINATION] Cannot load more: no socket, pagination info, or no more content');
+      return;
+    }
+
+    const sessionId = localStorage.getItem('sessionId');
+    if (!sessionId) {
+      console.error('[PAGINATION] No session ID found');
+      return;
+    }
+
+    try {
+      const nextOffset = paginationInfo.currentPage * paginationInfo.pageSize;
+      console.log(`[PAGINATION] Loading more content: offset=${nextOffset}, limit=${paginationInfo.pageSize}`);
+      
+      // Use the existing list-content endpoint
+      socket.emit('list-content', {
+        sessionId,
+        offset: nextOffset,
+        limit: paginationInfo.pageSize
+      }, (response: { success: boolean; content?: unknown[]; totalCount?: number; hasMore?: boolean; error?: string }) => {
+        if (response.success && response.content) {
+          console.log(`[PAGINATION] Received ${response.content.length} more items`);
+          
+          // Update pagination info
+          setPaginationInfo(prev => prev ? {
+            totalCount: response.totalCount || prev.totalCount,
+            currentPage: prev.currentPage + 1,
+            pageSize: prev.pageSize,
+            hasMore: response.hasMore || false
+          } : null);
+
+          // The content will be automatically added through the 'content' and 'chunk' event handlers
+          // when the server sends the content items
+        } else {
+          console.error('[PAGINATION] Failed to load more content:', response.error);
+        }
+      });
+    } catch (error) {
+      console.error('[PAGINATION] Error loading more content:', error);
+    }
+  }, [socket, paginationInfo]);
+
   // Context value - properly memoized to prevent unnecessary re-renders
   const value: ContentStoreContextType = React.useMemo(() => ({
     contents,
+    paginationInfo,
     addContent,
     addChunk,
     getContent,
@@ -1671,9 +1749,11 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     getCachedContentIds,
     restoreCachedContent,
     isContentComplete,
-    updateSessionPassphrase
+    updateSessionPassphrase,
+    loadMoreContent
   }), [
     contents,
+    paginationInfo,
     addContent,
     addChunk,
     getContent,
@@ -1686,7 +1766,8 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     getCachedContentIds,
     restoreCachedContent,
     isContentComplete,
-    updateSessionPassphrase
+    updateSessionPassphrase,
+    loadMoreContent
   ]);
 
   // Set up periodic cleanup for orphaned chunks and URLs

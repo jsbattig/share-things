@@ -40,10 +40,21 @@ export class FileSystemChunkStorage implements IChunkStorage {
 
     // Initialize simple SQLite database
     const dbPath = path.join(this.storagePath, 'metadata.db');
+    console.log(`[STORAGE-DEBUG] Database path: ${dbPath}`);
+    console.log(`[STORAGE-DEBUG] Storage path: ${this.storagePath}`);
+    
     this.db = await open({
       filename: dbPath,
       driver: sqlite3.Database
     });
+
+    // Configure database for immediate commits
+    await this.db.exec('PRAGMA journal_mode = WAL');
+    await this.db.exec('PRAGMA synchronous = NORMAL');
+    await this.db.exec('PRAGMA cache_size = 1000');
+    await this.db.exec('PRAGMA temp_store = memory');
+    
+    console.log(`[STORAGE-DEBUG] Database initialized at ${dbPath}`);
 
     // Create simple content metadata table
     await this.db.exec(`
@@ -110,6 +121,9 @@ export class FileSystemChunkStorage implements IChunkStorage {
 
     // Store content metadata when all chunks are received
     if (chunkIndex === totalChunks - 1) {
+      console.log(`[STORAGE-DEBUG] Inserting content metadata for ${contentId} in session ${sessionId}`);
+      
+      // Insert without explicit transaction (let SQLite auto-commit)
       await this.db.run(
         `INSERT OR REPLACE INTO content
          (id, session_id, content_type, mime_type, total_chunks, total_size, created_at, encryption_iv, additional_metadata)
@@ -124,6 +138,16 @@ export class FileSystemChunkStorage implements IChunkStorage {
         Buffer.from(iv),
         null // Will be updated when we have the full metadata
       );
+      
+      console.log(`[STORAGE-DEBUG] Content metadata inserted successfully for ${contentId}`);
+      
+      // Verify the insertion
+      const verification = await this.db.get(
+        'SELECT COUNT(*) as count FROM content WHERE id = ? AND session_id = ?',
+        contentId,
+        sessionId
+      );
+      console.log(`[STORAGE-DEBUG] Verification: ${verification?.count || 0} records found for ${contentId} in session ${sessionId}`);
     }
   }
 
@@ -167,6 +191,22 @@ export class FileSystemChunkStorage implements IChunkStorage {
       throw new Error('Storage not initialized');
     }
 
+    console.log(`[STORAGE-DEBUG] listContent called for session ${sessionId}, limit ${limit}`);
+    console.log(`[STORAGE-DEBUG] Database instance exists: ${!!this.db}`);
+    
+    // First check total count in database
+    const totalCount = await this.db.get<{ count: number }>(
+      'SELECT COUNT(*) as count FROM content',
+    );
+    console.log(`[STORAGE-DEBUG] Total content records in database: ${totalCount?.count || 0}`);
+    
+    // Check count for this session
+    const sessionCount = await this.db.get<{ count: number }>(
+      'SELECT COUNT(*) as count FROM content WHERE session_id = ?',
+      sessionId
+    );
+    console.log(`[STORAGE-DEBUG] Content records for session ${sessionId}: ${sessionCount?.count || 0}`);
+
     const rows = await this.db.all<ContentRow[]>(
       `SELECT
          id as contentId,
@@ -185,6 +225,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
       sessionId,
       limit
     );
+
+    console.log(`[STORAGE-DEBUG] Query returned ${rows.length} rows for session ${sessionId}`);
 
     return rows.map(row => ({
       contentId: row.contentId,
