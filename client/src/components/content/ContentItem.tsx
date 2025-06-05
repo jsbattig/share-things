@@ -7,7 +7,6 @@ import {
   HStack,
   VStack,
   Icon,
-  IconButton,
   Button,
   Menu,
   MenuButton,
@@ -456,7 +455,7 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   const handlePinToggle = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      if (content?.isPinned) {
+      if (content?.metadata?.isPinned) {
         await unpinContent(contentId);
         toast({
           title: 'Content unpinned',
@@ -483,7 +482,7 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
         isClosable: true,
       });
     }
-  }, [content?.isPinned, contentId, pinContent, unpinContent, toast]);
+  }, [content?.metadata?.isPinned, contentId, pinContent, unpinContent, toast]);
   
   if (!content) {
     return null;
@@ -970,11 +969,11 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
               </MenuButton>
               <MenuList zIndex={9999} boxShadow="lg" bg="white" border="1px solid" borderColor="gray.200">
                 <MenuItem
-                  icon={<Icon as={content?.isPinned ? RiPushpinFill : RiPushpinLine} />}
+                  icon={<Icon as={content?.metadata?.isPinned ? RiPushpinFill : RiPushpinLine} />}
                   onClick={handlePinToggle}
-                  color={content?.isPinned ? "blue.600" : "gray.600"}
+                  color={content?.metadata?.isPinned ? "blue.600" : "gray.600"}
                 >
-                  {content?.isPinned ? "Unpin content" : "Pin content"}
+                  {content?.metadata?.isPinned ? "Unpin content" : "Pin content"}
                 </MenuItem>
                 <MenuItem
                   icon={<Icon as={hasCopied ? FaCheck : FaCopy} />}
