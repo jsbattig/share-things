@@ -190,10 +190,19 @@ if [ $SERVER_TEST_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}Server unit tests passed.${NC}"
 else
     echo -e "${RED}Server unit tests failed with exit code: $SERVER_TEST_EXIT_CODE${NC}"
+    echo -e "${YELLOW}Debugging test failure...${NC}"
+    echo "TEMP_OUTPUT file: $TEMP_OUTPUT"
+    echo "TEMP_OUTPUT exists: $(test -f "$TEMP_OUTPUT" && echo "YES" || echo "NO")"
     if [ -f "$TEMP_OUTPUT" ]; then
+        echo -e "${YELLOW}Full test output:${NC}"
+        cat "$TEMP_OUTPUT"
         echo -e "${YELLOW}Last 20 lines of test output:${NC}"
         tail -20 "$TEMP_OUTPUT"
+    else
+        echo -e "${RED}TEMP_OUTPUT file not found!${NC}"
     fi
+    echo -e "${YELLOW}Running test again for debugging...${NC}"
+    podman run --rm --name share-things-backend-test-debug --network host -e NODE_ENV=test -e PORT=3001 share-things-backend-test npm test
 fi
 
 # Clean up temp file
