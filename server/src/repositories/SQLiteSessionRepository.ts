@@ -147,7 +147,7 @@ export class SQLiteSessionRepository implements SessionRepository {
         } | undefined) => {
           if (err) {
             // Handle database closed error gracefully during test cleanup
-            if ((err as any).code === 'SQLITE_MISUSE' && err.message.includes('Database handle is closed')) {
+            if ('code' in err && err.code === 'SQLITE_MISUSE' && err.message.includes('Database handle is closed')) {
               console.warn(`Database closed during session lookup for ${sessionId}, returning null`);
               return resolve(null);
             }
