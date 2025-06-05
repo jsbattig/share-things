@@ -159,8 +159,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
       // Insert without explicit transaction (let SQLite auto-commit)
       await this.db.run(
         `INSERT OR REPLACE INTO content
-         (id, session_id, content_type, mime_type, total_chunks, total_size, created_at, encryption_iv, additional_metadata, is_large_file)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, session_id, content_type, mime_type, total_chunks, total_size, created_at, encryption_iv, additional_metadata, is_large_file, is_pinned)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         contentId,
         sessionId,
         contentType || 'unknown',
@@ -170,7 +170,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
         Date.now(),
         Buffer.from(iv),
         null, // Will be updated when we have the full metadata
-        isLargeFile ? 1 : 0
+        isLargeFile ? 1 : 0,
+        0 // Default is_pinned to false for new content
       );
       
       console.log(`[STORAGE-DEBUG] Content metadata inserted successfully for ${contentId}`);
@@ -195,8 +196,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
     // Insert content metadata into database
     await this.db.run(
       `INSERT OR REPLACE INTO content
-       (id, session_id, content_type, mime_type, total_chunks, total_size, created_at, encryption_iv, additional_metadata, is_large_file)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, session_id, content_type, mime_type, total_chunks, total_size, created_at, encryption_iv, additional_metadata, is_large_file, is_pinned)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       metadata.contentId,
       metadata.sessionId,
       metadata.contentType,
@@ -206,7 +207,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
       metadata.createdAt,
       Buffer.from(metadata.encryptionIv),
       metadata.additionalMetadata,
-      metadata.isLargeFile ? 1 : 0
+      metadata.isLargeFile ? 1 : 0,
+      metadata.isPinned ? 1 : 0 // Include is_pinned field
     );
     
     console.log(`[STORAGE-DEBUG] Content metadata saved successfully for ${metadata.contentId}`);
