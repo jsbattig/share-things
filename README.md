@@ -409,3 +409,4 @@ cd server && npm run build
 ## License
 
 This project is licensed under the ISC License.
+# CI trigger
