@@ -182,6 +182,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
                 isChunked: content.totalChunks > 1,
                 totalChunks: content.totalChunks,
                 totalSize: content.totalSize,
+                isPinned: content.isPinned || false,
                 isLargeFile: content.isLargeFile,
                 encryptionMetadata: {
                   iv: Array.from(content.encryptionIv)
@@ -755,6 +756,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
               isChunked: content.totalChunks > 1,
               totalChunks: content.totalChunks,
               totalSize: content.totalSize,
+              isPinned: content.isPinned || false,
               encryptionMetadata: {
                 iv: Array.from(content.encryptionIv)
               }

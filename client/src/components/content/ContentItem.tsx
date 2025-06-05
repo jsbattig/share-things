@@ -1002,11 +1002,11 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
             </Button>
             
             {/* Menu Button */}
-            <Menu>
+            <Menu placement="bottom-end">
               <MenuButton as={Button} size="sm" variant="ghost">
                 <Icon as={FaEllipsisV} />
               </MenuButton>
-              <MenuList>
+              <MenuList zIndex={1000} boxShadow="lg">
                 <MenuItem
                   icon={<Icon as={hasCopied ? FaCheck : FaCopy} />}
                   onClick={copyContent}
