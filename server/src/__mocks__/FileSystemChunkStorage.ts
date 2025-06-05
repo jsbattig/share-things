@@ -1,4 +1,5 @@
 import { IChunkStorage, ChunkMetadata, ContentMetadata } from '../domain/ChunkStorage.interface';
+import { storageConfig } from '../infrastructure/config/storage.config';
 
 /**
  * In-memory mock implementation of FileSystemChunkStorage for testing
@@ -37,8 +38,7 @@ export class MockFileSystemChunkStorage implements IChunkStorage {
     const existing = this.contentMetadata.get(metadata.contentId);
     const totalSize = existing ? existing.totalSize + metadata.size : metadata.size;
     
-    // Import storage config to check large file threshold
-    const { storageConfig } = require('../infrastructure/config/storage.config');
+    // Check large file threshold
     const isLargeFile = totalSize > storageConfig.largeFileThreshold;
     
     const contentMeta: ContentMetadata = {

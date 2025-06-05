@@ -1,6 +1,5 @@
 import { Express, Request, Response, Router } from 'express';
 import { FileSystemChunkStorage } from '../infrastructure/storage/FileSystemChunkStorage';
-import { storageConfig } from '../infrastructure/config/storage.config';
 import { SessionManager } from '../services/SessionManager';
 
 /**
@@ -76,7 +75,7 @@ function apiRoutes(sessionManager?: SessionManager, chunkStorage?: FileSystemChu
       console.log(`[DOWNLOAD] Streaming large file ${contentId} (${contentMeta.totalSize} bytes) to client`);
       
       // Stream chunks directly to response
-      await chunkStorage.streamContentForDownload(contentId, async (chunk, metadata) => {
+      await chunkStorage.streamContentForDownload(contentId, async (chunk) => {
         // Write chunk to response stream
         res.write(chunk);
       });

@@ -1771,6 +1771,26 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [socket, paginationInfo]);
 
+  // Update content pin status method - defined first so it can be used in pin/unpin methods
+  const updateContentPinStatus = useCallback((contentId: string, isPinned: boolean): void => {
+    setContents(prevContents => {
+      const newContents = new Map(prevContents);
+      const content = newContents.get(contentId);
+      if (content) {
+        const updatedContent = {
+          ...content,
+          metadata: {
+            ...content.metadata,
+            isPinned
+          }
+        };
+        newContents.set(contentId, updatedContent);
+        contentsRef.current = newContents;
+      }
+      return newContents;
+    });
+  }, []);
+
   // Pin content method
   const pinContent = useCallback(async (contentId: string): Promise<void> => {
     if (!socket) {
@@ -1793,7 +1813,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
       });
     });
-  }, [socket]);
+  }, [socket, updateContentPinStatus]);
 
   // Unpin content method
   const unpinContent = useCallback(async (contentId: string): Promise<void> => {
@@ -1817,27 +1837,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         }
       });
     });
-  }, [socket]);
-
-  // Update content pin status method
-  const updateContentPinStatus = useCallback((contentId: string, isPinned: boolean): void => {
-    setContents(prevContents => {
-      const newContents = new Map(prevContents);
-      const content = newContents.get(contentId);
-      if (content) {
-        const updatedContent = {
-          ...content,
-          metadata: {
-            ...content.metadata,
-            isPinned
-          }
-        };
-        newContents.set(contentId, updatedContent);
-        contentsRef.current = newContents;
-      }
-      return newContents;
-    });
-  }, []);
+  }, [socket, updateContentPinStatus]);
 
   // Context value - properly memoized to prevent unnecessary re-renders
   const value: ContentStoreContextType = React.useMemo(() => ({

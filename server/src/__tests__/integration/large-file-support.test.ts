@@ -6,10 +6,29 @@ import { setupSocketHandlers } from '../../socket';
 import { SessionManager, PassphraseFingerprint } from '../../services/SessionManager';
 import { FileSystemChunkStorage } from '../../infrastructure/storage/FileSystemChunkStorage';
 import { storageConfig } from '../../infrastructure/config/storage.config';
-import { ContentMetadata } from '../../domain/ChunkStorage.interface';
 import { promises as fs } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+
+// Type definitions for test responses
+interface JoinResponse {
+  success: boolean;
+  error?: string;
+}
+
+interface ContentData {
+  content: {
+    contentId: string;
+    totalSize: number;
+    isLargeFile: boolean;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+interface ChunkData {
+  [key: string]: unknown;
+}
 
 describe('Large File Support Integration', () => {
   let httpServer: HttpServer;
@@ -116,7 +135,6 @@ describe('Large File Support Integration', () => {
     test('should handle 15MB file upload without broadcasting chunks', async () => {
       // Create 15MB test data
       const fileSize = 15 * 1024 * 1024; // 15MB
-      const testData = crypto.randomBytes(fileSize);
       const contentId = 'large-file-test-' + Date.now();
 
       // Join session with both clients
@@ -126,7 +144,7 @@ describe('Large File Support Integration', () => {
             sessionId: testSessionId,
             clientName: 'Client1',
             fingerprint: testFingerprint
-          }, (response: any) => {
+          }, (response: JoinResponse) => {
             if (response.success) resolve();
             else reject(new Error(response.error));
           });
@@ -136,7 +154,7 @@ describe('Large File Support Integration', () => {
             sessionId: testSessionId,
             clientName: 'Client2',
             fingerprint: testFingerprint
-          }, (response: any) => {
+          }, (response: JoinResponse) => {
             if (response.success) resolve();
             else reject(new Error(response.error));
           });
@@ -144,8 +162,8 @@ describe('Large File Support Integration', () => {
       ]);
 
       // Track what client2 receives
-      const client2ReceivedContent: any[] = [];
-      const client2ReceivedChunks: any[] = [];
+      const client2ReceivedContent: ContentData[] = [];
+      const client2ReceivedChunks: ChunkData[] = [];
 
       clientSocket2.on('content', (data) => {
         client2ReceivedContent.push(data);
@@ -173,7 +191,7 @@ describe('Large File Support Integration', () => {
               iv: Array.from(crypto.randomBytes(12))
             }
           }
-        }, (response: any) => {
+        }, (response: JoinResponse) => {
           if (response.success) resolve();
           else reject(new Error(response.error));
         });
@@ -311,7 +329,7 @@ describe('Large File Support Integration', () => {
           sessionId: testSessionId,
           clientName: 'Client1',
           fingerprint: testFingerprint
-        }, (response: any) => {
+        }, (response: JoinResponse) => {
           if (response.success) resolve();
           else reject(new Error(response.error));
         });
@@ -330,7 +348,7 @@ describe('Large File Support Integration', () => {
             totalChunks: 1,
             metadata: { fileName: 'small-file.bin' }
           }
-        }, (response: any) => {
+        }, (response: JoinResponse) => {
           if (response.success) resolve();
           else reject(new Error(response.error));
         });
@@ -349,7 +367,7 @@ describe('Large File Support Integration', () => {
             totalChunks: Math.ceil(largeFileSize / (64 * 1024)),
             metadata: { fileName: 'large-file.bin' }
           }
-        }, (response: any) => {
+        }, (response: JoinResponse) => {
           if (response.success) resolve();
           else reject(new Error(response.error));
         });

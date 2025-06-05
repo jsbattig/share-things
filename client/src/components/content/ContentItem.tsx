@@ -452,18 +452,11 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
       : ''
   );
   
-  if (!content) {
-    return null;
-  }
-  
-  // Get the metadata from the content entry
-  const { metadata } = content;
-  
-  // Pin toggle handler
+  // Pin toggle handler - moved before early return to follow Rules of Hooks
   const handlePinToggle = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      if (metadata.isPinned) {
+      if (content?.metadata?.isPinned) {
         await unpinContent(contentId);
         toast({
           title: 'Content unpinned',
@@ -490,7 +483,14 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
         isClosable: true,
       });
     }
-  }, [metadata.isPinned, contentId, pinContent, unpinContent, toast]);
+  }, [content?.metadata?.isPinned, contentId, pinContent, unpinContent, toast]);
+  
+  if (!content) {
+    return null;
+  }
+  
+  // Get the metadata from the content entry
+  const { metadata } = content;
   
   // Determine the most appropriate content type based on metadata and actual content
   let effectiveContentType = metadata.contentType;
