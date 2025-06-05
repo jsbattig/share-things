@@ -456,7 +456,7 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   const handlePinToggle = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      if (metadata.isPinned) {
+      if (content?.metadata?.isPinned) {
         await unpinContent(contentId);
         toast({
           title: 'Content unpinned',
@@ -483,7 +483,7 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
         isClosable: true,
       });
     }
-  }, [metadata.isPinned, contentId, pinContent, unpinContent, toast]);
+  }, [content?.metadata?.isPinned, contentId, pinContent, unpinContent, toast]);
   
   if (!content) {
     return null;
