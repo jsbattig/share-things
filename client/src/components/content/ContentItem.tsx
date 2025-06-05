@@ -456,7 +456,7 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   const handlePinToggle = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      if (content?.metadata?.isPinned) {
+      if (content?.isPinned) {
         await unpinContent(contentId);
         toast({
           title: 'Content unpinned',
@@ -483,7 +483,7 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
         isClosable: true,
       });
     }
-  }, [content?.metadata?.isPinned, contentId, pinContent, unpinContent, toast]);
+  }, [content?.isPinned, contentId, pinContent, unpinContent, toast]);
   
   if (!content) {
     return null;
@@ -963,50 +963,19 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
           </HStack>
           
           <HStack spacing={1}>
-            {/* Pin/Unpin Button */}
-            <IconButton
-              icon={<Icon as={metadata.isPinned ? RiPushpinFill : RiPushpinLine} />}
-              aria-label={metadata.isPinned ? "Unpin content" : "Pin content"}
-              size="sm"
-              variant="ghost"
-              onClick={handlePinToggle}
-              colorScheme={metadata.isPinned ? "blue" : "gray"}
-              _hover={{
-                bg: metadata.isPinned ? "blue.100" : "gray.100"
-              }}
-              title={metadata.isPinned ? "Unpin this content" : "Pin this content"}
-            />
-            
-            {/* Copy Button */}
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label="Copy to clipboard"
-              title="Copy to clipboard"
-              onClick={copyContent}
-              isDisabled={!content.isComplete}
-            >
-              <Icon as={hasCopied ? FaCheck : FaCopy} />
-            </Button>
-            
-            {/* Download Button */}
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label="Download"
-              title="Download"
-              onClick={downloadContent}
-              isDisabled={!content.isComplete}
-            >
-              <Icon as={FaDownload} />
-            </Button>
-            
             {/* Menu Button */}
-            <Menu placement="bottom-end">
+            <Menu placement="bottom-end" strategy="fixed">
               <MenuButton as={Button} size="sm" variant="ghost">
                 <Icon as={FaEllipsisV} />
               </MenuButton>
-              <MenuList zIndex={1000} boxShadow="lg">
+              <MenuList zIndex={9999} boxShadow="lg" bg="white" border="1px solid" borderColor="gray.200">
+                <MenuItem
+                  icon={<Icon as={content?.isPinned ? RiPushpinFill : RiPushpinLine} />}
+                  onClick={handlePinToggle}
+                  color={content?.isPinned ? "blue.600" : "gray.600"}
+                >
+                  {content?.isPinned ? "Unpin content" : "Pin content"}
+                </MenuItem>
                 <MenuItem
                   icon={<Icon as={hasCopied ? FaCheck : FaCopy} />}
                   onClick={copyContent}
