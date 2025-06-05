@@ -17,6 +17,7 @@ interface ContentRow {
   additional_metadata?: string | null;
   additionalMetadata?: string | null;
   isComplete?: number;
+  isPinned?: number;
 }
 
 export interface FileSystemChunkStorageOptions {
@@ -90,6 +91,22 @@ export class FileSystemChunkStorage implements IChunkStorage {
       const errorMessage = error instanceof Error ? error.message : String(error);
       if (!errorMessage.includes('duplicate column name')) {
         console.log('[DEBUG] additional_metadata column already exists or other migration issue:', errorMessage);
+      }
+    }
+
+    // Add migration for is_pinned column if it doesn't exist
+    try {
+      await this.db.run('ALTER TABLE content ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0');
+      console.log('[DEBUG] Added is_pinned column to content table');
+      
+      // Add index for pinned content queries
+      await this.db.run('CREATE INDEX IF NOT EXISTS idx_content_pinned ON content(is_pinned, created_at)');
+      console.log('[DEBUG] Added index for pinned content queries');
+    } catch (error: unknown) {
+      // Column already exists or other error - this is expected for new databases
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (!errorMessage.includes('duplicate column name')) {
+        console.log('[DEBUG] is_pinned column already exists or other migration issue:', errorMessage);
       }
     }
 
@@ -217,10 +234,11 @@ export class FileSystemChunkStorage implements IChunkStorage {
          created_at as createdAt,
          encryption_iv as encryptionIv,
          mime_type,
-         additional_metadata
+         additional_metadata,
+         is_pinned as isPinned
        FROM content
        WHERE session_id = ?
-       ORDER BY created_at DESC
+       ORDER BY is_pinned DESC, created_at DESC
        LIMIT ?`,
       sessionId,
       limit
@@ -237,7 +255,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
       createdAt: row.createdAt,
       isComplete: true,
       encryptionIv: row.encryptionIv ? new Uint8Array(row.encryptionIv) : new Uint8Array(12),
-      additionalMetadata: row.additional_metadata || (row.mime_type ? JSON.stringify({ mimeType: row.mime_type }) : null)
+      additionalMetadata: row.additional_metadata || (row.mime_type ? JSON.stringify({ mimeType: row.mime_type }) : null),
+      isPinned: Boolean(row.isPinned)
     }));
   }
 
@@ -310,7 +329,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
          total_size as totalSize,
          created_at as createdAt,
          encryption_iv as encryptionIv,
-         mime_type
+         mime_type,
+         is_pinned as isPinned
        FROM content
        WHERE id = ?`,
       contentId
@@ -327,7 +347,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
       createdAt: row.createdAt,
       isComplete: true,
       encryptionIv: row.encryptionIv ? new Uint8Array(row.encryptionIv) : new Uint8Array(12),
-      additionalMetadata: row.mime_type ? JSON.stringify({ mimeType: row.mime_type }) : null
+      additionalMetadata: row.mime_type ? JSON.stringify({ mimeType: row.mime_type }) : null,
+      isPinned: Boolean(row.isPinned)
     };
   }
 
@@ -356,7 +377,7 @@ export class FileSystemChunkStorage implements IChunkStorage {
 
     const oldContent = await this.db.all<{ id: string }[]>(
       `SELECT id FROM content
-       WHERE session_id = ?
+       WHERE session_id = ? AND is_pinned = 0
        ORDER BY created_at DESC
        LIMIT -1 OFFSET ?`,
       sessionId,
@@ -398,6 +419,41 @@ export class FileSystemChunkStorage implements IChunkStorage {
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
     }
+  }
+
+  async pinContent(contentId: string): Promise<void> {
+    if (!this.isInitialized || !this.db) {
+      throw new Error('Storage not initialized');
+    }
+
+    await this.db.run(
+      'UPDATE content SET is_pinned = 1 WHERE id = ?',
+      contentId
+    );
+  }
+
+  async unpinContent(contentId: string): Promise<void> {
+    if (!this.isInitialized || !this.db) {
+      throw new Error('Storage not initialized');
+    }
+
+    await this.db.run(
+      'UPDATE content SET is_pinned = 0 WHERE id = ?',
+      contentId
+    );
+  }
+
+  async getPinnedContentCount(sessionId: string): Promise<number> {
+    if (!this.isInitialized || !this.db) {
+      throw new Error('Storage not initialized');
+    }
+
+    const result = await this.db.get<{ count: number }>(
+      'SELECT COUNT(*) as count FROM content WHERE session_id = ? AND is_pinned = 1',
+      sessionId
+    );
+
+    return result?.count || 0;
   }
 
   async cleanup(): Promise<void> {

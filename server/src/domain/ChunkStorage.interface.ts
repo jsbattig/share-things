@@ -96,6 +96,11 @@ export interface ContentMetadata {
    * Whether all chunks for this content have been received
    */
   isComplete: boolean;
+
+  /**
+   * Whether this content is pinned (protected from cleanup)
+   */
+  isPinned: boolean;
 }
 
 /**
@@ -179,6 +184,25 @@ export interface IChunkStorage {
    * @returns Success status and details
    */
   removeContent(contentId: string): Promise<{ success: boolean; error?: string }>;
+
+  /**
+   * Pin content to prevent it from being cleaned up
+   * @param contentId ID of the content to pin
+   */
+  pinContent(contentId: string): Promise<void>;
+
+  /**
+   * Unpin content to allow it to be cleaned up normally
+   * @param contentId ID of the content to unpin
+   */
+  unpinContent(contentId: string): Promise<void>;
+
+  /**
+   * Get the count of pinned content items in a session
+   * @param sessionId ID of the session
+   * @returns Number of pinned items
+   */
+  getPinnedContentCount(sessionId: string): Promise<number>;
 
   /**
    * Close the storage and release resources

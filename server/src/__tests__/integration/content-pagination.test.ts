@@ -23,7 +23,8 @@ jest.mock('../../infrastructure/storage/FileSystemChunkStorage', () => {
           createdAt: Date.now() + i,
           isComplete: true,
           encryptionIv: new Uint8Array(12),
-          additionalMetadata: JSON.stringify({ index: i })
+          additionalMetadata: JSON.stringify({ index: i }),
+          isPinned: false
         });
       }
 

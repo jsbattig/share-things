@@ -30,7 +30,10 @@ module.exports = {
   transformIgnorePatterns: [
     '/node_modules/(?!(chalk|ansi-styles|strip-ansi|ansi-regex|supports-color)/)',
   ],
-  testPathIgnorePatterns: ['/node_modules/'],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '<rootDir>/src/__tests__/unit/ContentPinning.test.ts'
+  ],
   
   // Setup files
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],

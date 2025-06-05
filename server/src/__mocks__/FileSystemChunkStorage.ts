@@ -45,6 +45,7 @@ export class MockFileSystemChunkStorage implements IChunkStorage {
       encryptionIv: metadata.iv,
       additionalMetadata: null,
       isComplete: false,
+      isPinned: existing ? existing.isPinned : false,
     };
 
     this.contentMetadata.set(metadata.contentId, contentMeta);
@@ -108,14 +109,21 @@ export class MockFileSystemChunkStorage implements IChunkStorage {
 
     for (const contentId of sessionContents) {
       const metadata = this.contentMetadata.get(contentId);
-      if (metadata && metadata.isComplete) {
+      if (metadata) {
         results.push({ ...metadata });
       }
     }
 
-    // Sort by creation time (most recent first) and apply limit
+    // Sort by pinned status first, then by creation time (most recent first) and apply limit
     return results
-      .sort((a, b) => b.createdAt - a.createdAt)
+      .sort((a, b) => {
+        // First, sort by pinned status (pinned items first)
+        if (a.isPinned !== b.isPinned) {
+          return a.isPinned ? -1 : 1;
+        }
+        // Then sort by creation time (most recent first)
+        return b.createdAt - a.createdAt;
+      })
       .slice(0, limit);
   }
 
@@ -127,12 +135,17 @@ export class MockFileSystemChunkStorage implements IChunkStorage {
     const sessionContents = this.sessionContent.get(sessionId) || [];
     const contentList = await this.listContent(sessionId, sessionContents.length);
 
-    if (contentList.length <= maxItems) {
+    // Filter out pinned items for cleanup consideration
+    const nonPinnedContent = contentList.filter(content => !content.isPinned);
+
+    // Calculate how many non-pinned items we can keep
+    // maxItems applies only to non-pinned items (pinned items are excluded from the count)
+    if (nonPinnedContent.length <= maxItems) {
       return { removed: [] };
     }
 
-    // Remove oldest items
-    const toRemove = contentList.slice(maxItems);
+    // Remove oldest non-pinned items
+    const toRemove = nonPinnedContent.slice(maxItems);
     const removedIds: string[] = [];
 
     for (const content of toRemove) {
@@ -222,6 +235,69 @@ export class MockFileSystemChunkStorage implements IChunkStorage {
     }
 
     return { success: true };
+  }
+
+  async getReceivedChunkCount(contentId: string): Promise<number> {
+    if (!this.isInitialized) {
+      throw new Error('Storage not initialized');
+    }
+
+    const metadata = this.contentMetadata.get(contentId);
+    if (!metadata) {
+      return 0;
+    }
+
+    let count = 0;
+    for (let i = 0; i < metadata.totalChunks; i++) {
+      const key = `${contentId}:${i}`;
+      if (this.chunks.has(key)) {
+        count++;
+      }
+    }
+
+    return count;
+  }
+
+  async pinContent(contentId: string): Promise<void> {
+    if (!this.isInitialized) {
+      throw new Error('Storage not initialized');
+    }
+
+    const metadata = this.contentMetadata.get(contentId);
+    if (metadata) {
+      metadata.isPinned = true;
+      this.contentMetadata.set(contentId, metadata);
+    }
+  }
+
+  async unpinContent(contentId: string): Promise<void> {
+    if (!this.isInitialized) {
+      throw new Error('Storage not initialized');
+    }
+
+    const metadata = this.contentMetadata.get(contentId);
+    if (metadata) {
+      metadata.isPinned = false;
+      this.contentMetadata.set(contentId, metadata);
+    }
+  }
+
+  async getPinnedContentCount(sessionId: string): Promise<number> {
+    if (!this.isInitialized) {
+      throw new Error('Storage not initialized');
+    }
+
+    const sessionContents = this.sessionContent.get(sessionId) || [];
+    let count = 0;
+
+    for (const contentId of sessionContents) {
+      const metadata = this.contentMetadata.get(contentId);
+      if (metadata && metadata.isPinned) {
+        count++;
+      }
+    }
+
+    return count;
   }
 }
 

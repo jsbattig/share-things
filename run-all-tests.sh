@@ -34,16 +34,25 @@ run_test() {
     
     TOTAL_TESTS=$((TOTAL_TESTS + 1))
     
-    if (cd "$test_dir" && eval "$test_command" > /dev/null 2>&1); then
+    # Create a temporary file to capture output
+    local temp_output=$(mktemp)
+    
+    if (cd "$test_dir" && eval "$test_command" > "$temp_output" 2>&1); then
         echo -e "${GREEN}✅ PASSED: $test_name${NC}"
         PASSED_TESTS=$((PASSED_TESTS + 1))
+        # Show last few lines of successful output for context
+        echo -e "${YELLOW}Last few lines of output:${NC}"
+        tail -5 "$temp_output"
     else
         echo -e "${RED}❌ FAILED: $test_name${NC}"
         FAILED_TESTS=$((FAILED_TESTS + 1))
-        # Show the actual error
+        # Show the actual error with more context
         echo -e "${YELLOW}Error details:${NC}"
-        (cd "$test_dir" && eval "$test_command" 2>&1 | tail -20)
+        tail -30 "$temp_output"
     fi
+    
+    # Clean up temp file
+    rm -f "$temp_output"
     echo ""
 }
 

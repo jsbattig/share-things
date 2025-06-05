@@ -9,7 +9,7 @@ interface StorageConfig {
   storagePath: string;
 
   /**
-   * Maximum number of content items to keep per session
+   * Maximum number of content items to keep per session (applies only to non-pinned items)
    * @default 20
    */
   maxItemsPerSession: number;
@@ -25,6 +25,12 @@ interface StorageConfig {
    * @default 3600000 (1 hour)
    */
   cleanupInterval: number;
+
+  /**
+   * Maximum number of pinned items per session (optional safety limit)
+   * @default 50
+   */
+  maxPinnedItemsPerSession: number;
 }
 
 /**
@@ -35,7 +41,8 @@ export function getStorageConfig(): StorageConfig {
     storagePath: process.env.CHUNK_STORAGE_PATH || './data/sessions',
     maxItemsPerSession: parseInt(process.env.MAX_ITEMS_PER_SESSION || '20', 10),
     maxItemsToSend: parseInt(process.env.MAX_ITEMS_TO_SEND || '5', 10),
-    cleanupInterval: parseInt(process.env.CLEANUP_INTERVAL || '3600000', 10)
+    cleanupInterval: parseInt(process.env.CLEANUP_INTERVAL || '3600000', 10),
+    maxPinnedItemsPerSession: parseInt(process.env.MAX_PINNED_ITEMS_PER_SESSION || '50', 10)
   };
 }
 
@@ -54,6 +61,10 @@ export function validateConfig(config: StorageConfig): void {
   
   if (config.cleanupInterval <= 0) {
     throw new Error('CLEANUP_INTERVAL must be greater than 0');
+  }
+
+  if (config.maxPinnedItemsPerSession <= 0) {
+    throw new Error('MAX_PINNED_ITEMS_PER_SESSION must be greater than 0');
   }
 }
 

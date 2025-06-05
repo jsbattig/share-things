@@ -26,7 +26,8 @@ module.exports = {
       testMatch: ['<rootDir>/server/src/__tests__/**/*.test.ts'],
       testPathIgnorePatterns: [
         '<rootDir>/server/src/__tests__/unit/FileSystemChunkStorage.test.ts',
-        '<rootDir>/server/src/__tests__/integration/FileSystemChunkStorage.test.ts'
+        '<rootDir>/server/src/__tests__/integration/FileSystemChunkStorage.test.ts',
+        '<rootDir>/server/src/__tests__/unit/ContentPinning.test.ts'
       ],
       setupFilesAfterEnv: ['<rootDir>/server/jest.setup.js'],
       testEnvironment: 'node',

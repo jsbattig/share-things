@@ -15,13 +15,15 @@ CREATE TABLE IF NOT EXISTS content_metadata (
   encryption_iv BLOB NOT NULL,
   additional_metadata TEXT,
   is_complete BOOLEAN NOT NULL DEFAULT 0,
-  last_accessed INTEGER NOT NULL
+  last_accessed INTEGER NOT NULL,
+  is_pinned BOOLEAN NOT NULL DEFAULT 0
 );
 
 -- Indexes for faster lookups
 CREATE INDEX IF NOT EXISTS idx_content_session ON content_metadata(session_id);
 CREATE INDEX IF NOT EXISTS idx_content_created ON content_metadata(created_at);
 CREATE INDEX IF NOT EXISTS idx_content_last_accessed ON content_metadata(last_accessed);
+CREATE INDEX IF NOT EXISTS idx_content_pinned ON content_metadata(is_pinned, created_at);
 
 -- Chunk metadata table
 CREATE TABLE IF NOT EXISTS chunk_metadata (

@@ -41,7 +41,8 @@ describe('StorageConfig', () => {
       storagePath: '/path',
       maxItemsPerSession: 1,
       maxItemsToSend: 1,
-      cleanupInterval: 1000
+      cleanupInterval: 1000,
+      maxPinnedItemsPerSession: 50
     };
 
     expect(() => validateConfig(validConfig)).not.toThrow();
@@ -52,7 +53,8 @@ describe('StorageConfig', () => {
       storagePath: '/path',
       maxItemsPerSession: 0,
       maxItemsToSend: 1,
-      cleanupInterval: 1000
+      cleanupInterval: 1000,
+      maxPinnedItemsPerSession: 50
     };
 
     expect(() => validateConfig(invalidConfig)).toThrow('MAX_ITEMS_PER_SESSION must be greater than 0');
@@ -63,7 +65,8 @@ describe('StorageConfig', () => {
       storagePath: '/path',
       maxItemsPerSession: 10,
       maxItemsToSend: 0,
-      cleanupInterval: 1000
+      cleanupInterval: 1000,
+      maxPinnedItemsPerSession: 50
     };
 
     expect(() => validateConfig(invalidConfig)).toThrow('MAX_ITEMS_TO_SEND must be greater than 0');
@@ -74,7 +77,8 @@ describe('StorageConfig', () => {
       storagePath: '/path',
       maxItemsPerSession: 10,
       maxItemsToSend: 5,
-      cleanupInterval: 0
+      cleanupInterval: 0,
+      maxPinnedItemsPerSession: 50
     };
 
     expect(() => validateConfig(invalidConfig)).toThrow('CLEANUP_INTERVAL must be greater than 0');

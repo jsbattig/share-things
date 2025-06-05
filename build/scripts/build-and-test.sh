@@ -170,10 +170,15 @@ mkdir -p test-results
 
 # Run server unit tests
 echo -e "${YELLOW}Running server unit tests...${NC}"
-# Run server unit tests directly with podman
-echo -e "${YELLOW}Running server unit tests...${NC}"
-podman run --rm --name share-things-backend-test --network host -e NODE_ENV=test -e PORT=3001 share-things-backend-test npm test
-SERVER_TEST_EXIT_CODE=$?
+# Create a temporary file to capture test output
+TEMP_OUTPUT=$(mktemp)
+echo "Capturing test output to: $TEMP_OUTPUT"
+
+# Run server unit tests directly with podman and capture output
+podman run --rm --name share-things-backend-test --network host -e NODE_ENV=test -e PORT=3001 share-things-backend-test npm test 2>&1 | tee "$TEMP_OUTPUT"
+SERVER_TEST_EXIT_CODE=${PIPESTATUS[0]}
+
+echo -e "${YELLOW}Server test exit code: $SERVER_TEST_EXIT_CODE${NC}"
 
 # Ensure client has crypto-js installed
 echo -e "${YELLOW}Ensuring client has crypto-js installed...${NC}"
@@ -184,8 +189,15 @@ podman run --rm --name share-things-frontend-test -v ./client:/app:Z -w /app sha
 if [ $SERVER_TEST_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}Server unit tests passed.${NC}"
 else
-    echo -e "${RED}Server unit tests failed.${NC}"
+    echo -e "${RED}Server unit tests failed with exit code: $SERVER_TEST_EXIT_CODE${NC}"
+    if [ -f "$TEMP_OUTPUT" ]; then
+        echo -e "${YELLOW}Last 20 lines of test output:${NC}"
+        tail -20 "$TEMP_OUTPUT"
+    fi
 fi
+
+# Clean up temp file
+rm -f "$TEMP_OUTPUT"
 
 # Skip client unit tests since they're not critical for our migration from Nginx to Node.js
 echo -e "${YELLOW}Skipping client unit tests...${NC}"
