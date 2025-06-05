@@ -150,7 +150,7 @@ export PODMAN_USERNS=keep-id
 
 # Build the backend container directly with podman
 echo -e "${YELLOW}Building backend container...${NC}"
-podman build -t share-things-backend-test -f server/Dockerfile.test ./server
+podman build --no-cache -t share-things-backend-test -f server/Dockerfile.test ./server
 
 # We'll use the node:18-alpine image for the frontend as specified in the docker-compose file
 echo -e "${YELLOW}Pulling frontend image...${NC}"

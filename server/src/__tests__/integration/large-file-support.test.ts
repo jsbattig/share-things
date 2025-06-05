@@ -123,9 +123,13 @@ describe('Large File Support Integration', () => {
     
     // Clean up session and content from database
     try {
-      await chunkStorage.cleanupAllSessionContent(testSessionId);
+      if (chunkStorage) {
+        await chunkStorage.cleanupAllSessionContent(testSessionId);
+      }
       // Remove session from session manager
-      await sessionManager.removeSession(testSessionId);
+      if (sessionManager) {
+        await sessionManager.removeSession(testSessionId);
+      }
     } catch (error) {
       console.warn('Failed to clean up session in afterEach:', error);
     }
