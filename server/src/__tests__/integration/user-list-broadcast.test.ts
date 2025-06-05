@@ -76,11 +76,24 @@ describe('User List Broadcast Integration Tests', () => {
   });
 
   afterAll(async () => {
-    // Clean up
-    if (clientSocket1?.connected) clientSocket1.disconnect();
-    if (clientSocket2?.connected) clientSocket2.disconnect();
-    if (clientSocket3?.connected) clientSocket3.disconnect();
+    // Clean up clients first and wait for disconnection to complete
+    if (clientSocket1?.connected) {
+      clientSocket1.disconnect();
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    if (clientSocket2?.connected) {
+      clientSocket2.disconnect();
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    if (clientSocket3?.connected) {
+      clientSocket3.disconnect();
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
     
+    // Wait a bit more for all disconnect handlers to complete
+    await new Promise(resolve => setTimeout(resolve, 200));
+    
+    // Now safely close the session manager and servers
     await sessionManager.stop();
     io.close();
     httpServer.close();

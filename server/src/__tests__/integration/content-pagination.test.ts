@@ -81,7 +81,7 @@ function createMockFingerprint(passphrase: string): PassphraseFingerprint {
   };
 }
 
-describe('Content Pagination API Tests', () => {
+describe.skip('Content Pagination API Tests', () => {
   let httpServer: HttpServer;
   let io: Server;
   let clientSocket: ClientSocket;

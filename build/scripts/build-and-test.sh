@@ -175,10 +175,22 @@ TEMP_OUTPUT=$(mktemp)
 echo "Capturing test output to: $TEMP_OUTPUT"
 
 # Run server unit tests directly with podman and capture output
-podman run --rm --name share-things-backend-test --network host -e NODE_ENV=test -e PORT=3001 share-things-backend-test npm test 2>&1 | tee "$TEMP_OUTPUT"
-SERVER_TEST_EXIT_CODE=${PIPESTATUS[0]}
+echo -e "${YELLOW}Starting server unit tests...${NC}"
+echo -e "${YELLOW}Temp output file: $TEMP_OUTPUT${NC}"
+
+# Run tests and capture both output and exit code more reliably
+set +e  # Don't exit on error
+podman run --rm --name share-things-backend-test --network host -e NODE_ENV=test -e PORT=3001 share-things-backend-test npm test > "$TEMP_OUTPUT" 2>&1
+SERVER_TEST_EXIT_CODE=$?
+set -e  # Re-enable exit on error
 
 echo -e "${YELLOW}Server test exit code: $SERVER_TEST_EXIT_CODE${NC}"
+echo -e "${YELLOW}Temp output file size: $(wc -l < "$TEMP_OUTPUT" 2>/dev/null || echo "0") lines${NC}"
+
+# Always show the test output immediately
+echo -e "${YELLOW}=== IMMEDIATE TEST OUTPUT ===${NC}"
+cat "$TEMP_OUTPUT" 2>/dev/null || echo "Could not read temp output file"
+echo -e "${YELLOW}=== END IMMEDIATE OUTPUT ===${NC}"
 
 # Ensure client has crypto-js installed
 echo -e "${YELLOW}Ensuring client has crypto-js installed...${NC}"
@@ -190,19 +202,26 @@ if [ $SERVER_TEST_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}Server unit tests passed.${NC}"
 else
     echo -e "${RED}Server unit tests failed with exit code: $SERVER_TEST_EXIT_CODE${NC}"
-    echo -e "${YELLOW}Debugging test failure...${NC}"
+    echo -e "${YELLOW}=== DEBUGGING TEST FAILURE ===${NC}"
     echo "TEMP_OUTPUT file: $TEMP_OUTPUT"
     echo "TEMP_OUTPUT exists: $(test -f "$TEMP_OUTPUT" && echo "YES" || echo "NO")"
+    echo "TEMP_OUTPUT size: $(wc -c < "$TEMP_OUTPUT" 2>/dev/null || echo "0") bytes"
+    
     if [ -f "$TEMP_OUTPUT" ]; then
-        echo -e "${YELLOW}Full test output:${NC}"
+        echo -e "${YELLOW}=== FULL TEST OUTPUT START ===${NC}"
         cat "$TEMP_OUTPUT"
-        echo -e "${YELLOW}Last 20 lines of test output:${NC}"
+        echo -e "${YELLOW}=== FULL TEST OUTPUT END ===${NC}"
+        
+        echo -e "${YELLOW}=== LAST 20 LINES ===${NC}"
         tail -20 "$TEMP_OUTPUT"
+        echo -e "${YELLOW}=== END LAST 20 LINES ===${NC}"
     else
         echo -e "${RED}TEMP_OUTPUT file not found!${NC}"
     fi
-    echo -e "${YELLOW}Running test again for debugging...${NC}"
+    
+    echo -e "${YELLOW}=== RUNNING TEST AGAIN FOR DEBUGGING ===${NC}"
     podman run --rm --name share-things-backend-test-debug --network host -e NODE_ENV=test -e PORT=3001 share-things-backend-test npm test
+    echo -e "${YELLOW}=== DEBUG TEST COMPLETE ===${NC}"
 fi
 
 # Clean up temp file

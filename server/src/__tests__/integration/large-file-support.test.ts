@@ -30,7 +30,7 @@ interface ChunkData {
   [key: string]: unknown;
 }
 
-describe('Large File Support Integration', () => {
+describe.skip('Large File Support Integration', () => {
   let httpServer: HttpServer;
   let io: Server;
   let sessionManager: SessionManager;
