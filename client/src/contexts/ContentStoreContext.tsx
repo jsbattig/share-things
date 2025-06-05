@@ -46,6 +46,7 @@ export interface SharedContent {
   isChunked: boolean;
   totalChunks?: number;
   totalSize: number;
+  isPinned: boolean; // NEW FIELD
   encryptionMetadata?: {
     iv: number[];
   };
@@ -101,6 +102,9 @@ interface ContentStoreContextType {
   isContentComplete: (contentId: string) => boolean;
   updateSessionPassphrase: (passphrase: string) => void;
   loadMoreContent: () => Promise<void>;
+  pinContent: (contentId: string) => Promise<void>;
+  unpinContent: (contentId: string) => Promise<void>;
+  updateContentPinStatus: (contentId: string, isPinned: boolean) => void;
 }
 
 // Create context
@@ -413,11 +417,36 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       });
     };
 
+    // Pin/unpin event handlers
+    const handleContentPinned = (data: { contentId: string }) => {
+      console.log(`[CONTENT] Content pinned: ${data.contentId}`);
+      updateContentPinStatus(data.contentId, true);
+    };
+
+    const handleContentUnpinned = (data: { contentId: string }) => {
+      console.log(`[CONTENT] Content unpinned: ${data.contentId}`);
+      updateContentPinStatus(data.contentId, false);
+    };
+
+    const handlePinError = (data: { contentId: string; error: string }) => {
+      console.error(`[CONTENT] Pin error for ${data.contentId}:`, data.error);
+      // Optionally show toast notification here if needed
+    };
+
+    const handleUnpinError = (data: { contentId: string; error: string }) => {
+      console.error(`[CONTENT] Unpin error for ${data.contentId}:`, data.error);
+      // Optionally show toast notification here if needed
+    };
+
     // Add event listeners
     socket.on('content', handleContent);
     socket.on('chunk', handleChunk);
     socket.on('content-removed', handleContentRemoved);
     socket.on('content-pagination-info', handlePaginationInfo);
+    socket.on('content-pinned', handleContentPinned);
+    socket.on('content-unpinned', handleContentUnpinned);
+    socket.on('pin-error', handlePinError);
+    socket.on('unpin-error', handleUnpinError);
 
     // Clean up on unmount
     return () => {
@@ -425,6 +454,10 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       socket.off('chunk', handleChunk);
       socket.off('content-removed', handleContentRemoved);
       socket.off('content-pagination-info', handlePaginationInfo);
+      socket.off('content-pinned', handleContentPinned);
+      socket.off('content-unpinned', handleContentUnpinned);
+      socket.off('pin-error', handlePinError);
+      socket.off('unpin-error', handleUnpinError);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
@@ -447,7 +480,11 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setContents(prevContents => {
       const newContents = new Map(prevContents);
       const contentEntry: ContentEntry = {
-        metadata: content,
+        metadata: {
+          ...content,
+          // Ensure isPinned field is always present, default to false if missing
+          isPinned: content.isPinned ?? false
+        },
         data,
         lastAccessed: new Date(),
         // UNIFIED COMPLETION LOGIC: If we have data locally, it's complete
@@ -935,6 +972,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
             isChunked: true,
             totalChunks: chunkStore.totalChunks,
             totalSize: 0, // Will be updated after reassembly
+            isPinned: false, // NEW FIELD: Default to unpinned
           },
           lastAccessed: new Date(),
           isComplete: false
@@ -1733,6 +1771,74 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [socket, paginationInfo]);
 
+  // Pin content method
+  const pinContent = useCallback(async (contentId: string): Promise<void> => {
+    if (!socket) {
+      throw new Error('Socket not connected');
+    }
+
+    const sessionId = localStorage.getItem('sessionId');
+    if (!sessionId) {
+      throw new Error('No session ID found');
+    }
+
+    return new Promise((resolve, reject) => {
+      socket.emit('pin-content', { sessionId, contentId }, (response: { success: boolean; error?: string }) => {
+        if (response.success) {
+          // Update local state immediately for better UX
+          updateContentPinStatus(contentId, true);
+          resolve();
+        } else {
+          reject(new Error(response.error || 'Failed to pin content'));
+        }
+      });
+    });
+  }, [socket]);
+
+  // Unpin content method
+  const unpinContent = useCallback(async (contentId: string): Promise<void> => {
+    if (!socket) {
+      throw new Error('Socket not connected');
+    }
+
+    const sessionId = localStorage.getItem('sessionId');
+    if (!sessionId) {
+      throw new Error('No session ID found');
+    }
+
+    return new Promise((resolve, reject) => {
+      socket.emit('unpin-content', { sessionId, contentId }, (response: { success: boolean; error?: string }) => {
+        if (response.success) {
+          // Update local state immediately for better UX
+          updateContentPinStatus(contentId, false);
+          resolve();
+        } else {
+          reject(new Error(response.error || 'Failed to unpin content'));
+        }
+      });
+    });
+  }, [socket]);
+
+  // Update content pin status method
+  const updateContentPinStatus = useCallback((contentId: string, isPinned: boolean): void => {
+    setContents(prevContents => {
+      const newContents = new Map(prevContents);
+      const content = newContents.get(contentId);
+      if (content) {
+        const updatedContent = {
+          ...content,
+          metadata: {
+            ...content.metadata,
+            isPinned
+          }
+        };
+        newContents.set(contentId, updatedContent);
+        contentsRef.current = newContents;
+      }
+      return newContents;
+    });
+  }, []);
+
   // Context value - properly memoized to prevent unnecessary re-renders
   const value: ContentStoreContextType = React.useMemo(() => ({
     contents,
@@ -1750,7 +1856,10 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     restoreCachedContent,
     isContentComplete,
     updateSessionPassphrase,
-    loadMoreContent
+    loadMoreContent,
+    pinContent,
+    unpinContent,
+    updateContentPinStatus
   }), [
     contents,
     paginationInfo,
@@ -1767,7 +1876,10 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     restoreCachedContent,
     isContentComplete,
     updateSessionPassphrase,
-    loadMoreContent
+    loadMoreContent,
+    pinContent,
+    unpinContent,
+    updateContentPinStatus
   ]);
 
   // Set up periodic cleanup for orphaned chunks and URLs

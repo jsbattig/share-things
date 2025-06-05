@@ -31,6 +31,13 @@ interface StorageConfig {
    * @default 50
    */
   maxPinnedItemsPerSession: number;
+
+  /**
+   * Maximum file size for broadcasting chunks to clients (in bytes)
+   * Files larger than this will be stored server-side only
+   * @default 10485760 (10MB)
+   */
+  largeFileThreshold: number;
 }
 
 /**
@@ -42,7 +49,8 @@ export function getStorageConfig(): StorageConfig {
     maxItemsPerSession: parseInt(process.env.MAX_ITEMS_PER_SESSION || '20', 10),
     maxItemsToSend: parseInt(process.env.MAX_ITEMS_TO_SEND || '5', 10),
     cleanupInterval: parseInt(process.env.CLEANUP_INTERVAL || '3600000', 10),
-    maxPinnedItemsPerSession: parseInt(process.env.MAX_PINNED_ITEMS_PER_SESSION || '50', 10)
+    maxPinnedItemsPerSession: parseInt(process.env.MAX_PINNED_ITEMS_PER_SESSION || '50', 10),
+    largeFileThreshold: parseInt(process.env.LARGE_FILE_THRESHOLD || '10485760', 10)
   };
 }
 
@@ -65,6 +73,10 @@ export function validateConfig(config: StorageConfig): void {
 
   if (config.maxPinnedItemsPerSession <= 0) {
     throw new Error('MAX_PINNED_ITEMS_PER_SESSION must be greater than 0');
+  }
+
+  if (config.largeFileThreshold <= 0) {
+    throw new Error('LARGE_FILE_THRESHOLD must be greater than 0');
   }
 }
 

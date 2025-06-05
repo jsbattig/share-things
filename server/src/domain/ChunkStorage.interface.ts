@@ -101,6 +101,11 @@ export interface ContentMetadata {
    * Whether this content is pinned (protected from cleanup)
    */
   isPinned: boolean;
+
+  /**
+   * Whether this content is considered a large file (server-side only)
+   */
+  isLargeFile: boolean;
 }
 
 /**
@@ -118,6 +123,12 @@ export interface IChunkStorage {
    * @param metadata Metadata about the chunk
    */
   saveChunk(chunk: Uint8Array, metadata: Omit<ChunkMetadata, 'timestamp'>): Promise<void>;
+
+  /**
+   * Save content metadata without chunks (for large files)
+   * @param metadata Content metadata to save
+   */
+  saveContent(metadata: ContentMetadata): Promise<void>;
 
   /**
    * Retrieve a chunk of content
@@ -203,6 +214,24 @@ export interface IChunkStorage {
    * @returns Number of pinned items
    */
   getPinnedContentCount(sessionId: string): Promise<number>;
+
+  /**
+   * Stream content chunks for download
+   * @param contentId ID of the content to stream
+   * @param onChunk Callback for each chunk
+   * @returns Promise that resolves when streaming is complete
+   */
+  streamContentForDownload(
+    contentId: string,
+    onChunk: (chunk: Uint8Array, metadata: ChunkMetadata) => Promise<void>
+  ): Promise<void>;
+
+  /**
+   * Check if content is a large file
+   * @param contentId ID of the content
+   * @returns True if content is a large file
+   */
+  isLargeFile(contentId: string): Promise<boolean>;
 
   /**
    * Close the storage and release resources

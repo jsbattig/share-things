@@ -35,20 +35,42 @@ export class MockFileSystemChunkStorage implements IChunkStorage {
 
     // Update content metadata
     const existing = this.contentMetadata.get(metadata.contentId);
+    const totalSize = existing ? existing.totalSize + metadata.size : metadata.size;
+    
+    // Import storage config to check large file threshold
+    const { storageConfig } = require('../infrastructure/config/storage.config');
+    const isLargeFile = totalSize > storageConfig.largeFileThreshold;
+    
     const contentMeta: ContentMetadata = {
       contentId: metadata.contentId,
       sessionId: metadata.sessionId,
       contentType: 'application/octet-stream',
       totalChunks: metadata.totalChunks,
-      totalSize: existing ? existing.totalSize + metadata.size : metadata.size,
+      totalSize: totalSize,
       createdAt: existing ? existing.createdAt : Date.now(),
       encryptionIv: metadata.iv,
       additionalMetadata: null,
       isComplete: false,
       isPinned: existing ? existing.isPinned : false,
+      isLargeFile: isLargeFile,
     };
 
     this.contentMetadata.set(metadata.contentId, contentMeta);
+
+    // Track session content
+    const sessionContents = this.sessionContent.get(metadata.sessionId) || [];
+    if (!sessionContents.includes(metadata.contentId)) {
+      sessionContents.push(metadata.contentId);
+      this.sessionContent.set(metadata.sessionId, sessionContents);
+    }
+  }
+
+  async saveContent(metadata: ContentMetadata): Promise<void> {
+    if (!this.isInitialized) {
+      throw new Error('Storage not initialized');
+    }
+
+    this.contentMetadata.set(metadata.contentId, metadata);
 
     // Track session content
     const sessionContents = this.sessionContent.get(metadata.sessionId) || [];
@@ -298,6 +320,49 @@ export class MockFileSystemChunkStorage implements IChunkStorage {
     }
 
     return count;
+  }
+
+  async streamContentForDownload(
+    contentId: string,
+    onChunk: (chunk: Uint8Array, metadata: ChunkMetadata) => Promise<void>
+  ): Promise<void> {
+    if (!this.isInitialized) {
+      throw new Error('Storage not initialized');
+    }
+
+    const contentMeta = this.contentMetadata.get(contentId);
+    if (!contentMeta) {
+      throw new Error('Content not found');
+    }
+
+    for (let i = 0; i < contentMeta.totalChunks; i++) {
+      const chunk = await this.getChunk(contentId, i);
+      const chunkMeta = await this.getChunkMetadata(contentId, i);
+      
+      if (chunk && chunkMeta) {
+        const metadata: ChunkMetadata = {
+          contentId,
+          sessionId: contentMeta.sessionId,
+          chunkIndex: i,
+          totalChunks: contentMeta.totalChunks,
+          size: chunk.length,
+          iv: chunkMeta.iv,
+          contentType: contentMeta.contentType,
+          timestamp: contentMeta.createdAt
+        };
+        
+        await onChunk(chunk, metadata);
+      }
+    }
+  }
+
+  async isLargeFile(contentId: string): Promise<boolean> {
+    if (!this.isInitialized) {
+      throw new Error('Storage not initialized');
+    }
+
+    const metadata = this.contentMetadata.get(contentId);
+    return metadata ? metadata.isLargeFile : false;
   }
 }
 

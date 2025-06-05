@@ -7,6 +7,7 @@ import {
   HStack,
   VStack,
   Icon,
+  IconButton,
   Button,
   Menu,
   MenuButton,
@@ -30,6 +31,7 @@ import {
   FaCheck,
   FaExclamationTriangle
 } from 'react-icons/fa';
+import { RiPushpinFill, RiPushpinLine } from 'react-icons/ri';
 import { useContentStore, ContentType } from '../../contexts/ContentStoreContext';
 import { useServices } from '../../contexts/ServiceContext';
 import { formatFileSize, formatDate } from '../../utils/formatters';
@@ -434,7 +436,7 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   console.log(`[RENDER] ContentItem #${renderCountRef.current} for ${contentId.substring(0, 8)}`);
   
   // Context
-  const { getContent, updateContentLastAccessed, removeContent } = useContentStore();
+  const { getContent, updateContentLastAccessed, removeContent, pinContent, unpinContent } = useContentStore();
   const { urlRegistry, chunkTrackingService } = useServices();
   
   // Toast
@@ -456,6 +458,39 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   
   // Get the metadata from the content entry
   const { metadata } = content;
+  
+  // Pin toggle handler
+  const handlePinToggle = useCallback(async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (metadata.isPinned) {
+        await unpinContent(contentId);
+        toast({
+          title: 'Content unpinned',
+          status: 'info',
+          duration: 2000,
+          isClosable: true,
+        });
+      } else {
+        await pinContent(contentId);
+        toast({
+          title: 'Content pinned',
+          status: 'success',
+          duration: 2000,
+          isClosable: true,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to toggle pin status:', error);
+      toast({
+        title: 'Failed to toggle pin',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  }, [metadata.isPinned, contentId, pinContent, unpinContent, toast]);
   
   // Determine the most appropriate content type based on metadata and actual content
   let effectiveContentType = metadata.contentType;
@@ -901,9 +936,10 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   };
   
   return (
-    <Box 
-      borderWidth="1px" 
-      borderRadius="lg" 
+    <Box
+      position="relative"
+      borderWidth="1px"
+      borderRadius="lg"
       overflow="hidden"
       bg="white"
       transition="all 0.2s"
@@ -927,6 +963,20 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
           </HStack>
           
           <HStack spacing={1}>
+            {/* Pin/Unpin Button */}
+            <IconButton
+              icon={<Icon as={metadata.isPinned ? RiPushpinFill : RiPushpinLine} />}
+              aria-label={metadata.isPinned ? "Unpin content" : "Pin content"}
+              size="sm"
+              variant="ghost"
+              onClick={handlePinToggle}
+              colorScheme={metadata.isPinned ? "blue" : "gray"}
+              _hover={{
+                bg: metadata.isPinned ? "blue.100" : "gray.100"
+              }}
+              title={metadata.isPinned ? "Unpin this content" : "Pin this content"}
+            />
+            
             {/* Copy Button */}
             <Button
               size="sm"

@@ -19,6 +19,7 @@ describe('StorageConfig', () => {
     expect(storageConfig.maxItemsPerSession).toBe(20);
     expect(storageConfig.maxItemsToSend).toBe(5);
     expect(storageConfig.cleanupInterval).toBe(3600000);
+    expect(storageConfig.largeFileThreshold).toBe(10485760);
   });
 
   it('should use environment variables when set', () => {
@@ -42,7 +43,8 @@ describe('StorageConfig', () => {
       maxItemsPerSession: 1,
       maxItemsToSend: 1,
       cleanupInterval: 1000,
-      maxPinnedItemsPerSession: 50
+      maxPinnedItemsPerSession: 50,
+      largeFileThreshold: 10485760
     };
 
     expect(() => validateConfig(validConfig)).not.toThrow();
@@ -54,7 +56,8 @@ describe('StorageConfig', () => {
       maxItemsPerSession: 0,
       maxItemsToSend: 1,
       cleanupInterval: 1000,
-      maxPinnedItemsPerSession: 50
+      maxPinnedItemsPerSession: 50,
+      largeFileThreshold: 10485760
     };
 
     expect(() => validateConfig(invalidConfig)).toThrow('MAX_ITEMS_PER_SESSION must be greater than 0');
@@ -66,7 +69,8 @@ describe('StorageConfig', () => {
       maxItemsPerSession: 10,
       maxItemsToSend: 0,
       cleanupInterval: 1000,
-      maxPinnedItemsPerSession: 50
+      maxPinnedItemsPerSession: 50,
+      largeFileThreshold: 10485760
     };
 
     expect(() => validateConfig(invalidConfig)).toThrow('MAX_ITEMS_TO_SEND must be greater than 0');
@@ -78,9 +82,23 @@ describe('StorageConfig', () => {
       maxItemsPerSession: 10,
       maxItemsToSend: 5,
       cleanupInterval: 0,
-      maxPinnedItemsPerSession: 50
+      maxPinnedItemsPerSession: 50,
+      largeFileThreshold: 10485760
     };
 
     expect(() => validateConfig(invalidConfig)).toThrow('CLEANUP_INTERVAL must be greater than 0');
+  });
+
+  it('should throw error for invalid largeFileThreshold', () => {
+    const invalidConfig = {
+      storagePath: '/path',
+      maxItemsPerSession: 10,
+      maxItemsToSend: 5,
+      cleanupInterval: 1000,
+      maxPinnedItemsPerSession: 50,
+      largeFileThreshold: 0
+    };
+
+    expect(() => validateConfig(invalidConfig)).toThrow('LARGE_FILE_THRESHOLD must be greater than 0');
   });
 });

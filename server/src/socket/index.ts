@@ -60,14 +60,16 @@ async function getChunkStorage(): Promise<FileSystemChunkStorage> {
   return globalChunkStorage;
 }
 
-export function setupSocketHandlers(io: Server, sessionManager: SessionManager): { cleanup: () => Promise<void> } {
-  // Initialize chunk storage
-  const chunkStoragePromise = getChunkStorage();
+export function setupSocketHandlers(io: Server, sessionManager: SessionManager, chunkStorage?: FileSystemChunkStorage): { cleanup: () => Promise<void> } {
+  // Use provided chunk storage or create one
+  const chunkStoragePromise = chunkStorage ? Promise.resolve(chunkStorage) : getChunkStorage();
   
   // Cleanup function to close storage
   const cleanup = async (): Promise<void> => {
     try {
-      if (globalChunkStorage) {
+      if (chunkStorage) {
+        await chunkStorage.close();
+      } else if (globalChunkStorage) {
         await globalChunkStorage.close();
         globalChunkStorage = null;
       }
@@ -180,29 +182,35 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
                 isChunked: content.totalChunks > 1,
                 totalChunks: content.totalChunks,
                 totalSize: content.totalSize,
+                isLargeFile: content.isLargeFile,
                 encryptionMetadata: {
                   iv: Array.from(content.encryptionIv)
                 }
               }
             });
 
-            // Send chunks at full speed - client can handle rapid processing
-            for (let i = 0; i < content.totalChunks; i++) {
-              const chunkData = await chunkStorage.getChunk(content.contentId, i);
-              const chunkMetadata = await chunkStorage.getChunkMetadata(content.contentId, i);
-              
-              if (chunkData && chunkMetadata) {
-                socket.emit('chunk', {
-                  sessionId: sessionId,
-                  chunk: {
-                    contentId: content.contentId,
-                    chunkIndex: i,
-                    totalChunks: content.totalChunks,
-                    encryptedData: Array.from(chunkData),
-                    iv: Array.from(chunkMetadata.iv)
-                  }
-                });
+            // Only send chunks for non-large files
+            if (!content.isLargeFile) {
+              // Send chunks at full speed - client can handle rapid processing
+              for (let i = 0; i < content.totalChunks; i++) {
+                const chunkData = await chunkStorage.getChunk(content.contentId, i);
+                const chunkMetadata = await chunkStorage.getChunkMetadata(content.contentId, i);
+                
+                if (chunkData && chunkMetadata) {
+                  socket.emit('chunk', {
+                    sessionId: sessionId,
+                    chunk: {
+                      contentId: content.contentId,
+                      chunkIndex: i,
+                      totalChunks: content.totalChunks,
+                      encryptedData: Array.from(chunkData),
+                      iv: Array.from(chunkMetadata.iv)
+                    }
+                  });
+                }
               }
+            } else {
+              console.log(`[LARGE-FILE] Skipping chunk transmission for large file ${content.contentId} (${content.totalSize} bytes) to new client ${socket.id}`);
             }
           }
 
@@ -348,7 +356,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
         content.senderName = client?.clientName || 'Unknown';
         content.timestamp = Date.now();
 
-        // Save non-chunked content to storage
+        // Save content to storage
         try {
           if (!content.isChunked && contentData) {
             console.log(`[STORAGE-DEBUG] Saving content ${content.contentId} to storage for session ${sessionId}`);
@@ -364,7 +372,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
                 sessionId: sessionId,
                 chunkIndex: 0,
                 totalChunks: 1,
-                size: encryptedData.length,
+                size: content.totalSize || encryptedData.length,
                 iv: iv,
                 contentType: content.contentType || 'text',
                 mimeType: (content.metadata?.mimeType as string) || 'text/plain'
@@ -384,16 +392,76 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
             // Verify the content was saved by checking storage
             const savedContent = await chunkStorage.listContent(sessionId, 50);
             console.log(`[STORAGE-DEBUG] After saving, found ${savedContent.length} items in session ${sessionId}`);
+          } else if (!content.isChunked && !contentData) {
+            // For metadata-only content (no actual data), save metadata to storage
+            console.log(`[STORAGE-DEBUG] Saving metadata-only content ${content.contentId} to storage for session ${sessionId}`);
+            
+            const iv = content.encryptionMetadata?.iv ? new Uint8Array(content.encryptionMetadata.iv) : new Uint8Array(12);
+            const isLargeFile = content.totalSize > storageConfig.largeFileThreshold;
+            
+            await chunkStorage.saveContent({
+              contentId: content.contentId,
+              sessionId: sessionId,
+              contentType: content.contentType || 'application/octet-stream',
+              totalChunks: content.totalChunks || 1,
+              totalSize: content.totalSize || 0,
+              createdAt: Date.now(),
+              encryptionIv: iv,
+              additionalMetadata: content.metadata ? JSON.stringify(content.metadata) : null,
+              isComplete: true,
+              isPinned: false,
+              isLargeFile: isLargeFile
+            });
+            
+            console.log(`[STORAGE-DEBUG] Metadata-only content ${content.contentId} saved successfully to storage`);
+          } else if (content.isChunked && content.totalChunks) {
+            // For chunked content (including large files), save metadata directly
+            console.log(`[STORAGE-DEBUG] Saving metadata for chunked content ${content.contentId} (${content.totalSize} bytes)`);
+            
+            const iv = content.encryptionMetadata?.iv ? new Uint8Array(content.encryptionMetadata.iv) : new Uint8Array(12);
+            const isLargeFile = content.totalSize > storageConfig.largeFileThreshold;
+            
+            await chunkStorage.saveContent({
+              contentId: content.contentId,
+              sessionId: sessionId,
+              contentType: content.contentType || 'application/octet-stream',
+              totalChunks: content.totalChunks,
+              totalSize: content.totalSize || 0,
+              createdAt: Date.now(),
+              encryptionIv: iv,
+              additionalMetadata: content.metadata ? JSON.stringify(content.metadata) : null,
+              isComplete: true,
+              isPinned: false,
+              isLargeFile: isLargeFile
+            });
+            
+            console.log(`[STORAGE-DEBUG] Chunked content metadata ${content.contentId} saved successfully to storage`);
           }
         } catch (storageError) {
-          console.error(`[STORAGE-DEBUG] Error saving non-chunked content to storage:`, storageError);
+          console.error(`[STORAGE-DEBUG] Error saving content to storage:`, storageError);
         }
 
-        // Broadcast to other clients in the session
-        socket.to(sessionId).emit('content', {
-          sessionId,
-          content
-        });
+        // Check if this is a large file that should not be broadcasted
+        const isLargeFile = content.totalSize > storageConfig.largeFileThreshold;
+        
+        if (isLargeFile) {
+          console.log(`[LARGE-FILE] Content ${content.contentId} (${content.totalSize} bytes) exceeds threshold (${storageConfig.largeFileThreshold} bytes) - not broadcasting to other clients`);
+          
+          // For large files, only send metadata to other clients (no chunks will be sent)
+          socket.to(sessionId).emit('content', {
+            sessionId,
+            content: {
+              ...content,
+              isLargeFile: true
+            }
+          });
+        } else {
+          // Broadcast normally for regular files
+          socket.to(sessionId).emit('content', {
+            sessionId,
+            content
+          });
+        }
 
         if (callback) {
           callback({ success: true });
@@ -444,16 +512,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
           return;
         }
 
-        // Forward chunk to other clients
-        const recipients = Array.from(session.clients.keys()).filter(id => id !== socket.id);
-
-        // Broadcast to other clients in the session
-        socket.to(sessionId).emit('chunk', {
-          sessionId,
-          chunk
-        });
-
-        // Save chunk to storage
+        // Save chunk to storage first
         try {
           await chunkStorage.saveChunk(
             new Uint8Array(chunk.encryptedData),
@@ -483,11 +542,40 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
           console.error(`Error saving chunk to storage:`, storageError);
         }
 
+        // Check if this is a large file - if so, don't broadcast chunks
+        let broadcastedToClients = 0;
+        try {
+          const isLargeFile = await chunkStorage.isLargeFile(chunk.contentId);
+          
+          if (isLargeFile) {
+            console.log(`[LARGE-FILE] Chunk ${chunk.chunkIndex}/${chunk.totalChunks} for large file ${chunk.contentId} - not broadcasting to other clients`);
+          } else {
+            // Forward chunk to other clients for regular files
+            const recipients = Array.from(session.clients.keys()).filter(id => id !== socket.id);
+            broadcastedToClients = recipients.length;
+
+            // Broadcast to other clients in the session
+            socket.to(sessionId).emit('chunk', {
+              sessionId,
+              chunk
+            });
+          }
+        } catch (error) {
+          console.error(`Error checking if content is large file:`, error);
+          // Default to broadcasting if we can't determine file size
+          const recipients = Array.from(session.clients.keys()).filter(id => id !== socket.id);
+          broadcastedToClients = recipients.length;
+          socket.to(sessionId).emit('chunk', {
+            sessionId,
+            chunk
+          });
+        }
+
         if (callback) {
           callback({ success: true });
         }
 
-        console.log(`Chunk ${chunk.chunkIndex}/${chunk.totalChunks} for content ${chunk.contentId} forwarded to ${recipients.length} recipients`);
+        console.log(`Chunk ${chunk.chunkIndex}/${chunk.totalChunks} for content ${chunk.contentId} saved to storage and forwarded to ${broadcastedToClients} recipients`);
       } catch (error) {
         console.error('Error in chunk handler:', error);
         if (callback) {
@@ -706,6 +794,78 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager):
         if (callback) {
           callback({ success: false, error: 'Internal server error' });
         }
+      }
+    });
+
+    // Handle content pinning
+    socket.on('pin-content', async (data: { sessionId: string, contentId: string }, callback?: SocketCallback) => {
+      try {
+        console.log(`[Socket] Pin content request: ${data.contentId} in session ${data.sessionId}`);
+        
+        // Validate session
+        const session = sessionManager.getSession(data.sessionId);
+        if (!session) {
+          console.error(`[Socket] Session not found: ${data.sessionId}`);
+          if (callback) callback({ success: false, error: 'Session not found' });
+          return;
+        }
+
+        // Pin the content
+        const chunkStorage = await chunkStoragePromise;
+        await chunkStorage.pinContent(data.contentId);
+        
+        // Notify all clients in the session
+        io.to(data.sessionId).emit('content-pinned', { contentId: data.contentId });
+        
+        console.log(`[Socket] Content pinned successfully: ${data.contentId}`);
+        if (callback) callback({ success: true });
+        
+      } catch (error) {
+        console.error(`[Socket] Error pinning content ${data.contentId}:`, error);
+        
+        // Notify the requesting client of the error
+        socket.emit('pin-error', {
+          contentId: data.contentId,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+        
+        if (callback) callback({ success: false, error: 'Failed to pin content' });
+      }
+    });
+
+    // Handle content unpinning
+    socket.on('unpin-content', async (data: { sessionId: string, contentId: string }, callback?: SocketCallback) => {
+      try {
+        console.log(`[Socket] Unpin content request: ${data.contentId} in session ${data.sessionId}`);
+        
+        // Validate session
+        const session = sessionManager.getSession(data.sessionId);
+        if (!session) {
+          console.error(`[Socket] Session not found: ${data.sessionId}`);
+          if (callback) callback({ success: false, error: 'Session not found' });
+          return;
+        }
+
+        // Unpin the content
+        const chunkStorage = await chunkStoragePromise;
+        await chunkStorage.unpinContent(data.contentId);
+        
+        // Notify all clients in the session
+        io.to(data.sessionId).emit('content-unpinned', { contentId: data.contentId });
+        
+        console.log(`[Socket] Content unpinned successfully: ${data.contentId}`);
+        if (callback) callback({ success: true });
+        
+      } catch (error) {
+        console.error(`[Socket] Error unpinning content ${data.contentId}:`, error);
+        
+        // Notify the requesting client of the error
+        socket.emit('unpin-error', {
+          contentId: data.contentId,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+        
+        if (callback) callback({ success: false, error: 'Failed to unpin content' });
       }
     });
 

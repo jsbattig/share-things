@@ -18,6 +18,7 @@ interface ContentRow {
   additionalMetadata?: string | null;
   isComplete?: number;
   isPinned?: number;
+  isLargeFile?: number;
 }
 
 export interface FileSystemChunkStorageOptions {
@@ -102,6 +103,14 @@ export class FileSystemChunkStorage implements IChunkStorage {
       // Add index for pinned content queries
       await this.db.run('CREATE INDEX IF NOT EXISTS idx_content_pinned ON content(is_pinned, created_at)');
       console.log('[DEBUG] Added index for pinned content queries');
+      
+      // Add is_large_file column
+      await this.db.run('ALTER TABLE content ADD COLUMN is_large_file BOOLEAN NOT NULL DEFAULT 0');
+      console.log('[DEBUG] Added is_large_file column to content table');
+      
+      // Add index for large file queries
+      await this.db.run('CREATE INDEX IF NOT EXISTS idx_content_large_file ON content(is_large_file)');
+      console.log('[DEBUG] Added index for large file queries');
     } catch (error: unknown) {
       // Column already exists or other error - this is expected for new databases
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -140,20 +149,28 @@ export class FileSystemChunkStorage implements IChunkStorage {
     if (chunkIndex === totalChunks - 1) {
       console.log(`[STORAGE-DEBUG] Inserting content metadata for ${contentId} in session ${sessionId}`);
       
+      // Calculate total file size and determine if it's a large file
+      const totalSize = size * totalChunks; // Approximate total size
+      const { storageConfig } = await import('../../infrastructure/config/storage.config');
+      const isLargeFile = totalSize > storageConfig.largeFileThreshold;
+      
+      console.log(`[STORAGE-DEBUG] Content ${contentId}: totalSize=${totalSize}, threshold=${storageConfig.largeFileThreshold}, isLargeFile=${isLargeFile}`);
+      
       // Insert without explicit transaction (let SQLite auto-commit)
       await this.db.run(
         `INSERT OR REPLACE INTO content
-         (id, session_id, content_type, mime_type, total_chunks, total_size, created_at, encryption_iv, additional_metadata)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, session_id, content_type, mime_type, total_chunks, total_size, created_at, encryption_iv, additional_metadata, is_large_file)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         contentId,
         sessionId,
         contentType || 'unknown',
         mimeType,
         totalChunks,
-        size,
+        totalSize,
         Date.now(),
         Buffer.from(iv),
-        null // Will be updated when we have the full metadata
+        null, // Will be updated when we have the full metadata
+        isLargeFile ? 1 : 0
       );
       
       console.log(`[STORAGE-DEBUG] Content metadata inserted successfully for ${contentId}`);
@@ -166,6 +183,33 @@ export class FileSystemChunkStorage implements IChunkStorage {
       );
       console.log(`[STORAGE-DEBUG] Verification: ${verification?.count || 0} records found for ${contentId} in session ${sessionId}`);
     }
+  }
+
+  async saveContent(metadata: ContentMetadata): Promise<void> {
+    if (!this.isInitialized || !this.db) {
+      throw new Error('Storage not initialized');
+    }
+
+    console.log(`[STORAGE-DEBUG] Saving content metadata for ${metadata.contentId} (${metadata.totalSize} bytes)`);
+    
+    // Insert content metadata into database
+    await this.db.run(
+      `INSERT OR REPLACE INTO content
+       (id, session_id, content_type, mime_type, total_chunks, total_size, created_at, encryption_iv, additional_metadata, is_large_file)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      metadata.contentId,
+      metadata.sessionId,
+      metadata.contentType,
+      null, // mimeType - will be extracted from additionalMetadata if needed
+      metadata.totalChunks,
+      metadata.totalSize,
+      metadata.createdAt,
+      Buffer.from(metadata.encryptionIv),
+      metadata.additionalMetadata,
+      metadata.isLargeFile ? 1 : 0
+    );
+    
+    console.log(`[STORAGE-DEBUG] Content metadata saved successfully for ${metadata.contentId}`);
   }
 
   async getChunk(contentId: string, chunkIndex: number): Promise<Uint8Array | null> {
@@ -235,7 +279,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
          encryption_iv as encryptionIv,
          mime_type,
          additional_metadata,
-         is_pinned as isPinned
+         is_pinned as isPinned,
+         is_large_file as isLargeFile
        FROM content
        WHERE session_id = ?
        ORDER BY is_pinned DESC, created_at DESC
@@ -256,7 +301,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
       isComplete: true,
       encryptionIv: row.encryptionIv ? new Uint8Array(row.encryptionIv) : new Uint8Array(12),
       additionalMetadata: row.additional_metadata || (row.mime_type ? JSON.stringify({ mimeType: row.mime_type }) : null),
-      isPinned: Boolean(row.isPinned)
+      isPinned: Boolean(row.isPinned),
+      isLargeFile: Boolean(row.isLargeFile || false)
     }));
   }
 
@@ -330,7 +376,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
          created_at as createdAt,
          encryption_iv as encryptionIv,
          mime_type,
-         is_pinned as isPinned
+         is_pinned as isPinned,
+         is_large_file as isLargeFile
        FROM content
        WHERE id = ?`,
       contentId
@@ -348,7 +395,8 @@ export class FileSystemChunkStorage implements IChunkStorage {
       isComplete: true,
       encryptionIv: row.encryptionIv ? new Uint8Array(row.encryptionIv) : new Uint8Array(12),
       additionalMetadata: row.mime_type ? JSON.stringify({ mimeType: row.mime_type }) : null,
-      isPinned: Boolean(row.isPinned)
+      isPinned: Boolean(row.isPinned),
+      isLargeFile: Boolean(row.isLargeFile || false)
     };
   }
 
@@ -470,6 +518,51 @@ export class FileSystemChunkStorage implements IChunkStorage {
     for (const content of oldContent) {
       await this.deleteContent(content.id);
     }
+  }
+
+  async streamContentForDownload(
+    contentId: string,
+    onChunk: (chunk: Uint8Array, metadata: ChunkMetadata) => Promise<void>
+  ): Promise<void> {
+    if (!this.isInitialized || !this.db) {
+      throw new Error('Storage not initialized');
+    }
+
+    // Get content metadata first
+    const contentMeta = await this.getContentMetadata(contentId);
+    if (!contentMeta) {
+      throw new Error('Content not found');
+    }
+
+    // Stream chunks in order
+    for (let i = 0; i < contentMeta.totalChunks; i++) {
+      const chunk = await this.getChunk(contentId, i);
+      const chunkMeta = await this.getChunkMetadata(contentId, i);
+      
+      if (chunk && chunkMeta) {
+        const metadata: ChunkMetadata = {
+          contentId,
+          sessionId: contentMeta.sessionId,
+          chunkIndex: i,
+          totalChunks: contentMeta.totalChunks,
+          size: chunk.length,
+          iv: chunkMeta.iv,
+          contentType: contentMeta.contentType,
+          timestamp: contentMeta.createdAt
+        };
+        
+        await onChunk(chunk, metadata);
+      }
+    }
+  }
+
+  async isLargeFile(contentId: string): Promise<boolean> {
+    if (!this.isInitialized || !this.db) {
+      throw new Error('Storage not initialized');
+    }
+
+    const metadata = await this.getContentMetadata(contentId);
+    return metadata ? metadata.isLargeFile : false;
   }
 
   async close(): Promise<void> {

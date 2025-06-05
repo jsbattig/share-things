@@ -148,6 +148,24 @@ export class SessionManager {
     // Close repository
     await this.sessionRepository.close();
   }
+
+  /**
+   * Remove a session (for testing purposes)
+   * @param sessionId Session ID to remove
+   */
+  public async removeSession(sessionId: string): Promise<void> {
+    try {
+      // Remove from memory
+      this.sessions.delete(sessionId);
+      
+      // Remove from repository
+      await this.sessionRepository.delete(sessionId);
+      
+      console.log(`[SessionManager] Removed session ${sessionId}`);
+    } catch (error) {
+      console.warn(`[SessionManager] Failed to remove session ${sessionId}:`, error);
+    }
+  }
   
   /**
    * Joins a session

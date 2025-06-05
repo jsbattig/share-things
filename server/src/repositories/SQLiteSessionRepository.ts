@@ -177,7 +177,7 @@ export class SQLiteSessionRepository implements SessionRepository {
       if (!this.db) return reject(new Error('Database not initialized'));
       
       this.db.run(
-        `INSERT INTO sessions
+        `INSERT OR IGNORE INTO sessions
          (session_id, fingerprint_iv, fingerprint_data, created_at, last_activity)
          VALUES (?, ?, ?, ?, ?)`,
         [

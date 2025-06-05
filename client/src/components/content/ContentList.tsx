@@ -47,6 +47,12 @@ const ContentList: React.FC = React.memo(() => {
   // Sort content list - memoized for performance
   const sortedContentList = useMemo(() => {
     return [...contentList].sort((a, b) => {
+      // First, sort by pinned status (pinned items first)
+      if (a.isPinned !== b.isPinned) {
+        return a.isPinned ? -1 : 1;
+      }
+      
+      // Then sort by timestamp within each group (pinned/non-pinned)
       if (sortOrder === 'asc') {
         return a.timestamp - b.timestamp;
       } else {

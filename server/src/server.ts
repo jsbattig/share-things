@@ -7,6 +7,8 @@ import path from 'path';
 import { setupSocketHandlers } from './socket';
 import { setupRoutes } from './routes';
 import { SessionManager } from './services/SessionManager';
+import { FileSystemChunkStorage } from './infrastructure/storage/FileSystemChunkStorage';
+import { storageConfig } from './infrastructure/config/storage.config';
 
 // Load environment variables
 dotenv.config();
@@ -61,8 +63,13 @@ const sessionManager = new SessionManager({
   dbPath
 });
 
-// Set up routes
-setupRoutes(app);
+// Create shared chunk storage instance
+const chunkStorage = new FileSystemChunkStorage({
+  storagePath: storageConfig.storagePath
+});
+
+// Set up routes with dependencies
+setupRoutes(app, sessionManager, chunkStorage);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -83,8 +90,11 @@ async function startServer() {
     // Initialize session manager
     await sessionManager.initialize();
     
-    // Set up socket handlers with session manager
-    const { cleanup: cleanupSocketHandlers } = setupSocketHandlers(io, sessionManager);
+    // Initialize chunk storage
+    await chunkStorage.initialize();
+    
+    // Set up socket handlers with session manager and chunk storage
+    const { cleanup: cleanupSocketHandlers } = setupSocketHandlers(io, sessionManager, chunkStorage);
     
     // Start server
     server.listen({
