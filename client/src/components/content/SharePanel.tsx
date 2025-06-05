@@ -143,7 +143,8 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
           }
         },
         isChunked: false,
-        totalSize: contentToShare.length
+        totalSize: contentToShare.length,
+        isPinned: false
       };
       
       console.log('[ShareText] Content metadata created:', contentId);
@@ -276,7 +277,8 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
         },
         isChunked: file.size > 64 * 1024, // Chunk if larger than 64KB
         totalChunks: file.size > 64 * 1024 ? Math.ceil(file.size / (64 * 1024)) : 1,
-        totalSize: file.size
+        totalSize: file.size,
+        isPinned: false
       };
       
       // Implement chunking and encryption
