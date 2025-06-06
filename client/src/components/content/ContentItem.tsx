@@ -7,6 +7,7 @@ import {
   HStack,
   VStack,
   Icon,
+  IconButton,
   Button,
   Menu,
   MenuButton,
@@ -444,6 +445,20 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   // Get content
   const content = getContent(contentId);
   
+  // Track pin status in a ref to avoid stale closure issues
+  const pinStatusRef = React.useRef<boolean>(false);
+  
+  // Local state for UI rendering (triggers re-renders)
+  const [isPinnedUI, setIsPinnedUI] = React.useState<boolean>(false);
+  
+  // Update pin status ref and UI state whenever content changes
+  React.useEffect(() => {
+    if (content?.metadata?.isPinned !== undefined) {
+      pinStatusRef.current = content.metadata.isPinned;
+      setIsPinnedUI(content.metadata.isPinned);
+    }
+  }, [content?.metadata?.isPinned]);
+  
   // Clipboard
   const { hasCopied, onCopy } = useClipboard(
     content?.data && typeof content.data === 'string'
@@ -454,9 +469,34 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   // Pin toggle handler - moved before early return to follow Rules of Hooks
   const handlePinToggle = useCallback(async (e: React.MouseEvent) => {
     e.stopPropagation();
+    
+    // Use the ref for current pin status to avoid stale closure issues
+    const currentPinStatus = pinStatusRef.current;
+    
+    console.log('[PIN DEBUG] Pin button clicked!', {
+      contentId,
+      currentPinStatus,
+      currentPinStatusType: typeof currentPinStatus,
+      pinStatusRef: pinStatusRef.current,
+      contentMetadataIsPinned: content?.metadata?.isPinned
+    });
+    
+    // Additional debugging for pin status detection
+    console.log('[PIN DEBUG] Pin status analysis:', {
+      'pinStatusRef.current': pinStatusRef.current,
+      'content?.metadata?.isPinned': content?.metadata?.isPinned,
+      'Boolean(currentPinStatus)': Boolean(currentPinStatus),
+      'currentPinStatus === true': currentPinStatus === true,
+      'currentPinStatus === false': currentPinStatus === false
+    });
+    
     try {
-      if (content?.metadata?.isPinned) {
+      if (currentPinStatus) {
+        console.log('[PIN DEBUG] Unpinning content...');
+        pinStatusRef.current = false; // Update ref immediately
+        setIsPinnedUI(false); // Update UI state immediately
         await unpinContent(contentId);
+        console.log('[PIN DEBUG] Unpin completed successfully');
         toast({
           title: 'Content unpinned',
           status: 'info',
@@ -464,7 +504,11 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
           isClosable: true,
         });
       } else {
+        console.log('[PIN DEBUG] Pinning content...');
+        pinStatusRef.current = true; // Update ref immediately
+        setIsPinnedUI(true); // Update UI state immediately
         await pinContent(contentId);
+        console.log('[PIN DEBUG] Pin completed successfully');
         toast({
           title: 'Content pinned',
           status: 'success',
@@ -473,7 +517,10 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
         });
       }
     } catch (error) {
-      console.error('Failed to toggle pin status:', error);
+      console.error('[PIN DEBUG] Pin operation failed:', error);
+      // Revert ref and UI state on error
+      pinStatusRef.current = !currentPinStatus;
+      setIsPinnedUI(!currentPinStatus);
       toast({
         title: 'Failed to toggle pin',
         description: error instanceof Error ? error.message : 'Unknown error',
@@ -482,7 +529,7 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
         isClosable: true,
       });
     }
-  }, [content?.metadata?.isPinned, contentId, pinContent, unpinContent, toast]);
+  }, [contentId, pinContent, unpinContent, toast, content?.metadata?.isPinned]);
   
   if (!content) {
     return null;
@@ -962,19 +1009,50 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
           </HStack>
           
           <HStack spacing={1}>
+            {/* Pin/Unpin Button */}
+            <IconButton
+              icon={<Icon as={isPinnedUI ? RiPushpinFill : RiPushpinLine} />}
+              aria-label={isPinnedUI ? "Unpin content" : "Pin content"}
+              size="sm"
+              variant="ghost"
+              onClick={handlePinToggle}
+              colorScheme={isPinnedUI ? "blue" : "gray"}
+              _hover={{
+                bg: isPinnedUI ? "blue.100" : "gray.100"
+              }}
+              title={isPinnedUI ? "Unpin this content" : "Pin this content"}
+            />
+            
+            {/* Copy Button */}
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="Copy to clipboard"
+              title="Copy to clipboard"
+              onClick={copyContent}
+              isDisabled={!content.isComplete}
+            >
+              <Icon as={hasCopied ? FaCheck : FaCopy} />
+            </Button>
+            
+            {/* Download Button */}
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-label="Download"
+              title="Download"
+              onClick={downloadContent}
+              isDisabled={!content.isComplete}
+            >
+              <Icon as={FaDownload} />
+            </Button>
+            
             {/* Menu Button */}
             <Menu placement="bottom-end" strategy="fixed">
               <MenuButton as={Button} size="sm" variant="ghost">
                 <Icon as={FaEllipsisV} />
               </MenuButton>
               <MenuList zIndex={9999} boxShadow="lg" bg="white" border="1px solid" borderColor="gray.200">
-                <MenuItem
-                  icon={<Icon as={content?.metadata?.isPinned ? RiPushpinFill : RiPushpinLine} />}
-                  onClick={handlePinToggle}
-                  color={content?.metadata?.isPinned ? "blue.600" : "gray.600"}
-                >
-                  {content?.metadata?.isPinned ? "Unpin content" : "Pin content"}
-                </MenuItem>
                 <MenuItem
                   icon={<Icon as={hasCopied ? FaCheck : FaCopy} />}
                   onClick={copyContent}

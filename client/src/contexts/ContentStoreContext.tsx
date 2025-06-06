@@ -420,12 +420,16 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // Pin/unpin event handlers
     const handleContentPinned = (data: { contentId: string }) => {
       console.log(`[CONTENT] Content pinned: ${data.contentId}`);
+      console.log(`[PIN-DEBUG] handleContentPinned called with:`, data);
       updateContentPinStatus(data.contentId, true);
+      console.log(`[PIN-DEBUG] updateContentPinStatus(${data.contentId}, true) completed`);
     };
 
     const handleContentUnpinned = (data: { contentId: string }) => {
       console.log(`[CONTENT] Content unpinned: ${data.contentId}`);
+      console.log(`[PIN-DEBUG] handleContentUnpinned called with:`, data);
       updateContentPinStatus(data.contentId, false);
+      console.log(`[PIN-DEBUG] updateContentPinStatus(${data.contentId}, false) completed`);
     };
 
     const handlePinError = (data: { contentId: string; error: string }) => {
@@ -1479,7 +1483,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     // Create a hash of content states to detect when content is updated (not just added/removed)
     return Array.from(contents.entries())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([id, entry]) => `${id}:${entry.isComplete}:${!!entry.data}`)
+      .map(([id, entry]) => `${id}:${entry.isComplete}:${!!entry.data}:${entry.metadata.isPinned}`)
       .join('|');
   }, [contents]);
 
@@ -1793,6 +1797,8 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   // Pin content method
   const pinContent = useCallback(async (contentId: string): Promise<void> => {
+    console.log('[PIN DEBUG] pinContent called with:', { contentId, hasSocket: !!socket });
+    
     if (!socket) {
       throw new Error('Socket not connected');
     }
@@ -1802,13 +1808,18 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       throw new Error('No session ID found');
     }
 
+    console.log('[PIN DEBUG] Emitting pin-content event:', { sessionId, contentId });
+
     return new Promise((resolve, reject) => {
       socket.emit('pin-content', { sessionId, contentId }, (response: { success: boolean; error?: string }) => {
+        console.log('[PIN DEBUG] Received pin-content response:', response);
         if (response.success) {
           // Update local state immediately for better UX
+          console.log('[PIN DEBUG] Updating local pin status to true');
           updateContentPinStatus(contentId, true);
           resolve();
         } else {
+          console.error('[PIN DEBUG] Pin failed with error:', response.error);
           reject(new Error(response.error || 'Failed to pin content'));
         }
       });

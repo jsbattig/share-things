@@ -80,7 +80,8 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
 
   io.on('connection', (socket: Socket) => {
     console.log(`Client connected: ${socket.id}`);
-
+    console.log(`[SOCKET-DEBUG] Registering socket event handlers for client ${socket.id}`);
+    
     // Handle join session
     socket.on('join', async (data: { 
       sessionId: string; 
@@ -182,7 +183,11 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
                 isChunked: content.totalChunks > 1,
                 totalChunks: content.totalChunks,
                 totalSize: content.totalSize,
-                isPinned: content.isPinned || false,
+                isPinned: (() => {
+                  console.log(`[DEBUG-EMIT-1] Content ${content.contentId} isPinned value:`, content.isPinned, typeof content.isPinned);
+                  console.log(`[DEBUG-EMIT-1] Full content object:`, JSON.stringify(content, null, 2));
+                  return content.isPinned || false;
+                })(),
                 isLargeFile: content.isLargeFile,
                 encryptionMetadata: {
                   iv: Array.from(content.encryptionIv)
@@ -756,7 +761,11 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
               isChunked: content.totalChunks > 1,
               totalChunks: content.totalChunks,
               totalSize: content.totalSize,
-              isPinned: content.isPinned || false,
+              isPinned: (() => {
+                console.log(`[DEBUG-EMIT-2] Content ${content.contentId} isPinned value:`, content.isPinned, typeof content.isPinned);
+                console.log(`[DEBUG-EMIT-2] Full content object:`, JSON.stringify(content, null, 2));
+                return content.isPinned || false;
+              })(),
               encryptionMetadata: {
                 iv: Array.from(content.encryptionIv)
               }
@@ -801,6 +810,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
 
     // Handle content pinning
     socket.on('pin-content', async (data: { sessionId: string, contentId: string }, callback?: SocketCallback) => {
+      console.log(`[PIN-DEBUG] Received pin-content event:`, { data, hasCallback: !!callback });
       try {
         console.log(`[Socket] Pin content request: ${data.contentId} in session ${data.sessionId}`);
         
@@ -812,18 +822,25 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
           return;
         }
 
+        console.log(`[PIN-DEBUG] Session found, proceeding with pin operation`);
+
         // Pin the content
         const chunkStorage = await chunkStoragePromise;
+        console.log(`[PIN-DEBUG] About to call chunkStorage.pinContent(${data.contentId})`);
         await chunkStorage.pinContent(data.contentId);
+        console.log(`[PIN-DEBUG] chunkStorage.pinContent completed successfully`);
         
         // Notify all clients in the session
+        console.log(`[PIN-DEBUG] Emitting content-pinned event to session ${data.sessionId}`);
         io.to(data.sessionId).emit('content-pinned', { contentId: data.contentId });
         
         console.log(`[Socket] Content pinned successfully: ${data.contentId}`);
+        console.log(`[PIN-DEBUG] Calling success callback`);
         if (callback) callback({ success: true });
         
       } catch (error) {
         console.error(`[Socket] Error pinning content ${data.contentId}:`, error);
+        console.error(`[PIN-DEBUG] Full error details:`, error);
         
         // Notify the requesting client of the error
         socket.emit('pin-error', {

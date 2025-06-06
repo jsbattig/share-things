@@ -3,7 +3,7 @@ import { ChunkMetadata } from '../../domain/ChunkStorage.interface';
 import { promises as fs } from 'fs';
 import path from 'path';
 
-describe.skip('Content Pinning', () => {
+describe('Content Pinning', () => {
   let storage: FileSystemChunkStorage;
   let testDir: string;
 

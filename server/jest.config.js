@@ -31,8 +31,7 @@ module.exports = {
     '/node_modules/(?!(chalk|ansi-styles|strip-ansi|ansi-regex|supports-color)/)',
   ],
   testPathIgnorePatterns: [
-    '/node_modules/',
-    '<rootDir>/src/__tests__/unit/ContentPinning.test.ts'
+    '/node_modules/'
   ],
   
   // Setup files

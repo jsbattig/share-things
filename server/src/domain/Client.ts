@@ -60,6 +60,8 @@ export class Client {
    * @param content Content to send
    */
   public sendContent(content: BroadcastContent): void {
+    console.log(`[DEBUG-CLIENT] Sending content ${content.contentId} with isPinned:`, content.isPinned, typeof content.isPinned);
+    console.log(`[DEBUG-CLIENT] Full content object:`, JSON.stringify(content, null, 2));
     this.socket.emit('content', content);
     this.updateActivity();
   }
