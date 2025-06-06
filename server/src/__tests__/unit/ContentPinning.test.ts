@@ -8,21 +8,36 @@ describe('Content Pinning', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    // Create a unique test directory
-    testDir = path.join(__dirname, '../../__test_data__', `pinning_test_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
-    await fs.mkdir(testDir, { recursive: true });
+    // Create a unique test directory in /tmp for Docker compatibility
+    testDir = path.join('/tmp', `pinning_test_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
     
-    storage = new FileSystemChunkStorage({ storagePath: testDir });
-    await storage.initialize();
+    try {
+      await fs.mkdir(testDir, { recursive: true });
+      storage = new FileSystemChunkStorage({ storagePath: testDir });
+      await storage.initialize();
+    } catch (error) {
+      console.error('Failed to initialize storage for ContentPinning test:', error);
+      throw error;
+    }
   });
 
   afterEach(async () => {
-    await storage.close();
+    // Only close storage if it was successfully initialized
+    if (storage) {
+      try {
+        await storage.close();
+      } catch (error) {
+        console.warn('Failed to close storage:', error);
+      }
+    }
+    
     // Clean up test directory
-    try {
-      await fs.rm(testDir, { recursive: true, force: true });
-    } catch (error) {
-      console.warn('Failed to clean up test directory:', error);
+    if (testDir) {
+      try {
+        await fs.rm(testDir, { recursive: true, force: true });
+      } catch (error) {
+        console.warn('Failed to clean up test directory:', error);
+      }
     }
   });
 
