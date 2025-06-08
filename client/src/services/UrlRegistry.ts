@@ -22,7 +22,6 @@ export class UrlRegistry {
     if (urlArray) {
       urlArray.push(url);
     }
-    console.log(`[UrlRegistry] Created URL for content ${contentId}: ${url}`);
     return url;
   }
   
@@ -34,7 +33,6 @@ export class UrlRegistry {
   revokeAllUrls(contentId: string, preserveLatest = false): void {
     const urls = this.urls.get(contentId);
     if (urls) {
-      console.log(`[UrlRegistry] Revoking ${preserveLatest ? 'all but latest of ' : ''}${urls.length} URLs for content ${contentId}`);
       
       if (preserveLatest && urls.length > 0) {
         // Keep the latest URL (last in the array) and revoke all others
@@ -43,17 +41,14 @@ export class UrlRegistry {
         
         urlsToRevoke.forEach(url => {
           URL.revokeObjectURL(url);
-          console.log(`[UrlRegistry] Revoked URL: ${url}`);
         });
         
         // Update the URLs array to only contain the latest URL
         this.urls.set(contentId, [latestUrl]);
-        console.log(`[UrlRegistry] Preserved latest URL for content ${contentId}: ${latestUrl}`);
       } else {
         // Revoke all URLs
         urls.forEach(url => {
           URL.revokeObjectURL(url);
-          console.log(`[UrlRegistry] Revoked URL: ${url}`);
         });
         this.urls.delete(contentId);
       }
@@ -72,7 +67,6 @@ export class UrlRegistry {
       if (index !== -1) {
         URL.revokeObjectURL(url);
         urls.splice(index, 1);
-        console.log(`[UrlRegistry] Revoked URL: ${url}`);
         
         if (urls.length === 0) {
           this.urls.delete(contentId);
@@ -94,13 +88,11 @@ export class UrlRegistry {
           const urlsToRevoke = urls.slice(0, -1);
           const latestUrl = urls[urls.length - 1];
           
-          console.log(`[UrlRegistry] Cleaning up orphaned URLs for content ${contentId}, preserving latest`);
           urlsToRevoke.forEach(url => URL.revokeObjectURL(url));
           
           // Update the URLs array to only contain the latest URL
           this.urls.set(contentId, [latestUrl]);
         } else {
-          console.log(`[UrlRegistry] Cleaning up all orphaned URLs for content ${contentId}`);
           urls.forEach(url => URL.revokeObjectURL(url));
           this.urls.delete(contentId);
         }
@@ -112,7 +104,6 @@ export class UrlRegistry {
    * Clean up all URLs (for component unmount or app shutdown)
    */
   revokeAllUrlsGlobally(): void {
-    console.log(`[UrlRegistry] Revoking all URLs globally`);
     for (const [, urls] of this.urls.entries()) {
       urls.forEach(url => URL.revokeObjectURL(url));
     }

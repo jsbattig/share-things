@@ -6,8 +6,8 @@
   "scripts": {
     "start": "concurrently \"cd server && npm run dev\" \"cd client && npm run dev\"",
     "test": "jest --config=test/config/jest.config.js",
-    "test:e2e": "jest --config=test/config/jest.config.js test/e2e/functional/functional-tests.test.ts",
-    "test:e2e:simple": "jest --config=test/config/jest.config.js test/e2e/functional/simple-test.test.ts",
+    "test:e2e": "npx jest --config=test/e2e/functional/jest.config.js test/e2e/functional/functional-tests.test.ts",
+    "test:e2e:simple": "npx jest --config=test/e2e/functional/jest.config.js test/e2e/functional/simple-test.test.ts",
     "test:all": "concurrently \"cd server && npm test\" \"cd client && npm test\" \"npm run test:e2e\"",
     "test:watch": "jest --watch",
     "build": "concurrently \"cd server && npm run build\" \"cd client && npm run build\""

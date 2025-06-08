@@ -2,6 +2,8 @@ import { TextEncoder, TextDecoder } from 'util';
 import { JSDOM } from 'jsdom';
 import * as crypto from 'crypto';
 
+// CryptoJS is now mocked via Jest moduleNameMapper
+
 // Set up JSDOM
 const dom = new JSDOM('<!DOCTYPE html><html><body></body></html>', {
   url: 'http://localhost/',

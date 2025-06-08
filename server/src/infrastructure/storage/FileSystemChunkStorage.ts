@@ -42,8 +42,6 @@ export class FileSystemChunkStorage implements IChunkStorage {
 
     // Initialize simple SQLite database
     const dbPath = path.join(this.storagePath, 'metadata.db');
-    console.log(`[STORAGE-DEBUG] Database path: ${dbPath}`);
-    console.log(`[STORAGE-DEBUG] Storage path: ${this.storagePath}`);
     
     this.db = await open({
       filename: dbPath,
@@ -55,8 +53,6 @@ export class FileSystemChunkStorage implements IChunkStorage {
     await this.db.exec('PRAGMA synchronous = NORMAL');
     await this.db.exec('PRAGMA cache_size = 1000');
     await this.db.exec('PRAGMA temp_store = memory');
-    
-    console.log(`[STORAGE-DEBUG] Database initialized at ${dbPath}`);
 
     // Create simple content metadata table
     await this.db.exec(`
@@ -86,37 +82,24 @@ export class FileSystemChunkStorage implements IChunkStorage {
     // Add migration for additional_metadata column if it doesn't exist
     try {
       await this.db.run('ALTER TABLE content ADD COLUMN additional_metadata TEXT');
-      console.log('[DEBUG] Added additional_metadata column to content table');
     } catch (error: unknown) {
       // Column already exists or other error - this is expected for new databases
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (!errorMessage.includes('duplicate column name')) {
-        console.log('[DEBUG] additional_metadata column already exists or other migration issue:', errorMessage);
-      }
     }
 
     // Add migration for is_pinned column if it doesn't exist
     try {
       await this.db.run('ALTER TABLE content ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0');
-      console.log('[DEBUG] Added is_pinned column to content table');
       
       // Add index for pinned content queries
       await this.db.run('CREATE INDEX IF NOT EXISTS idx_content_pinned ON content(is_pinned, created_at)');
-      console.log('[DEBUG] Added index for pinned content queries');
       
       // Add is_large_file column
       await this.db.run('ALTER TABLE content ADD COLUMN is_large_file BOOLEAN NOT NULL DEFAULT 0');
-      console.log('[DEBUG] Added is_large_file column to content table');
       
       // Add index for large file queries
       await this.db.run('CREATE INDEX IF NOT EXISTS idx_content_large_file ON content(is_large_file)');
-      console.log('[DEBUG] Added index for large file queries');
     } catch (error: unknown) {
       // Column already exists or other error - this is expected for new databases
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (!errorMessage.includes('duplicate column name')) {
-        console.log('[DEBUG] is_pinned column already exists or other migration issue:', errorMessage);
-      }
     }
 
     this.isInitialized = true;
@@ -127,7 +110,7 @@ export class FileSystemChunkStorage implements IChunkStorage {
       throw new Error('Storage not initialized');
     }
 
-    const { contentId, sessionId, chunkIndex, totalChunks, contentType, mimeType, size, iv } = metadata;
+    const { contentId, sessionId, chunkIndex, iv } = metadata;
 
     // Create content directory: ./data/sessions/{sessionId}/{contentId}/
     const contentDir = path.join(this.storagePath, sessionId, contentId);
@@ -145,45 +128,6 @@ export class FileSystemChunkStorage implements IChunkStorage {
       Buffer.from(iv)
     );
 
-    // Store content metadata when all chunks are received
-    if (chunkIndex === totalChunks - 1) {
-      console.log(`[STORAGE-DEBUG] Inserting content metadata for ${contentId} in session ${sessionId}`);
-      
-      // Calculate total file size and determine if it's a large file
-      const totalSize = size * totalChunks; // Approximate total size
-      const { storageConfig } = await import('../../infrastructure/config/storage.config');
-      const isLargeFile = totalSize > storageConfig.largeFileThreshold;
-      
-      console.log(`[STORAGE-DEBUG] Content ${contentId}: totalSize=${totalSize}, threshold=${storageConfig.largeFileThreshold}, isLargeFile=${isLargeFile}`);
-      
-      // Insert without explicit transaction (let SQLite auto-commit)
-      await this.db.run(
-        `INSERT OR REPLACE INTO content
-         (id, session_id, content_type, mime_type, total_chunks, total_size, created_at, encryption_iv, additional_metadata, is_large_file, is_pinned)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        contentId,
-        sessionId,
-        contentType || 'unknown',
-        mimeType,
-        totalChunks,
-        totalSize,
-        Date.now(),
-        Buffer.from(iv),
-        null, // Will be updated when we have the full metadata
-        isLargeFile ? 1 : 0,
-        0 // Default is_pinned to false for new content
-      );
-      
-      console.log(`[STORAGE-DEBUG] Content metadata inserted successfully for ${contentId}`);
-      
-      // Verify the insertion
-      const verification = await this.db.get(
-        'SELECT COUNT(*) as count FROM content WHERE id = ? AND session_id = ?',
-        contentId,
-        sessionId
-      );
-      console.log(`[STORAGE-DEBUG] Verification: ${verification?.count || 0} records found for ${contentId} in session ${sessionId}`);
-    }
   }
 
   async saveContent(metadata: ContentMetadata): Promise<void> {
@@ -191,7 +135,6 @@ export class FileSystemChunkStorage implements IChunkStorage {
       throw new Error('Storage not initialized');
     }
 
-    console.log(`[STORAGE-DEBUG] Saving content metadata for ${metadata.contentId} (${metadata.totalSize} bytes)`);
     
     // Insert content metadata into database
     await this.db.run(
@@ -211,7 +154,6 @@ export class FileSystemChunkStorage implements IChunkStorage {
       metadata.isPinned ? 1 : 0 // Include is_pinned field
     );
     
-    console.log(`[STORAGE-DEBUG] Content metadata saved successfully for ${metadata.contentId}`);
   }
 
   async getChunk(contentId: string, chunkIndex: number): Promise<Uint8Array | null> {
@@ -254,21 +196,6 @@ export class FileSystemChunkStorage implements IChunkStorage {
       throw new Error('Storage not initialized');
     }
 
-    console.log(`[STORAGE-DEBUG] listContent called for session ${sessionId}, limit ${limit}`);
-    console.log(`[STORAGE-DEBUG] Database instance exists: ${!!this.db}`);
-    
-    // First check total count in database
-    const totalCount = await this.db.get<{ count: number }>(
-      'SELECT COUNT(*) as count FROM content',
-    );
-    console.log(`[STORAGE-DEBUG] Total content records in database: ${totalCount?.count || 0}`);
-    
-    // Check count for this session
-    const sessionCount = await this.db.get<{ count: number }>(
-      'SELECT COUNT(*) as count FROM content WHERE session_id = ?',
-      sessionId
-    );
-    console.log(`[STORAGE-DEBUG] Content records for session ${sessionId}: ${sessionCount?.count || 0}`);
 
     const rows = await this.db.all<ContentRow[]>(
       `SELECT
@@ -291,7 +218,6 @@ export class FileSystemChunkStorage implements IChunkStorage {
       limit
     );
 
-    console.log(`[STORAGE-DEBUG] Query returned ${rows.length} rows for session ${sessionId}`);
 
     return rows.map(row => ({
       contentId: row.contentId,
@@ -318,6 +244,46 @@ export class FileSystemChunkStorage implements IChunkStorage {
       JSON.stringify(metadata),
       contentId
     );
+  }
+
+  async fixLargeFileMetadata(): Promise<void> {
+    if (!this.isInitialized || !this.db) {
+      throw new Error('Storage not initialized');
+    }
+
+
+    // Find all large files with null additional_metadata
+    const largeFiles = await this.db.all<Array<{
+      id: string;
+      content_type: string;
+      total_size: number;
+      mime_type: string | null;
+      additional_metadata: string | null;
+    }>>(
+      `SELECT id, content_type, total_size, mime_type, additional_metadata
+       FROM content
+       WHERE is_large_file = 1 AND additional_metadata IS NULL`
+    );
+
+
+    for (const file of largeFiles) {
+      // Create basic metadata for large files
+      const basicMetadata = {
+        size: file.total_size,
+        mimeType: file.mime_type || 'application/octet-stream',
+        // For existing files, we can't recover the original filename
+        // but we can provide a reasonable default
+        fileName: `LargeFile-${file.id.substring(0, 8)}.bin`
+      };
+
+      await this.db.run(
+        'UPDATE content SET additional_metadata = ? WHERE id = ?',
+        JSON.stringify(basicMetadata),
+        file.id
+      );
+
+    }
+
   }
 
   async deleteContent(contentId: string): Promise<void> {
@@ -357,10 +323,83 @@ export class FileSystemChunkStorage implements IChunkStorage {
     return result?.count || 0;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async markContentComplete(_contentId: string): Promise<void> {
-    // Content is automatically marked complete when last chunk is saved
-    // This method exists for interface compatibility
+  async markContentComplete(contentId: string): Promise<void> {
+    if (!this.isInitialized || !this.db) {
+      throw new Error('Storage not initialized');
+    }
+
+    
+    // Check if database record already exists
+    const existingRecord = await this.db.get<{ id: string }>(
+      'SELECT id FROM content WHERE id = ?',
+      contentId
+    );
+    
+    if (existingRecord) {
+      return;
+    }
+    
+    // Get chunk information to reconstruct metadata
+    const chunkCount = await this.getReceivedChunkCount(contentId);
+    if (chunkCount === 0) {
+      return;
+    }
+    
+    // Calculate total size from actual chunks
+    const actualSize = await this.calculateActualContentSize(contentId);
+    
+    // Get first chunk to extract encryption IV
+    const firstChunkMetadata = await this.getChunkMetadata(contentId, 0);
+    const encryptionIv = firstChunkMetadata?.iv || new Uint8Array(12);
+    
+    // Determine session ID from file path
+    let sessionId = 'unknown';
+    
+    // Search for the content directory to find session ID
+    // The structure is: {storagePath}/{sessionId}/{contentId}/
+    try {
+      const sessionDirs = await fs.readdir(this.storagePath, { withFileTypes: true });
+      for (const sessionDir of sessionDirs) {
+        if (!sessionDir.isDirectory() || sessionDir.name === 'metadata.db' || sessionDir.name === 'chunks') continue;
+        
+        const contentPath = path.join(this.storagePath, sessionDir.name, contentId);
+        try {
+          await fs.access(contentPath);
+          sessionId = sessionDir.name;
+          break;
+        } catch {
+          // Content not in this session, continue
+        }
+      }
+    } catch (error) {
+      // Could not determine session ID, use 'unknown'
+    }
+    
+    // Create basic metadata for orphaned content
+    const basicMetadata = {
+      fileName: 'File', // Default filename since we can't determine original
+      mimeType: 'application/octet-stream',
+      size: actualSize
+    };
+    
+    // Create database record with reconstructed metadata
+    await this.db.run(
+      `INSERT INTO content
+       (id, session_id, content_type, mime_type, total_chunks, total_size, created_at, encryption_iv, additional_metadata, is_large_file, is_pinned)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      contentId,
+      sessionId,
+      'application/octet-stream',
+      null,
+      chunkCount,
+      actualSize,
+      Date.now(),
+      Buffer.from(encryptionIv),
+      JSON.stringify(basicMetadata),
+      actualSize > 50 * 1024 * 1024 ? 1 : 0, // Mark as large file if > 50MB
+      0 // Not pinned
+    );
+    
   }
 
   async getContentMetadata(contentId: string): Promise<ContentMetadata | null> {
@@ -536,26 +575,79 @@ export class FileSystemChunkStorage implements IChunkStorage {
       throw new Error('Content not found');
     }
 
-    // Stream chunks in order
+
+    // Check file integrity before streaming
+    let missingChunks = 0;
     for (let i = 0; i < contentMeta.totalChunks; i++) {
       const chunk = await this.getChunk(contentId, i);
       const chunkMeta = await this.getChunkMetadata(contentId, i);
       
-      if (chunk && chunkMeta) {
-        const metadata: ChunkMetadata = {
-          contentId,
-          sessionId: contentMeta.sessionId,
-          chunkIndex: i,
-          totalChunks: contentMeta.totalChunks,
-          size: chunk.length,
-          iv: chunkMeta.iv,
-          contentType: contentMeta.contentType,
-          timestamp: contentMeta.createdAt
-        };
-        
-        await onChunk(chunk, metadata);
+      if (!chunk || !chunkMeta) {
+        missingChunks++;
       }
     }
+    
+    if (missingChunks > 0) {
+      throw new Error(`File is corrupted: ${missingChunks} of ${contentMeta.totalChunks} chunks are missing. Please re-upload the file.`);
+    }
+
+    // Stream complete file
+    for (let i = 0; i < contentMeta.totalChunks; i++) {
+      const chunk = await this.getChunk(contentId, i);
+      const chunkMeta = await this.getChunkMetadata(contentId, i);
+      
+      // These should exist since we validated above, but add safety checks
+      if (!chunk || !chunkMeta) {
+        throw new Error(`Chunk ${i} unexpectedly missing during streaming`);
+      }
+      
+      const metadata: ChunkMetadata = {
+        contentId,
+        sessionId: contentMeta.sessionId,
+        chunkIndex: i,
+        totalChunks: contentMeta.totalChunks,
+        size: chunk.length,
+        iv: chunkMeta.iv,
+        contentType: contentMeta.contentType,
+        timestamp: contentMeta.createdAt
+      };
+      
+      await onChunk(chunk, metadata);
+    }
+    
+  }
+
+  async calculateActualContentSize(contentId: string): Promise<number> {
+    if (!this.isInitialized || !this.db) {
+      throw new Error('Storage not initialized');
+    }
+
+    // First try to get metadata from database if it exists
+    const contentMeta = await this.getContentMetadata(contentId);
+    if (contentMeta) {
+      let totalSize = 0;
+      for (let i = 0; i < contentMeta.totalChunks; i++) {
+        const chunk = await this.getChunk(contentId, i);
+        if (chunk) {
+          totalSize += chunk.length;
+        }
+      }
+      return totalSize;
+    }
+
+    // If no database record exists yet, calculate from available chunks
+    // This is needed during markContentComplete() when creating the initial record
+    const chunkCount = await this.getReceivedChunkCount(contentId);
+    let totalSize = 0;
+    
+    for (let i = 0; i < chunkCount; i++) {
+      const chunk = await this.getChunk(contentId, i);
+      if (chunk) {
+        totalSize += chunk.length;
+      }
+    }
+
+    return totalSize;
   }
 
   async isLargeFile(contentId: string): Promise<boolean> {

@@ -19,14 +19,17 @@ WORKDIR /app
 # Set environment variables for node-gyp
 ENV PYTHON=/usr/bin/python3
 
-# Copy package files
-COPY package*.json ./
+# Copy package files from the functional test directory
+COPY test/e2e/functional/package*.json ./
 
 # Install npm dependencies
 RUN npm install
 
+# Copy the project root mocks directory to make it available at the expected path
+COPY test/mocks /mocks
+
 # Copy test files
-COPY . .
+COPY test/e2e/functional .
 
 # Default command
 CMD ["npm", "test"]

@@ -124,7 +124,6 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
     }
     
     try {
-      console.log('[ShareText] Starting text sharing process');
       
       // Create content metadata
       const contentId = uuidv4();
@@ -135,6 +134,7 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
         contentType: ContentType.TEXT,
         timestamp: Date.now(),
         metadata: {
+          fileName: `text-${Date.now()}.txt`,
           mimeType: 'text/plain',
           size: contentToShare.length,
           textInfo: {
@@ -147,11 +147,9 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
         isPinned: false
       };
       
-      console.log('[ShareText] Content metadata created:', contentId);
       
       // Implement encryption
       // First, add to local content store for immediate display
-      console.log('[ShareText] Adding content to local store');
       addContent(content, contentToShare);
       
       // Encrypt the text
@@ -174,13 +172,13 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
       // Include IV with content metadata
       const encryptedContent = {
         ...content,
+        totalChunks: 1, // Non-chunked content has 1 chunk
         encryptionMetadata: {
           iv: Array.from(iv)
         }
       };
       
       // Send encrypted content to server
-      console.log('[ShareText] Sending encrypted content to server');
       sendContent(sessionId, encryptedContent, encryptedText);
       
       // Force state reset to ensure UI updates properly
@@ -191,7 +189,6 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
         setText('');
       }
       
-      console.log('[ShareText] Text sharing completed successfully');
       toast({
         title: 'Text shared',
         status: 'success',
@@ -208,7 +205,6 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
         isClosable: true
       });
     } finally {
-      console.log('[ShareText] Sharing process completed');
       setIsSharing(false);
     }
   };
@@ -310,6 +306,7 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
               // Include IV with content metadata
               const encryptedContent = {
                 ...content,
+                totalChunks: 1, // Non-chunked content has 1 chunk
                 encryptionMetadata: {
                   iv: Array.from(iv)
                 }
@@ -329,22 +326,23 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
                 content.contentId
               );
               
-              // Log content ID consistency
-              console.log(`[ShareFile] Using consistent content ID: ${contentId}`);
-              console.log(`[ShareFile] Original content ID: ${content.contentId}`);
-              console.log(`[ShareFile] Sender info - ID: ${content.senderId}, Name: ${content.senderName}`);
               
               // Send content metadata first - now using the same ID throughout
+              // CRITICAL FIX: Include encryptionMetadata for large files
               const encryptedContent = {
                 ...content,
-                contentId
+                contentId,
+                encryptionMetadata: {
+                  iv: Array.from(new Uint8Array(12)) // Use a default IV for metadata
+                }
               };
               
-              // DEBUG: Log the final content object being sent
-              console.log(`[ShareFile] Sending content metadata:`, JSON.stringify(encryptedContent));
               
-              console.log(`[ShareFile] Sending content metadata with ID: ${contentId}`);
-              sendContent(sessionId, encryptedContent);
+              try {
+                sendContent(sessionId, encryptedContent);
+              } catch (error) {
+                console.error(`[ShareFile] sendContent call failed:`, error);
+              }
               
               // Send chunks with progress tracking
               let sentChunks = 0;
@@ -352,7 +350,6 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
               
               for (const chunk of chunks) {
                 try {
-                  console.log(`[ShareFile] Sending chunk ${chunk.chunkIndex}/${chunk.totalChunks} for content ${chunk.contentId}`);
                   
                   // Verify content ID consistency
                   if (chunk.contentId !== contentId) {
@@ -361,7 +358,6 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
                   
                   // Send serialized chunk
                   const serializedChunk = serializeChunk(chunk);
-                  console.log(`[ShareFile] Serialized chunk contentId: ${serializedChunk.contentId}`);
                   
                   // Convert serialized chunk to ChunkData format
                   const chunkData: ChunkData = {
@@ -378,7 +374,6 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
                   // Update progress
                   sentChunks++;
                   setUploadProgress((sentChunks / totalChunks) * 100);
-                  console.log(`[ShareFile] Chunk ${chunk.chunkIndex}/${chunk.totalChunks} sent, progress: ${sentChunks}/${totalChunks}`);
                   
                   // Small delay to prevent network congestion
                   await new Promise(resolve => setTimeout(resolve, 100)); // Increased delay to 100ms
@@ -440,7 +435,6 @@ const SharePanel: React.FC<SharePanelProps> = React.memo(({ sessionId, passphras
   const handlePaste = async () => {
     // If on iOS, show a helpful message instead of attempting to access clipboard
     if (isIOS) {
-      console.log('[Paste] Paste button clicked on iOS device');
       toast({
         title: 'Clipboard access restricted',
         description: 'On iOS, please paste text directly into the text area or use the file upload for images.',

@@ -4,7 +4,7 @@
   "description": "Functional tests for ShareThings",
   "type": "module",
   "scripts": {
-    "test": "node --experimental-vm-modules ../../../node_modules/jest/bin/jest.js simple-test.test.ts"
+    "test": "node --experimental-vm-modules ../../../node_modules/jest/bin/jest.js --config jest.config.js"
   },
   "dependencies": {
     "@types/jest": "^29.5.14",
@@ -12,6 +12,8 @@
     "@types/uuid": "^10.0.0",
     "blob-polyfill": "^9.0.20240710",
     "canvas": "^3.1.0",
+    "crypto-js": "^4.2.0",
+    "@types/crypto-js": "^4.2.2",
     "socket.io-client": "^4.8.1",
     "ts-jest": "^29.3.4",
     "uuid": "^11.1.0"

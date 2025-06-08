@@ -393,6 +393,13 @@ chmod +x "$REPO_ROOT/setup.sh"
 CURRENT_DIR=$(pwd)
 cd "$REPO_ROOT"
 
+# Step 0: Clean up any existing test data
+log_info "Step 0: Cleaning up existing test data..."
+rm -rf ./data/sessions/test-session-* 2>/dev/null || true
+rm -f /tmp/test-session-id /tmp/test-content-id /tmp/test-data-dir 2>/dev/null || true
+rm -rf /tmp/data-fingerprints 2>/dev/null || true
+log_success "Existing test data cleaned up"
+
 # Step 1: Install ShareThings
 log_info "Step 1: Installing ShareThings..."
 ./setup.sh --force-install --non-interactive

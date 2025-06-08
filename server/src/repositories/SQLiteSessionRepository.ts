@@ -118,9 +118,10 @@ export class SQLiteSessionRepository implements SessionRepository {
   /**
    * Ensures the repository is initialized
    */
-  private ensureInitialized(): void {
+  private async ensureInitialized(): Promise<void> {
     if (!this.initialized || !this.db) {
-      throw new Error('SQLite repository not initialized');
+      console.log('Repository not initialized, attempting to re-initialize...');
+      await this.initialize();
     }
   }
   
@@ -130,7 +131,7 @@ export class SQLiteSessionRepository implements SessionRepository {
    * @returns Session auth record or null if not found
    */
   async findById(sessionId: string): Promise<SessionAuthRecord | null> {
-    this.ensureInitialized();
+    await this.ensureInitialized();
     
     return new Promise((resolve, reject) => {
       if (!this.db) return reject(new Error('Database not initialized'));
@@ -176,7 +177,7 @@ export class SQLiteSessionRepository implements SessionRepository {
    * @param session Session auth record
    */
   async save(session: SessionAuthRecord): Promise<void> {
-    this.ensureInitialized();
+    await this.ensureInitialized();
     
     return new Promise((resolve, reject) => {
       if (!this.db) return reject(new Error('Database not initialized'));
@@ -209,7 +210,7 @@ export class SQLiteSessionRepository implements SessionRepository {
    * @param session Session auth record
    */
   async update(session: SessionAuthRecord): Promise<void> {
-    this.ensureInitialized();
+    await this.ensureInitialized();
     
     return new Promise((resolve, reject) => {
       if (!this.db) return reject(new Error('Database not initialized'));
@@ -243,7 +244,7 @@ export class SQLiteSessionRepository implements SessionRepository {
    * @param sessionId Session ID
    */
   async delete(sessionId: string): Promise<void> {
-    this.ensureInitialized();
+    await this.ensureInitialized();
     
     return new Promise((resolve, reject) => {
       if (!this.db) return reject(new Error('Database not initialized'));
@@ -268,7 +269,7 @@ export class SQLiteSessionRepository implements SessionRepository {
    * @returns Array of session auth records
    */
   async findAll(): Promise<SessionAuthRecord[]> {
-    this.ensureInitialized();
+    await this.ensureInitialized();
     
     return new Promise((resolve, reject) => {
       if (!this.db) return reject(new Error('Database not initialized'));
@@ -309,7 +310,7 @@ export class SQLiteSessionRepository implements SessionRepository {
    * @returns Array of expired session IDs
    */
   async findExpired(expiryTime: number): Promise<string[]> {
-    this.ensureInitialized();
+    await this.ensureInitialized();
     
     return new Promise((resolve, reject) => {
       if (!this.db) return reject(new Error('Database not initialized'));

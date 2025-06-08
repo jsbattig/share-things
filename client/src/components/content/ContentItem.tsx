@@ -32,7 +32,7 @@ import {
   FaExclamationTriangle
 } from 'react-icons/fa';
 import { RiPushpinFill, RiPushpinLine } from 'react-icons/ri';
-import { useContentStore, ContentType } from '../../contexts/ContentStoreContext';
+import { useContentStore, ContentType, SharedContent } from '../../contexts/ContentStoreContext';
 import { useServices } from '../../contexts/ServiceContext';
 import { formatFileSize, formatDate } from '../../utils/formatters';
 
@@ -68,26 +68,6 @@ const ImageRenderer: React.FC<{
   chunkTrackingService: unknown;
   urlRegistry: unknown;
 }> = ({ contentId, blob, fileName, isComplete, updateContentLastAccessed, chunkTrackingService, urlRegistry }) => {
-  // DIAGNOSTIC: Track render count and prop changes
-  const renderCountRef = React.useRef(0);
-  const prevPropsRef = React.useRef({ contentId, blob, fileName, isComplete });
-  
-  renderCountRef.current += 1;
-  
-  console.log(`[RENDER] ImageRenderer #${renderCountRef.current} for ${contentId.substring(0, 8)}`);
-  
-  // Check if props changed
-  const propsChanged = {
-    blob: prevPropsRef.current.blob !== blob,
-    isComplete: prevPropsRef.current.isComplete !== isComplete
-  };
-  
-  if (propsChanged.blob || propsChanged.isComplete) {
-    console.log(`[RENDER] Props changed:`, propsChanged);
-  }
-  
-  // Update previous props
-  prevPropsRef.current = { contentId, blob, fileName, isComplete };
   
   const [imageError, setImageError] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
@@ -110,10 +90,10 @@ const ImageRenderer: React.FC<{
       const resultBlob = new Blob([blob], { type: blobType });
       return resultBlob;
     } catch (error) {
-      console.error(`[RENDER] Error creating image blob for ${contentId.substring(0, 8)}:`, error);
+      console.error(`Error creating image blob:`, error);
       return null;
     }
-  }, [blob, contentId]);
+  }, [blob]);
   
   // Extract text from a blob
   const extractTextFromBlob = useCallback(async (blob: Blob): Promise<string> => {
@@ -136,16 +116,12 @@ const ImageRenderer: React.FC<{
     try {
       // If the blob type is already an image type, trust it
       if (blob.type.startsWith('image/')) {
-        console.log(`[ImageRenderer] Blob has image MIME type: ${blob.type}`);
         return true;
       }
       
       // Read the first few bytes to check for common image signatures
       const buffer = await blob.slice(0, 8).arrayBuffer();
       const header = new Uint8Array(buffer);
-      const hexSignature = Array.from(header).map(b => b.toString(16).padStart(2, '0')).join('');
-      
-      console.log(`[ImageRenderer] Content signature for ${contentId}: ${hexSignature}`);
       
       // Check for common image signatures
       // PNG: 89 50 4E 47 0D 0A 1A 0A
@@ -168,23 +144,16 @@ const ImageRenderer: React.FC<{
       const isImage = isPng || isJpeg || isGif;
       
       // Check if this might be text content
-      const isTextContent = /^[\x20-\x7E\n\r\t]+$/.test(new TextDecoder().decode(buffer));
-      
-      console.log(`[ImageRenderer] Content validation for ${contentId}: ${isImage ? 'Valid image' : 'Not an image'}`);
-      if (isTextContent) {
-        console.log(`[ImageRenderer] Content appears to be text, not an image`);
-      }
       
       return isImage;
     } catch (error) {
       console.error(`[ImageRenderer] Error validating blob:`, error);
       return false;
     }
-  }, [contentId]);
+  }, []);
   
   // Create URL only when we have a valid blob
   useEffect(() => {
-    console.log(`[RENDER] useEffect executing for ${contentId.substring(0, 8)}`);
     
     let isMounted = true;
     
@@ -202,7 +171,6 @@ const ImageRenderer: React.FC<{
         const isValid = await validateImageBlob(imageBlob);
         
         if (!isValid) {
-          console.log(`[RENDER] Content validation failed for ${contentId.substring(0, 8)} - not an image`);
           
           if (isMounted) {
             setImageError(true);
@@ -219,7 +187,7 @@ const ImageRenderer: React.FC<{
           setLoadingState('loading'); // Still loading until the image is rendered
         }
       } catch (error) {
-        console.error(`[RENDER] Error processing image for ${contentId.substring(0, 8)}:`, error);
+        console.error(`Error processing image:`, error);
         if (isMounted) {
           setImageError(true);
           setLoadingState('error');
@@ -237,7 +205,6 @@ const ImageRenderer: React.FC<{
   // If image fails to load, we can try to reload it with more detailed error handling
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleImageError = useCallback((_e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-    console.error(`[RENDER] Image loading failed for ${contentId.substring(0, 8)}`);
     
     setImageError(true);
     setLoadingState('error');
@@ -252,7 +219,7 @@ const ImageRenderer: React.FC<{
           try {
             (urlRegistry as { revokeUrl: (contentId: string, url: string) => void }).revokeUrl(contentId, imageUrl);
           } catch (error) {
-            console.error(`[RENDER] Error revoking URL during retry:`, error);
+            console.error(`Error revoking URL during retry:`, error);
           }
         }
         
@@ -267,7 +234,7 @@ const ImageRenderer: React.FC<{
             setImageUrl(newUrl);
             setLoadingState('loading');
           } catch (error) {
-            console.error(`[RENDER] Error creating new URL during retry:`, error);
+            console.error(`Error creating new URL during retry:`, error);
           }
         }
         
@@ -334,13 +301,12 @@ const ImageRenderer: React.FC<{
                     arrayBuffer.then(buffer => {
                       const freshBlob = new Blob([buffer], { type: 'image/png' });
                       const newUrl = (urlRegistry as { createUrl: (contentId: string, blob: Blob) => string }).createUrl(contentId, freshBlob);
-                      console.log(`[ImageRenderer] Created fresh URL for manual retry: ${newUrl}`);
                       setImageUrl(newUrl);
                     }).catch(err => {
-                      console.error(`[ImageRenderer] Error creating fresh blob:`, err);
+                      console.error(`Error creating fresh blob:`, err);
                     });
                   } catch (error) {
-                    console.error(`[ImageRenderer] Error during manual retry:`, error);
+                    console.error(`Error during manual retry:`, error);
                   }
                 }
               }}
@@ -384,7 +350,6 @@ const ContentTypeDetector: React.FC<{
     reader.onload = (e) => {
       const result = e.target?.result;
       if (typeof result === 'string' && /^[\x20-\x7E\n\r\t]+$/.test(result.substring(0, 100))) {
-        console.log(`[ContentTypeDetector] Detected text content from blob data`);
         
         onTypeDetected(ContentType.TEXT);
       }
@@ -407,7 +372,6 @@ const BlobTextExtractor: React.FC<{ blob: Blob }> = ({ blob }) => {
     const extractText = async () => {
       try {
         const text = await extractTextFromBlob(blob);
-        console.log(`[BlobTextExtractor] Extracted text from blob: ${text.substring(0, 20)}...`);
         setTextContent(text.length > 500 ? text.substring(0, 20) + '...' : text);
       } catch (error) {
         console.error('Error extracting text from blob:', error);
@@ -433,7 +397,6 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   const renderCountRef = React.useRef(0);
   renderCountRef.current += 1;
   
-  console.log(`[RENDER] ContentItem #${renderCountRef.current} for ${contentId.substring(0, 8)}`);
   
   // Context
   const { getContent, updateContentLastAccessed, removeContent, pinContent, unpinContent } = useContentStore();
@@ -473,30 +436,12 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
     // Use the ref for current pin status to avoid stale closure issues
     const currentPinStatus = pinStatusRef.current;
     
-    console.log('[PIN DEBUG] Pin button clicked!', {
-      contentId,
-      currentPinStatus,
-      currentPinStatusType: typeof currentPinStatus,
-      pinStatusRef: pinStatusRef.current,
-      contentMetadataIsPinned: content?.metadata?.isPinned
-    });
-    
-    // Additional debugging for pin status detection
-    console.log('[PIN DEBUG] Pin status analysis:', {
-      'pinStatusRef.current': pinStatusRef.current,
-      'content?.metadata?.isPinned': content?.metadata?.isPinned,
-      'Boolean(currentPinStatus)': Boolean(currentPinStatus),
-      'currentPinStatus === true': currentPinStatus === true,
-      'currentPinStatus === false': currentPinStatus === false
-    });
     
     try {
       if (currentPinStatus) {
-        console.log('[PIN DEBUG] Unpinning content...');
         pinStatusRef.current = false; // Update ref immediately
         setIsPinnedUI(false); // Update UI state immediately
         await unpinContent(contentId);
-        console.log('[PIN DEBUG] Unpin completed successfully');
         toast({
           title: 'Content unpinned',
           status: 'info',
@@ -504,11 +449,9 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
           isClosable: true,
         });
       } else {
-        console.log('[PIN DEBUG] Pinning content...');
         pinStatusRef.current = true; // Update ref immediately
         setIsPinnedUI(true); // Update UI state immediately
         await pinContent(contentId);
-        console.log('[PIN DEBUG] Pin completed successfully');
         toast({
           title: 'Content pinned',
           status: 'success',
@@ -517,7 +460,7 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
         });
       }
     } catch (error) {
-      console.error('[PIN DEBUG] Pin operation failed:', error);
+      console.error('Pin operation failed:', error);
       // Revert ref and UI state on error
       pinStatusRef.current = !currentPinStatus;
       setIsPinnedUI(!currentPinStatus);
@@ -529,7 +472,7 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
         isClosable: true,
       });
     }
-  }, [contentId, pinContent, unpinContent, toast, content?.metadata?.isPinned]);
+  }, [contentId, pinContent, unpinContent, toast]);
   
   if (!content) {
     return null;
@@ -541,10 +484,6 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   // Determine the most appropriate content type based on metadata and actual content
   let effectiveContentType = metadata.contentType;
   
-  console.log(`[ContentItem] Determining effective content type for ${contentId}`);
-  console.log(`[ContentItem] Original content type: ${metadata.contentType}`);
-  console.log(`[ContentItem] MIME type: ${metadata.metadata.mimeType || 'not specified'}`);
-  console.log(`[ContentItem] Data type: ${content.data ? (typeof content.data === 'string' ? 'string' : (content.data instanceof Blob ? 'Blob' : 'unknown')) : 'undefined'}`);
   
   // Check if this is actually text content based on the metadata or content
   if (metadata.contentType === ContentType.FILE || metadata.contentType === ContentType.IMAGE) {
@@ -558,7 +497,6 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
     if (isTextMimeType ||
         (content.data instanceof Blob && content.data.type.startsWith('text/')) ||
         (typeof content.data === 'string')) {
-      console.log(`[ContentItem] Detected text content marked as ${metadata.contentType}, overriding content type to TEXT`);
       effectiveContentType = ContentType.TEXT;
     }
     
@@ -568,7 +506,6 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
       // Use the ContentTypeDetector component to detect the content type
       <ContentTypeDetector blob={content.data} onTypeDetected={(type) => {
         if (type === ContentType.TEXT) {
-          console.log(`[ContentItem] ContentTypeDetector identified content as TEXT`);
           effectiveContentType = ContentType.TEXT;
         }
       }} />;
@@ -581,7 +518,6 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
     const isImageMimeType = mimeType.startsWith('image/');
     
     if (!isImageMimeType && content.data instanceof Blob && !content.data.type.startsWith('image/')) {
-      console.log(`[ContentItem] Content marked as IMAGE but doesn't have image MIME type, will verify during rendering`);
       // The ImageRenderer component will handle validation
     }
   }
@@ -612,13 +548,6 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
       } else if (content.data instanceof Blob) {
         // Copy image or file content
         if (metadata.contentType === ContentType.IMAGE) {
-          console.log('Attempting to copy image to clipboard:', {
-            blobSize: content.data.size,
-            blobType: content.data.type,
-            clipboardItemSupported: typeof ClipboardItem !== 'undefined',
-            clipboardWriteSupported: !!navigator.clipboard?.write,
-            isSecureContext: window.isSecureContext
-          });
           
           // For images, try multiple approaches in order of preference
           let copySuccess = false;
@@ -626,7 +555,6 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
           // Approach 1: Try ClipboardItem API if supported
           if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
             try {
-              console.log('Trying ClipboardItem API...');
               const clipboardItems = [
                 new ClipboardItem({
                   [content.data.type]: content.data
@@ -634,10 +562,8 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
               ];
               
               await navigator.clipboard.write(clipboardItems);
-              console.log('ClipboardItem API succeeded');
               copySuccess = true;
             } catch (clipboardError) {
-              console.warn('ClipboardItem API failed:', clipboardError);
               // Continue to fallback approaches
             }
           }
@@ -645,7 +571,6 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
           // Approach 2: Try converting to PNG and using ClipboardItem (some browsers are picky about formats)
           if (!copySuccess && typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
             try {
-              console.log('Trying ClipboardItem with PNG conversion...');
               // Create a canvas to convert the image to PNG
               const canvas = document.createElement('canvas');
               const ctx = canvas.getContext('2d');
@@ -662,11 +587,9 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
                       try {
                         const clipboardItems = [new ClipboardItem({ 'image/png': blob })];
                         await navigator.clipboard.write(clipboardItems);
-                        console.log('ClipboardItem with PNG conversion succeeded');
                         copySuccess = true;
                         resolve();
                       } catch (error) {
-                        console.warn('ClipboardItem with PNG conversion failed:', error);
                         reject(error);
                       }
                     } else {
@@ -678,17 +601,14 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
                 img.src = URL.createObjectURL(content.data as Blob);
               });
             } catch (conversionError) {
-              console.warn('PNG conversion approach failed:', conversionError);
               // Continue to URL fallback
             }
           }
           
           // Approach 3: Fallback to URL copy
           if (!copySuccess) {
-            console.log('Falling back to URL copy...');
             const url = urlRegistry.createUrl(contentId, content.data);
             await navigator.clipboard.writeText(url);
-            console.log('URL copy succeeded');
             
             // Clean up the URL after a delay
             setTimeout(() => urlRegistry.revokeUrl(contentId, url), 5000);
@@ -722,55 +642,195 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   };
   
   /**
-   * Downloads content
+   * Downloads content - handles both regular and large files
    */
-  const downloadContent = () => {
-    if (!content.data) {
-      toast({
-        title: 'Cannot download',
-        description: 'Content is not available for download',
-        status: 'error',
-        duration: 3000,
-        isClosable: true
-      });
-      return;
-    }
+  const downloadContent = async () => {
+    // Check if this is a large file
+    const isLargeFile = metadata.isLargeFile || false;
     
-    try {
-      // Update last accessed time when content is actually accessed
-      updateContentLastAccessed(contentId);
-      // Create download link
-      const url = content.data instanceof Blob
-        ? urlRegistry.createUrl(contentId, content.data)
-        : `data:text/plain;charset=utf-8,${encodeURIComponent(content.data)}`;
-      
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = metadata.metadata.fileName || `content-${contentId.substring(0, 8)}`;
-      document.body.appendChild(a);
-      a.click();
-      
-      // Clean up
-      document.body.removeChild(a);
-      if (content.data instanceof Blob) {
-        urlRegistry.revokeUrl(contentId, url);
+    if (isLargeFile) {
+      // Large file download via HTTP API - download encrypted data and decrypt it
+      try {
+        
+        // Get session token and passphrase
+        const sessionToken = localStorage.getItem('sessionToken') || 'placeholder-token';
+        const passphrase = localStorage.getItem('passphrase');
+        
+        if (!passphrase) {
+          throw new Error('Session passphrase not found. Please rejoin the session.');
+        }
+        
+        const response = await fetch(`/api/download/${contentId}`, {
+          headers: {
+            'Authorization': `Bearer ${sessionToken}`
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+        }
+        
+        
+        // Get the encrypted data as array buffer
+        const encryptedData = await response.arrayBuffer();
+        
+        // Import encryption utilities
+        const { deriveKeyFromPassphrase, decryptData } = await import('../../utils/encryption');
+        
+        // Derive decryption key
+        const key = await deriveKeyFromPassphrase(passphrase);
+        
+        // Parse and decrypt the concatenated encrypted chunks
+        // Each chunk is stored as: [encrypted_data_with_iv]
+        // The IV is the first 16 bytes of each chunk, followed by the encrypted data
+        
+        const decryptedChunks: Uint8Array[] = [];
+        const dataView = new Uint8Array(encryptedData);
+        let offset = 0;
+        let chunkIndex = 0;
+        
+        
+        // Parse chunks: IV (12 bytes) + encrypted data
+        // Server sends: IV (12 bytes) + encrypted chunk (65552 bytes) = 65564 bytes total per chunk
+        const IV_SIZE = 12;
+        const ENCRYPTED_CHUNK_SIZE = 65552; // Size of encrypted data (without IV)
+        const TOTAL_CHUNK_SIZE = IV_SIZE + ENCRYPTED_CHUNK_SIZE; // 65564 bytes total
+        
+        
+        while (offset < dataView.length) {
+          const remainingBytes = dataView.length - offset;
+          
+          if (remainingBytes < IV_SIZE) {
+            break; // Not enough data for IV
+          }
+          
+          // Extract IV (first 12 bytes)
+          const iv = dataView.slice(offset, offset + IV_SIZE);
+          
+          // Determine if this is the last chunk
+          const isLastChunk = remainingBytes < TOTAL_CHUNK_SIZE;
+          const encryptedDataSize = isLastChunk
+            ? remainingBytes - IV_SIZE    // Last chunk: use remaining bytes
+            : ENCRYPTED_CHUNK_SIZE;       // Standard chunk: 65552 bytes
+          
+          // Extract encrypted data
+          const encryptedChunkData = dataView.slice(offset + IV_SIZE, offset + IV_SIZE + encryptedDataSize);
+          
+          
+          try {
+            // Decrypt this chunk
+            const decryptedChunk = await decryptData(key, encryptedChunkData.buffer, iv);
+            const decryptedArray = new Uint8Array(decryptedChunk);
+            
+            decryptedChunks.push(decryptedArray);
+            
+          } catch (chunkError) {
+            console.error(`Error decrypting chunk ${chunkIndex}:`, chunkError);
+            throw new Error(`Failed to decrypt chunk ${chunkIndex}: ${chunkError instanceof Error ? chunkError.message : 'Unknown error'}`);
+          }
+          
+          offset += IV_SIZE + encryptedDataSize;
+          chunkIndex++;
+        }
+        
+        // Reassemble all decrypted chunks into the final file
+        const totalDecryptedSize = decryptedChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+        const reassembledData = new Uint8Array(totalDecryptedSize);
+        let reassembleOffset = 0;
+        
+        for (const chunk of decryptedChunks) {
+          reassembledData.set(chunk, reassembleOffset);
+          reassembleOffset += chunk.length;
+        }
+        
+        
+        // Create blob from the reassembled data (decryption should have removed padding)
+        const blob = new Blob([reassembledData], {
+          type: metadata.metadata.mimeType || 'application/octet-stream'
+        });
+        
+        const url = URL.createObjectURL(blob);
+        
+        // Trigger download
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = metadata.metadata.fileName || `content-${contentId.substring(0, 8)}`;
+        document.body.appendChild(a);
+        a.click();
+        
+        // Clean up
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        updateContentLastAccessed(contentId);
+        
+        toast({
+          title: 'Large file download completed',
+          description: `File decrypted and downloaded successfully (${totalDecryptedSize} bytes)`,
+          status: 'success',
+          duration: 3000,
+          isClosable: true
+        });
+        
+      } catch (error) {
+        console.error('Error downloading large file:', error);
+        toast({
+          title: 'Download failed',
+          description: error instanceof Error ? error.message : 'Failed to download large file from server',
+          status: 'error',
+          duration: 5000,
+          isClosable: true
+        });
+      }
+    } else {
+      // Regular file download (existing logic)
+      if (!content.data) {
+        toast({
+          title: 'Cannot download',
+          description: 'Content is not available for download',
+          status: 'error',
+          duration: 3000,
+          isClosable: true
+        });
+        return;
       }
       
-      toast({
-        title: 'Download started',
-        status: 'success',
-        duration: 2000,
-        isClosable: true
-      });
-    } catch (error) {
-      console.error('Error downloading content:', error);
-      toast({
-        title: 'Download failed',
-        description: 'Failed to download content',
-        status: 'error',
-        duration: 3000,
-        isClosable: true
-      });
+      try {
+        // Update last accessed time when content is actually accessed
+        updateContentLastAccessed(contentId);
+        // Create download link
+        const url = content.data instanceof Blob
+          ? urlRegistry.createUrl(contentId, content.data)
+          : `data:text/plain;charset=utf-8,${encodeURIComponent(content.data)}`;
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = metadata.metadata.fileName || `content-${contentId.substring(0, 8)}`;
+        document.body.appendChild(a);
+        a.click();
+        
+        // Clean up
+        document.body.removeChild(a);
+        if (content.data instanceof Blob) {
+          urlRegistry.revokeUrl(contentId, url);
+        }
+        
+        toast({
+          title: 'Download started',
+          status: 'success',
+          duration: 2000,
+          isClosable: true
+        });
+      } catch (error) {
+        console.error('Error downloading content:', error);
+        toast({
+          title: 'Download failed',
+          description: 'Failed to download content',
+          status: 'error',
+          duration: 3000,
+          isClosable: true
+        });
+      }
     }
   };
   
@@ -807,6 +867,33 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
    * Renders content preview based on type
    */
   const renderContentPreview = () => {
+    // Check if this is a large file
+    const isLargeFile = metadata.isLargeFile || false;
+    
+    // Large file special handling
+    if (isLargeFile) {
+      return (
+        <Flex
+          align="center"
+          justify="center"
+          direction="column"
+          h="120px"
+          bg="blue.50"
+          borderRadius="md"
+          border="2px dashed"
+          borderColor="blue.200"
+        >
+          <Icon as={FaDownload} color="blue.500" boxSize={6} mb={2} />
+          <Text color="blue.700" fontWeight="bold" textAlign="center">
+            Large File ({formatFileSize(metadata.totalSize)})
+          </Text>
+          <Text color="blue.600" fontSize="sm" textAlign="center">
+            Stored on server - Click download to retrieve
+          </Text>
+        </Flex>
+      );
+    }
+    
     // For images, try to render even if isComplete is false but we have data
     if (!content.isComplete && !(content.data instanceof Blob && metadata.contentType === ContentType.IMAGE)) {
       return (
@@ -831,15 +918,9 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
             position="relative"
           >
             {(() => {
-              // Debug logging to help diagnose content display issues
-              console.log(`[ContentItem] Rendering text content for ${contentId}`);
-              console.log(`[ContentItem] Content data type: ${typeof content.data}`);
-              console.log(`[ContentItem] Content data available: ${content.data !== undefined}`);
               
               // If we have string data, display it directly
               if (content.data && typeof content.data === 'string') {
-                console.log(`[ContentItem] Displaying string data of length ${content.data.length}`);
-                console.log(`[ContentItem] String data preview: "${content.data.substring(0, Math.min(20, content.data.length))}"`);
                 return content.data.length > 500
                   ? content.data.substring(0, 500) + '...'
                   : content.data;
@@ -848,13 +929,11 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
               // If we have a blob that might contain text, return a placeholder
               // The actual text extraction happens in a separate component
               if (content.data instanceof Blob) {
-                console.log(`[ContentItem] Displaying blob data of size ${content.data.size}`);
                 return <BlobTextExtractor blob={content.data} />;
               }
               
               // Check if we have metadata but no data yet
               if (content.metadata && !content.data && content.isComplete) {
-                console.log(`[ContentItem] Content is marked complete but has no data, trying to use metadata`);
                 // This is a workaround for when content is marked complete but data isn't set
                 if (content.metadata.contentType === ContentType.TEXT) {
                   return `[Content available but not loaded: ${content.metadata.totalSize} bytes]`;
@@ -862,7 +941,6 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
               }
               
               // Fallback
-              console.log(`[ContentItem] No displayable content available for ${contentId}`);
               return 'No content available';
             })()}
             
@@ -880,7 +958,6 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
         );
         
       case ContentType.IMAGE:
-        console.log(`[ContentItem] Rendering image for ${contentId}, isComplete: ${content.isComplete}`);
         
         return (
           <Box
@@ -892,22 +969,8 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
             bg="gray.50"
           >
             {(() => {
-              console.log(`[ContentItem] Image rendering check for ${contentId}:`);
-              console.log(`  - content.data type: ${typeof content.data}`);
-              console.log(`  - content.data instanceof Blob: ${content.data instanceof Blob}`);
-              console.log(`  - content.data:`, content.data);
-              console.log(`  - effectiveContentType: ${effectiveContentType}`);
-              console.log(`  - ContentType.IMAGE: ${ContentType.IMAGE}`);
               
               if (content.data instanceof Blob) {
-                console.log(`  - Blob size: ${content.data.size}`);
-                console.log(`  - Blob type: ${content.data.type}`);
-                console.log(`[ContentItem] About to render ImageRenderer for ${contentId}`);
-                console.log(`[ContentItem] Blob details:`, {
-                  type: content.data.type,
-                  size: content.data.size,
-                  constructor: content.data.constructor.name
-                });
                 return (
                   <ImageRenderer
                     contentId={contentId}
@@ -920,7 +983,6 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
                   />
                 );
               } else {
-                console.log(`  - Image data not available - content.data is not a Blob`);
                 return (
                   <Flex align="center" justify="center" h="100px">
                     <Text color="gray.500">Image data not available</Text>
@@ -996,12 +1058,38 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
           <HStack spacing={2}>
             <Icon as={getContentIcon()} color="blue.500" />
             <Text fontWeight="bold">
-              {metadata.metadata.fileName ||
-                (effectiveContentType === ContentType.TEXT
-                  ? 'Text content'
-                  : effectiveContentType === ContentType.IMAGE
-                    ? `Image-${contentId.substring(0, 8)}`
-                    : 'File')}
+              {(() => {
+                // CRITICAL FIX: Better filename handling for large files
+                // Try to get filename from metadata first
+                if (metadata.metadata.fileName) {
+                  return metadata.metadata.fileName;
+                }
+                
+                // For large files, check if we have any additional metadata stored
+                // The additionalMetadata is stored at the SharedContent level, not ContentMetadata level
+                if (metadata.isLargeFile && 'additionalMetadata' in metadata) {
+                  try {
+                    const additionalMeta = (metadata as SharedContent & { additionalMetadata?: string | object }).additionalMetadata;
+                    const parsed = typeof additionalMeta === 'string'
+                      ? JSON.parse(additionalMeta)
+                      : additionalMeta;
+                    if (parsed.fileName) {
+                      return parsed.fileName;
+                    }
+                  } catch (e) {
+                    // Ignore parsing errors
+                  }
+                }
+                
+                // Fallback based on content type
+                if (effectiveContentType === ContentType.TEXT) {
+                  return 'Text content';
+                } else if (effectiveContentType === ContentType.IMAGE) {
+                  return `Image-${contentId.substring(0, 8)}`;
+                } else {
+                  return 'File';
+                }
+              })()}
             </Text>
             {!content.isComplete && (
               <Badge colorScheme="yellow">Loading</Badge>
@@ -1023,14 +1111,14 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
               title={isPinnedUI ? "Unpin this content" : "Pin this content"}
             />
             
-            {/* Copy Button */}
+            {/* Copy Button - disabled for large files */}
             <Button
               size="sm"
               variant="ghost"
               aria-label="Copy to clipboard"
-              title="Copy to clipboard"
+              title={metadata.isLargeFile ? "Copy not available for large files" : "Copy to clipboard"}
               onClick={copyContent}
-              isDisabled={!content.isComplete}
+              isDisabled={!content.isComplete || metadata.isLargeFile}
             >
               <Icon as={hasCopied ? FaCheck : FaCopy} />
             </Button>
@@ -1056,9 +1144,9 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
                 <MenuItem
                   icon={<Icon as={hasCopied ? FaCheck : FaCopy} />}
                   onClick={copyContent}
-                  isDisabled={!content.isComplete}
+                  isDisabled={!content.isComplete || metadata.isLargeFile}
                 >
-                  Copy to clipboard
+                  {metadata.isLargeFile ? "Copy not available for large files" : "Copy to clipboard"}
                 </MenuItem>
                 <MenuItem
                   icon={<Icon as={FaDownload} />}
@@ -1085,8 +1173,8 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
           {effectiveContentType === ContentType.TEXT && (
             <Text>
               {(() => {
-                // Calculate size from actual text data if metadata size is 0 or missing
-                const metadataSize = metadata.metadata.size;
+                // CRITICAL FIX: Use totalSize for large files, metadata.size for regular files
+                const metadataSize = metadata.isLargeFile ? metadata.totalSize : metadata.metadata.size;
                 if (metadataSize && metadataSize > 0) {
                   return `${formatFileSize(metadataSize)} (${metadataSize} chars)`;
                 }
@@ -1109,17 +1197,24 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
           )}
           {effectiveContentType === ContentType.IMAGE && (
             <Text>
-              {formatFileSize(metadata.metadata.size)}
+              {/* CRITICAL FIX: Use totalSize for large files, metadata.size for regular files */}
+              {formatFileSize(metadata.isLargeFile ? metadata.totalSize : metadata.metadata.size)}
               {metadata.metadata.imageInfo?.width && metadata.metadata.imageInfo?.height &&
                 ` • ${metadata.metadata.imageInfo.width}×${metadata.metadata.imageInfo.height}`}
               {metadata.metadata.imageInfo?.format && ` • ${metadata.metadata.imageInfo.format}`}
             </Text>
           )}
           {effectiveContentType === ContentType.FILE && (
-            <Text>{formatFileSize(metadata.metadata.size)}</Text>
+            <Text>
+              {/* CRITICAL FIX: Use totalSize for large files, metadata.size for regular files */}
+              {formatFileSize(metadata.isLargeFile ? metadata.totalSize : metadata.metadata.size)}
+            </Text>
           )}
           {effectiveContentType === ContentType.OTHER && (
-            <Text>{formatFileSize(metadata.metadata.size)}</Text>
+            <Text>
+              {/* CRITICAL FIX: Use totalSize for large files, metadata.size for regular files */}
+              {formatFileSize(metadata.isLargeFile ? metadata.totalSize : metadata.metadata.size)}
+            </Text>
           )}
           {/* Fallback for when content type is not recognized or metadata is missing */}
           {(!effectiveContentType ||
@@ -1127,7 +1222,10 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
              effectiveContentType !== ContentType.IMAGE &&
              effectiveContentType !== ContentType.FILE &&
              effectiveContentType !== ContentType.OTHER)) && (
-            <Text>{formatFileSize(metadata.metadata.size)}</Text>
+            <Text>
+              {/* CRITICAL FIX: Use totalSize for large files, metadata.size for regular files */}
+              {formatFileSize(metadata.isLargeFile ? metadata.totalSize : metadata.metadata.size)}
+            </Text>
           )}
         </HStack>
         

@@ -11,6 +11,9 @@ module.exports = {
     '^\\.\/database$': '<rootDir>/src/__mocks__/database',
     '^.*FileSystemChunkStorage$': '<rootDir>/src/__mocks__/FileSystemChunkStorage',
     '\\.(bin|data|wasm)$': '<rootDir>/src/__mocks__/fileMock.js',
+    '^../../../../test/mocks/crypto-js$': '<rootDir>/src/__mocks__/crypto-js',
+    '^../../../client/src/utils/(.*)$': '<rootDir>/../client/src/utils/$1',
+    '^crypto-js$': '<rootDir>/src/__mocks__/crypto-js',
   },
   
   // Transform settings
@@ -44,7 +47,7 @@ module.exports = {
   resetModules: true,
   
   // Test matching
-  testMatch: ['**/__tests__/**/*.test.ts'],
+  testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.e2e.test.ts'],
   
   // Coverage
   collectCoverage: process.env.NODE_ENV !== 'test',

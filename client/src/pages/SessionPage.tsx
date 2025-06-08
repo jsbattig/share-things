@@ -94,7 +94,6 @@ const SessionPage: React.FC = () => {
         // Mark that we're attempting to join to prevent duplicate attempts
         hasJoined.current = true;
         
-        console.log('Joining session...');
         
         // Join session
         const response = await joinSession(sessionId, clientName, passphrase);
@@ -102,9 +101,7 @@ const SessionPage: React.FC = () => {
         
         // Set the session passphrase for content encryption/decryption
         updateSessionPassphrase(passphrase);
-        console.log('[SessionPage] Session passphrase set for content operations');
         
-        console.log('[SessionPage] Successfully joined session');
         
         toast({
           title: 'Joined session',
@@ -136,18 +133,16 @@ const SessionPage: React.FC = () => {
     };
     
     join();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isConnected, sessionId, clientName, passphrase]);
+  }, [isConnected, sessionId, clientName, passphrase, joinSession, updateSessionPassphrase, toast, navigate]);
   
   // Handle manual reconnection when connection status changes
   useEffect(() => {
     if (connectionStatus === 'disconnected' && sessionId && clientName && passphrase) {
-      console.log('[SessionPage] Connection lost, will attempt to rejoin when reconnected');
+      // Connection lost - will attempt to rejoin when reconnected
     } else if (connectionStatus === 'connected' && sessionId && clientName && passphrase) {
       // Check if we need to rejoin the session - but only if we haven't already joined
       // AND we're not currently in the process of joining
       if (socket && clients.length === 0 && !hasJoined.current && !isJoining) {
-        console.log('[SessionPage] Connected but no clients, attempting to rejoin session');
         rejoinSession(sessionId, clientName, passphrase);
       }
     }
@@ -161,11 +156,11 @@ const SessionPage: React.FC = () => {
     // Do an initial connection check when this effect runs
     if (document.visibilityState === 'visible') {
       ensureConnected(sessionId)
-        .then(connected => {
-          console.log(`[SessionPage] Initial connection check: ${connected ? 'connected' : 'disconnected'}`);
+        .then(() => {
+          // Connection check completed
         })
-        .catch(err => {
-          console.error('[SessionPage] Error during initial connection check:', err);
+        .catch(() => {
+          // Connection check failed
         });
     }
   }, [sessionId, clientName, passphrase, ensureConnected]);
@@ -175,12 +170,10 @@ const SessionPage: React.FC = () => {
     if (!socket || !isConnected) return;
     
     const handleClientJoined = (data: { clientId: string, clientName: string }) => {
-      console.log('Client joined event received:', data);
       
       setClients(prev => {
         // Check if client already exists in the list
         const clientExists = prev.some(client => client.id === data.clientId);
-        console.log('Client already exists:', clientExists);
         
         // Only add the client if it doesn't already exist
         if (!clientExists) {
@@ -232,7 +225,6 @@ const SessionPage: React.FC = () => {
     
     const handleSessionExpired = (data: { sessionId: string, message: string }) => {
       if (data.sessionId === sessionId) {
-        console.log('[SessionPage] Session expired notification received');
         
         toast({
           title: 'Session expired',
@@ -244,12 +236,10 @@ const SessionPage: React.FC = () => {
         
         // Try to rejoin if we have credentials
         if (clientName && passphrase) {
-          console.log('[SessionPage] Attempting to rejoin expired session');
           
           // Use the useSocket hook's rejoinSession method
           rejoinSession(sessionId, clientName, passphrase)
             .then(() => {
-              console.log('[SessionPage] Successfully rejoined after expiration');
               
               toast({
                 title: 'Reconnected',
@@ -260,7 +250,7 @@ const SessionPage: React.FC = () => {
               });
             })
             .catch(err => {
-              console.error('[SessionPage] Failed to rejoin after expiration:', err);
+              console.error('Failed to rejoin after expiration:', err);
               
               // Navigate to home page if rejoin fails
               toast({

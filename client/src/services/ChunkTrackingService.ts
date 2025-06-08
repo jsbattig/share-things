@@ -37,7 +37,6 @@ export class ChunkTrackingService {
     
     const contentChunks = this.chunkRegistry.get(contentId);
     if (!contentChunks) {
-      console.warn(`[ChunkTracker] Content chunks map not found for ${contentId}`);
       return;
     }
     contentChunks.set(chunkIndex, {
@@ -47,7 +46,6 @@ export class ChunkTrackingService {
       timestamp: Date.now()
     });
     
-    console.log(`[ChunkTracker] Registered chunk ${chunkIndex} for content ${contentId}`);
   }
   
   /**
@@ -59,13 +57,11 @@ export class ChunkTrackingService {
   updateChunkStatus(contentId: string, chunkIndex: number, status: ChunkStatus): void {
     const contentChunks = this.chunkRegistry.get(contentId);
     if (!contentChunks) {
-      console.warn(`[ChunkTracker] Cannot update status for unknown content ${contentId}`);
       return;
     }
     
     const chunk = contentChunks.get(chunkIndex);
     if (!chunk) {
-      console.warn(`[ChunkTracker] Cannot update status for unknown chunk ${chunkIndex} of content ${contentId}`);
       return;
     }
     
@@ -75,7 +71,6 @@ export class ChunkTrackingService {
       timestamp: Date.now()
     });
     
-    console.log(`[ChunkTracker] Updated chunk ${chunkIndex} for content ${contentId} to status ${status}`);
   }
   
   /**
@@ -85,7 +80,6 @@ export class ChunkTrackingService {
   markContentProcessed(contentId: string): void {
     const contentChunks = this.chunkRegistry.get(contentId);
     if (!contentChunks) {
-      console.warn(`[ChunkTracker] Cannot mark as processed: unknown content ${contentId}`);
       return;
     }
     
@@ -97,7 +91,6 @@ export class ChunkTrackingService {
       });
     }
     
-    console.log(`[ChunkTracker] Marked all chunks for content ${contentId} as processed`);
   }
   
   /**
@@ -107,7 +100,6 @@ export class ChunkTrackingService {
   markContentDisplayed(contentId: string): void {
     const contentChunks = this.chunkRegistry.get(contentId);
     if (!contentChunks) {
-      console.warn(`[ChunkTracker] Cannot mark as displayed: unknown content ${contentId}`);
       return;
     }
     
@@ -119,7 +111,6 @@ export class ChunkTrackingService {
       });
     }
     
-    console.log(`[ChunkTracker] Marked all chunks for content ${contentId} as displayed`);
   }
   
   /**
@@ -128,7 +119,6 @@ export class ChunkTrackingService {
    */
   cleanupChunks(contentId: string): void {
     if (this.chunkRegistry.has(contentId)) {
-      console.log(`[ChunkTracker] Cleaning up all chunks for content ${contentId}`);
       this.chunkRegistry.delete(contentId);
     }
   }

@@ -60,8 +60,8 @@ export async function chunkAndEncryptBlob(
   // Use existing content ID or generate new one
   const contentId = existingContentId || uuidv4();
   
-  // Calculate total chunks
-  const totalChunks = Math.ceil(blob.size / chunkSize);
+  // Calculate total chunks - ensure at least 1 chunk for empty files
+  const totalChunks = Math.max(1, Math.ceil(blob.size / chunkSize));
   
   // Derive encryption key
   const key = await deriveKeyFromPassphrase(passphrase);

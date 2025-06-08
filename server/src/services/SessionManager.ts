@@ -112,7 +112,6 @@ export class SessionManager {
       // Load existing sessions from repository
       await this.loadSessionsFromRepository();
       
-      console.log('Session manager initialized successfully');
     } catch (error: unknown) {
       console.error('Failed to initialize session manager:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -125,8 +124,7 @@ export class SessionManager {
    */
   private async loadSessionsFromRepository(): Promise<void> {
     try {
-      const sessionRecords = await this.sessionRepository.findAll();
-      console.log(`Loaded ${sessionRecords.length} sessions from repository`);
+      await this.sessionRepository.findAll();
       
       // We don't need to create Session objects here since they'll be created when clients join
     } catch (error: unknown) {
@@ -161,7 +159,6 @@ export class SessionManager {
       // Remove from repository
       await this.sessionRepository.delete(sessionId);
       
-      console.log(`[SessionManager] Removed session ${sessionId}`);
     } catch (error) {
       console.warn(`[SessionManager] Failed to remove session ${sessionId}:`, error);
     }
@@ -183,8 +180,6 @@ export class SessionManager {
     clientName: string,
     socket: Socket
   ): Promise<SessionJoinResult> {
-    console.log(`Attempting to join session: ${sessionId}`);
-    console.log(`Fingerprint: ${JSON.stringify(fingerprint)}`);
     
     try {
       // Check if session exists in repository
@@ -193,7 +188,6 @@ export class SessionManager {
       if (sessionRecord) {
         // Verify fingerprint
         const fingerprintsMatch = this.compareFingerprints(fingerprint, sessionRecord.fingerprint);
-        console.log(`Fingerprints match: ${fingerprintsMatch}`);
         
         if (!fingerprintsMatch) {
           return { success: false, error: 'Invalid passphrase' };
@@ -253,25 +247,13 @@ export class SessionManager {
       // Check if client already exists in session
       const existingClient = session.clients.get(clientId);
       if (existingClient) {
-        console.log(`Client ${clientId} (${clientName}) already exists in session ${sessionId}`);
-        console.log(`Existing clients in session: ${Array.from(session.clients.keys()).join(', ')}`);
-        
         // Update the existing client instead of adding a new one
         session.removeClient(clientId);
-        console.log(`Removed existing client ${clientId} from session ${sessionId}`);
       }
       
       // Add client to session
       const client = new Client(clientId, clientName, socket);
       session.addClient(client);
-      console.log(`Added client ${clientId} (${clientName}) to session ${sessionId}`);
-      console.log(`Updated clients in session: ${Array.from(session.clients.keys()).join(', ')}`);
-      
-      // DEBUG: Check if there's any mechanism to sync content for new clients
-      console.log(`[DEBUG] Checking for content synchronization mechanism for new client ${clientId} in session ${sessionId}`);
-      console.log(`[DEBUG] Session object has the following properties:`, Object.keys(session));
-      // Note: There doesn't appear to be any property or method in the Session class
-      // that handles content synchronization or storage access
       
       return { success: true, token };
     } catch (error: unknown) {
@@ -288,6 +270,26 @@ export class SessionManager {
    */
   validateSessionToken(clientId: string, token: string): boolean {
     return this.sessionTokens.get(clientId) === token;
+  }
+  
+  /**
+   * Finds the client ID associated with a token and validates access to a session
+   * @param token Session token
+   * @param sessionId Session ID to validate access to
+   * @returns Whether the token is valid and has access to the session
+   */
+  validateTokenForSession(token: string, sessionId: string): boolean {
+    // Find the clientId that owns this token
+    for (const [clientId, storedToken] of this.sessionTokens.entries()) {
+      if (storedToken === token) {
+        // Check if this client is in the specified session
+        const session = this.sessions.get(sessionId);
+        if (session && session.clients.has(clientId)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
   
   /**
@@ -378,27 +380,18 @@ export class SessionManager {
    * Cleans up expired sessions
    */
   private async cleanupExpiredSessions(): Promise<void> {
-    const now = new Date();
-    console.log(`[SessionManager] Running cleanup check at ${now.toISOString()}`);
-    
     try {
       // Find expired sessions in repository
       const expiredSessionIds = await this.sessionRepository.findExpired(this.sessionTimeout);
       
       for (const sessionId of expiredSessionIds) {
-        console.log(`[SessionManager] Session ${sessionId} expired`);
-        
         // Get session from memory
         const session = this.sessions.get(sessionId);
         
         // If session exists in memory, disconnect all clients
         if (session) {
-          const clientCount = session.clients.size;
-          console.log(`[SessionManager] Disconnecting ${clientCount} clients from expired session ${sessionId}`);
-          
           // Disconnect all clients
           for (const [clientId, client] of session.clients.entries()) {
-            console.log(`[SessionManager] Disconnecting client ${clientId} from expired session ${sessionId}`);
             client.sendNotification('session-expired', {
               sessionId,
               message: 'Session expired due to inactivity'
@@ -414,8 +407,6 @@ export class SessionManager {
         
         // Remove session from repository
         await this.sessionRepository.delete(sessionId);
-        
-        console.log(`[SessionManager] Successfully removed expired session ${sessionId}`);
       }
     } catch (error: unknown) {
       console.error('[SessionManager] Error cleaning up expired sessions:', error);

@@ -3,7 +3,7 @@
  * Using only CryptoJS for compatibility with non-HTTPS environments
  */
 
-// Import CryptoJS
+// Import CryptoJS - will use polyfill in Node.js test environment, real CryptoJS in browser
 import * as CryptoJS from 'crypto-js';
 
 // Define interface for our crypto key
@@ -257,22 +257,22 @@ export async function decryptData(
       padding: CryptoJS.pad.Pkcs7
     });
     
-    // Convert to ArrayBuffer
+    // Convert to ArrayBuffer - use sigBytes which is the actual decrypted data length (padding removed)
     const decryptedWords = decrypted.words;
     const decryptedBytes = new Uint8Array(decrypted.sigBytes);
     
-    for (let i = 0; i < decryptedBytes.length; i += 4) {
+    for (let i = 0; i < decrypted.sigBytes; i += 4) {
       const word = decryptedWords[i / 4];
       decryptedBytes[i] = (word >>> 24) & 0xff;
-      if (i + 1 < decryptedBytes.length) decryptedBytes[i + 1] = (word >>> 16) & 0xff;
-      if (i + 2 < decryptedBytes.length) decryptedBytes[i + 2] = (word >>> 8) & 0xff;
-      if (i + 3 < decryptedBytes.length) decryptedBytes[i + 3] = word & 0xff;
+      if (i + 1 < decrypted.sigBytes) decryptedBytes[i + 1] = (word >>> 16) & 0xff;
+      if (i + 2 < decrypted.sigBytes) decryptedBytes[i + 2] = (word >>> 8) & 0xff;
+      if (i + 3 < decrypted.sigBytes) decryptedBytes[i + 3] = word & 0xff;
     }
     
-    // If decryption succeeded but returned empty data, that's suspicious
-    if (decryptedBytes.length === 0) {
-      throw new Error('Decryption failed: Empty result');
-    }
+    // Empty data is valid for empty files - don't throw an error
+    // if (decryptedBytes.length === 0) {
+    //   throw new Error('Decryption failed: Empty result');
+    // }
     
     return decryptedBytes.buffer;
   } catch (error) {

@@ -5,6 +5,7 @@ import { FileSystemChunkStorage } from '../infrastructure/storage/FileSystemChun
 import { storageConfig } from '../infrastructure/config/storage.config';
 import { ContentMetadata } from '../domain/ChunkStorage.interface';
 
+
 // Define interfaces for content and chunk data
 interface ContentData {
   contentId: string;
@@ -42,15 +43,19 @@ let globalChunkStorage: FileSystemChunkStorage | null = null;
 // Function to get or create the chunk storage
 async function getChunkStorage(): Promise<FileSystemChunkStorage> {
   if (!globalChunkStorage) {
-    console.log(`[DEBUG] Creating new FileSystemChunkStorage instance`);
     globalChunkStorage = new FileSystemChunkStorage({
       storagePath: storageConfig.storagePath
     });
     
     try {
-      console.log(`[DEBUG] Initializing chunk storage with path: ${storageConfig.storagePath}`);
       await globalChunkStorage.initialize();
-      console.log('Chunk storage initialized successfully');
+      
+      // Fix existing large file metadata
+      try {
+        await globalChunkStorage.fixLargeFileMetadata();
+      } catch (error) {
+        console.error('Error fixing large file metadata:', error);
+      }
     } catch (error) {
       console.error('Failed to initialize chunk storage:', error);
       throw error;
@@ -79,8 +84,6 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
   };
 
   io.on('connection', (socket: Socket) => {
-    console.log(`Client connected: ${socket.id}`);
-    console.log(`[SOCKET-DEBUG] Registering socket event handlers for client ${socket.id}`);
     
     // Handle join session
     socket.on('join', async (data: { 
@@ -92,7 +95,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
       try {
         const { sessionId, clientName, fingerprint, cachedContentIds } = data;
         
-        console.log(`Client ${socket.id} attempting to join session ${sessionId}`);
+        console.log(`Client joined session: ${sessionId}`);
         
         // Join the session
         const result = await sessionManager.joinSession(sessionId, fingerprint, socket.id, clientName, socket);
@@ -120,28 +123,21 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
           joinedAt: client.connectedAt
         })) : [];
 
-        // CRITICAL FIX: Send callback BEFORE content transmission to prevent timeout
         if (callback) {
-          console.log(`[CALLBACK-DEBUG] Sending join success callback to client ${socket.id}`);
           callback({
             success: true,
             token: result.token,
             clients: clientsList
           });
-          console.log(`[CALLBACK-DEBUG] Join callback sent successfully to client ${socket.id}`);
-        } else {
-          console.log(`[CALLBACK-DEBUG] WARNING: No callback provided for join request from client ${socket.id}`);
         }
 
         // Get existing content for this session (first page only for initial load)
         try {
           const chunkStorage = await chunkStoragePromise;
-          console.log(`[STORAGE] Retrieving first page of content for new client ${socket.id} in session ${sessionId}`);
           
           // Get total count first
           const allContentList = await chunkStorage.listContent(sessionId);
           const totalContentCount = allContentList.length;
-          console.log(`[DEBUG] Found ${totalContentCount} total content items for session ${sessionId}`);
 
           // Apply pagination - only send first page (default limit: 5)
           const limit = 5;
@@ -150,23 +146,12 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
 
           // Filter out content that the client already has cached
           if (cachedContentIds && cachedContentIds.length > 0) {
-            const originalContentCount = contentList.length;
             contentList = contentList.filter(content => !cachedContentIds.includes(content.contentId));
-            console.log(`[KISS] Filtered content list: ${originalContentCount} total -> ${contentList.length} missing (client has ${originalContentCount - contentList.length} cached)`);
           }
-
-          if (contentList.length > 0) {
-            console.log(`[DEBUG] Content IDs to send (first page): ${contentList.map(c => c.contentId).join(', ')}`);
-          } else {
-            console.log(`[DEBUG] No content found for session ${sessionId}`);
-          }
-
-          console.log(`[DEBUG] About to send ${contentList.length} content items (first page) to client ${socket.id}. Total: ${totalContentCount}, hasMore: ${hasMore}`);
 
           // Send content metadata first, then chunks with proper async handling
           for (const content of contentList) {
             if (!content.isComplete) {
-              console.log(`Skipping incomplete content ${content.contentId}`);
               continue;
             }
 
@@ -183,11 +168,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
                 isChunked: content.totalChunks > 1,
                 totalChunks: content.totalChunks,
                 totalSize: content.totalSize,
-                isPinned: (() => {
-                  console.log(`[DEBUG-EMIT-1] Content ${content.contentId} isPinned value:`, content.isPinned, typeof content.isPinned);
-                  console.log(`[DEBUG-EMIT-1] Full content object:`, JSON.stringify(content, null, 2));
-                  return content.isPinned || false;
-                })(),
+                isPinned: content.isPinned || false,
                 isLargeFile: content.isLargeFile,
                 encryptionMetadata: {
                   iv: Array.from(content.encryptionIv)
@@ -215,8 +196,6 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
                   });
                 }
               }
-            } else {
-              console.log(`[LARGE-FILE] Skipping chunk transmission for large file ${content.contentId} (${content.totalSize} bytes) to new client ${socket.id}`);
             }
           }
 
@@ -229,7 +208,6 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
             hasMore: hasMore
           });
 
-          console.log(`Finished sending first page of content to client ${socket.id}. Total: ${totalContentCount}, sent: ${contentList.length}, hasMore: ${hasMore}`);
         } catch (storageError) {
           console.error(`Error retrieving content from storage for session ${sessionId}:`, storageError);
         }
@@ -241,8 +219,6 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
           sessionId: sessionId
         });
 
-        console.log(`Client ${clientName} (${socket.id}) joined session ${sessionId}`);
-        console.log(`[USER-LIST-FIX] Broadcasted client-joined event to existing clients in session ${sessionId}`);
       } catch (error) {
         console.error('Error in join handler:', error);
         if (callback) {
@@ -280,7 +256,6 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
         // Clean up content if requested
         if (cleanupContent) {
           try {
-            console.log(`Cleaning up content for session ${sessionId} as requested by client ${socket.id}`);
             const chunkStorage = await chunkStoragePromise;
             await chunkStorage.cleanupAllSessionContent(sessionId);
           } catch (cleanupError) {
@@ -325,8 +300,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
           return;
         }
 
-        console.log(`[CONTENT] Client ${socket.id} sending content ${content.contentId} in session ${sessionId}`);
-        console.log(`[CONTENT-DEBUG] Client ${socket.id} socket.data.sessionId: ${socket.data.sessionId}, requested sessionId: ${sessionId}`);
+        console.log(`Content shared: ${content.contentId} in session ${sessionId}`);
 
         // Verify client is in the session
         if (socket.data.sessionId !== sessionId) {
@@ -423,9 +397,33 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
           } else if (content.isChunked && content.totalChunks) {
             // For chunked content (including large files), save metadata directly
             console.log(`[STORAGE-DEBUG] Saving metadata for chunked content ${content.contentId} (${content.totalSize} bytes)`);
+            console.log(`[METADATA-DEBUG] Original content.metadata:`, content.metadata);
             
             const iv = content.encryptionMetadata?.iv ? new Uint8Array(content.encryptionMetadata.iv) : new Uint8Array(12);
             const isLargeFile = content.totalSize > storageConfig.largeFileThreshold;
+            
+            // CRITICAL FIX: Ensure metadata is preserved for large files
+            let metadataToStore = content.metadata;
+            
+            // Log what we received from client
+            console.log(`[METADATA-FIX-DEBUG] Received metadata from client:`, content.metadata);
+            console.log(`[METADATA-FIX-DEBUG] Content object keys:`, Object.keys(content));
+            
+            if (!metadataToStore && isLargeFile) {
+              // For large files without metadata, create basic metadata with size info
+              metadataToStore = {
+                size: content.totalSize,
+                mimeType: content.contentType || 'application/octet-stream',
+                fileName: 'File' // Default filename
+              };
+              console.log(`[METADATA-DEBUG] Created fallback metadata for large file:`, metadataToStore);
+            } else if (metadataToStore && isLargeFile) {
+              // We have metadata from client - ensure it has required fields
+              if (!metadataToStore.fileName) {
+                metadataToStore.fileName = 'File'; // Default if missing
+              }
+              console.log(`[METADATA-DEBUG] Using client metadata for large file:`, metadataToStore);
+            }
             
             await chunkStorage.saveContent({
               contentId: content.contentId,
@@ -435,11 +433,19 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
               totalSize: content.totalSize || 0,
               createdAt: Date.now(),
               encryptionIv: iv,
-              additionalMetadata: content.metadata ? JSON.stringify(content.metadata) : null,
+              additionalMetadata: metadataToStore ? JSON.stringify(metadataToStore) : null,
               isComplete: true,
               isPinned: false,
               isLargeFile: isLargeFile
             });
+            
+            // CRITICAL FIX: For chunked content, also update metadata using updateContentMetadata
+            // This ensures the metadata is properly stored even if the content record was created by saveChunk first
+            if (metadataToStore && typeof chunkStorage.updateContentMetadata === 'function') {
+              console.log(`[METADATA-UPDATE-DEBUG] Updating metadata for chunked content ${content.contentId}`);
+              await chunkStorage.updateContentMetadata(content.contentId, metadataToStore);
+              console.log(`[METADATA-UPDATE-DEBUG] Metadata updated successfully for ${content.contentId}`);
+            }
             
             console.log(`[STORAGE-DEBUG] Chunked content metadata ${content.contentId} saved successfully to storage`);
           }
@@ -451,8 +457,6 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
         const isLargeFile = content.totalSize > storageConfig.largeFileThreshold;
         
         if (isLargeFile) {
-          console.log(`[LARGE-FILE] Content ${content.contentId} (${content.totalSize} bytes) exceeds threshold (${storageConfig.largeFileThreshold} bytes) - not broadcasting to other clients`);
-          
           // For large files, only send metadata to other clients (no chunks will be sent)
           socket.to(sessionId).emit('content', {
             sessionId,
@@ -462,18 +466,17 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
             }
           });
         } else {
-          // Broadcast normally for regular files
+          // Broadcast normally for regular files - include content data for real-time sharing
           socket.to(sessionId).emit('content', {
             sessionId,
-            content
+            content,
+            data: contentData  // Include encrypted content data for regular files
           });
         }
 
         if (callback) {
           callback({ success: true });
         }
-
-        console.log(`Content ${content.contentId} shared in session ${sessionId}`);
       } catch (error) {
         console.error('Error in content handler:', error);
         if (callback) {
@@ -498,7 +501,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
           return;
         }
 
-        console.log(`Received chunk ${chunk.chunkIndex}/${chunk.totalChunks} for content ${chunk.contentId} from client ${socket.id}`);
+        
 
         // Verify client is in the session
         if (socket.data.sessionId !== sessionId) {
@@ -535,31 +538,22 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
 
           // Check if all chunks have been received
           const receivedChunks = await chunkStorage.getReceivedChunkCount(chunk.contentId);
-          console.log(`Content ${chunk.contentId} now has ${receivedChunks}/${chunk.totalChunks} chunks`);
           
           // Mark content as complete if all chunks have been received
           if (receivedChunks === chunk.totalChunks) {
             await chunkStorage.markContentComplete(chunk.contentId);
-            console.log(`Content ${chunk.contentId} marked as complete - all ${chunk.totalChunks} chunks received`);
+            console.log(`File upload completed: ${chunk.contentId} (${chunk.totalChunks} chunks)`);
           }
-
-          console.log(`Chunk ${chunk.chunkIndex}/${chunk.totalChunks} for content ${chunk.contentId} saved to storage`);
         } catch (storageError) {
           console.error(`Error saving chunk to storage:`, storageError);
         }
 
         // Check if this is a large file - if so, don't broadcast chunks
-        let broadcastedToClients = 0;
         try {
           const isLargeFile = await chunkStorage.isLargeFile(chunk.contentId);
           
-          if (isLargeFile) {
-            console.log(`[LARGE-FILE] Chunk ${chunk.chunkIndex}/${chunk.totalChunks} for large file ${chunk.contentId} - not broadcasting to other clients`);
-          } else {
+          if (!isLargeFile) {
             // Forward chunk to other clients for regular files
-            const recipients = Array.from(session.clients.keys()).filter(id => id !== socket.id);
-            broadcastedToClients = recipients.length;
-
             // Broadcast to other clients in the session
             socket.to(sessionId).emit('chunk', {
               sessionId,
@@ -569,8 +563,6 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
         } catch (error) {
           console.error(`Error checking if content is large file:`, error);
           // Default to broadcasting if we can't determine file size
-          const recipients = Array.from(session.clients.keys()).filter(id => id !== socket.id);
-          broadcastedToClients = recipients.length;
           socket.to(sessionId).emit('chunk', {
             sessionId,
             chunk
@@ -581,7 +573,6 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
           callback({ success: true });
         }
 
-        console.log(`Chunk ${chunk.chunkIndex}/${chunk.totalChunks} for content ${chunk.contentId} saved to storage and forwarded to ${broadcastedToClients} recipients`);
       } catch (error) {
         console.error('Error in chunk handler:', error);
         if (callback) {
@@ -709,7 +700,11 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
       error?: string;
     }) => void) => {
       try {
-        const { sessionId, offset = 0, limit = 5 } = data;
+        const { sessionId, offset: rawOffset = 0, limit: rawLimit = 5 } = data;
+        
+        // Sanitize pagination parameters
+        const offset = Math.max(0, rawOffset); // Ensure offset is never negative
+        const limit = Math.max(1, rawLimit); // Ensure limit is at least 1
         
         // Validate session membership
         const session = sessionManager.getSession(sessionId);

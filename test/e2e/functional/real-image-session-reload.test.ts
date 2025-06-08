@@ -4,10 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { io, Socket } from 'socket.io-client';
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const currentDir = path.resolve();
 
 /**
  * Generate passphrase fingerprint (same logic as client)
@@ -50,7 +47,7 @@ describe('Real Image Session Reload Test', () => {
     
     // Start the real server
     serverProcess = spawn('npm', ['start'], {
-      cwd: path.join(__dirname, '../../../server'),
+      cwd: path.join(currentDir, '../../../server'),
       env: { ...process.env, PORT: '3001' },
       stdio: ['pipe', 'pipe', 'pipe']
     });

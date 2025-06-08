@@ -12,6 +12,9 @@ module.exports = {
       testMatch: ['<rootDir>/client/src/__tests__/**/*.test.ts'],
       setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
       testEnvironment: 'node',
+      moduleNameMapper: {
+        '^crypto-js$': '<rootDir>/test/mocks/crypto-js.ts'
+      },
       transform: {
         '^.+\\.tsx?$': ['ts-jest', {
           tsconfig: '<rootDir>/test/tsconfig.json',

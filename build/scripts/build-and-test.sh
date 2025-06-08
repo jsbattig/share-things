@@ -227,14 +227,20 @@ fi
 # Clean up temp file
 rm -f "$TEMP_OUTPUT"
 
-# Skip client unit tests since they're not critical for our migration from Nginx to Node.js
-echo -e "${YELLOW}Skipping client unit tests...${NC}"
-CLIENT_TEST_EXIT_CODE=0
-echo -e "${GREEN}Client unit tests skipped.${NC}"
+# Run client unit tests
+echo -e "${YELLOW}Running client unit tests...${NC}"
+podman run --rm --name share-things-frontend-test -v ./client:/app:Z -w /app share-things-frontend-test sh -c "npm install && npm test"
+CLIENT_TEST_EXIT_CODE=$?
+
+if [ $CLIENT_TEST_EXIT_CODE -eq 0 ]; then
+    echo -e "${GREEN}Client unit tests passed.${NC}"
+else
+    echo -e "${RED}Client unit tests failed.${NC}"
+fi
 
 # Build functional test container with canvas dependencies
 echo -e "${YELLOW}Building functional test container...${NC}"
-podman build -t share-things-functional-test -f test/e2e/functional/Dockerfile.test ./test/e2e/functional
+podman build -t share-things-functional-test -f test/e2e/functional/Dockerfile.test .
 
 # Run functional tests
 echo -e "${YELLOW}Running functional tests...${NC}"

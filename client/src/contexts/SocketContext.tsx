@@ -23,7 +23,30 @@ interface ContentResponse {
 // Define content and chunk types
 interface ContentMetadata {
   contentId: string;
-  [key: string]: unknown;
+  senderId: string;
+  senderName: string;
+  contentType: string;
+  timestamp: number;
+  metadata: {
+    fileName: string;
+    mimeType: string;
+    size: number;
+    fileInfo?: {
+      extension: string;
+    };
+    imageInfo?: {
+      width: number;
+      height: number;
+      format: string;
+    };
+  };
+  isChunked: boolean;
+  totalChunks: number;
+  totalSize: number;
+  isPinned: boolean;
+  encryptionMetadata?: {
+    iv: number[];
+  };
 }
 
 export interface ChunkData {
@@ -96,7 +119,6 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const getBackendUrl = () => {
         // If an environment variable is set to a specific value (not 'auto'), use it
         if (import.meta.env.VITE_SOCKET_URL && import.meta.env.VITE_SOCKET_URL !== 'auto') {
-          console.log(`[Socket] Using configured backend URL: ${import.meta.env.VITE_SOCKET_URL}`);
           return import.meta.env.VITE_SOCKET_URL;
         }
         
@@ -106,18 +128,14 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         // Determine the appropriate port based on environment variables or fallback to default
         // Use the VITE_API_PORT environment variable with a default value of '3001'
         const port = import.meta.env.VITE_API_PORT || '3001';
-        console.log(`[Socket] Using API port: ${port}`);
         // IMPORTANT: Do NOT use the current URL's port as a fallback
         // The frontend and backend are on different ports (15000 vs 15001)
         
         // Construct the backend URL
         const backendUrl = `${currentUrl.protocol}//${currentUrl.hostname}${port ? ':' + port : ''}`;
-        console.log(`[Socket] Automatically determined backend URL: ${backendUrl}`);
-        
         return backendUrl;
       };
 
-      console.log(`[Socket] Connecting to backend at: ${getBackendUrl()}`);
       
       socket = socketIOClient(getBackendUrl(), {
         path: '/socket.io/',
@@ -137,18 +155,15 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         }
       });
       
-      console.log('[Socket] Socket.IO client configured with timeout: 10s, reconnection attempts: 5');
     }
 
     // Set up event listeners
     const onConnect = () => {
-      console.log('[Socket] Connected');
       setIsConnected(true);
       setConnectionStatus('connected');
     };
 
-    const onDisconnect = (reason: string) => {
-      console.log(`[Socket] Disconnected: ${reason}`);
+    const onDisconnect = () => {
       setIsConnected(false);
       setConnectionStatus('disconnected');
     };
@@ -159,7 +174,6 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       
       // Reset connection if we've had too many attempts
       if (reconnectAttempts.current > 5) {
-        console.log('[Socket] Too many reconnection attempts, resetting connection');
         if (socket) {
           socket.disconnect();
           socket.connect(); // Force a fresh connection
@@ -172,18 +186,14 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const backoffDelay = Math.min(5000, 1000 * Math.pow(1.5, reconnectAttempts.current));
       reconnectAttempts.current += 1;
       
-      console.log(`[Socket] Will attempt to reconnect in ${backoffDelay}ms (attempt ${reconnectAttempts.current})`);
-      
       setTimeout(() => {
         if (socket && !socket.connected) {
-          console.log('[Socket] Attempting to reconnect after connection error...');
           socket.connect();
         }
       }, backoffDelay);
     };
 
-    const onReconnect = (attemptNumber: number) => {
-      console.log(`[Socket] Reconnected after ${attemptNumber} attempts`);
+    const onReconnect = () => {
       setConnectionStatus('connected');
       
       // Reset reconnect attempts counter
@@ -195,7 +205,6 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       const passphrase = localStorage.getItem('passphrase');
       
       if (sessionId && clientName && passphrase && !isRejoining.current) {
-        console.log(`[Socket] Attempting to auto-rejoin session ${sessionId}`);
         // Add a small delay before rejoining to ensure the connection is stable
         setTimeout(() => {
           rejoinSession(sessionId, clientName, passphrase);
@@ -204,12 +213,10 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     };
     
     const onReconnectAttempt = (attemptNumber: number) => {
-      console.log(`[Socket] Reconnection attempt ${attemptNumber}`);
       setConnectionStatus('reconnecting');
       
       // If we're having trouble reconnecting, try to force a new connection
       if (attemptNumber > 5 && attemptNumber % 3 === 0) {
-        console.log('[Socket] Multiple reconnection attempts, trying to force a clean connection');
         if (socket) {
           // Disconnect and reconnect with a clean slate
           socket.disconnect();
@@ -227,7 +234,6 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // If we've reached the maximum number of reconnection attempts, reset the counter
       // and try a complete reconnection
       if (reconnectAttempts.current >= 10) {
-        console.log('[Socket] Maximum reconnection attempts reached, forcing new connection');
         reconnectAttempts.current = 0;
         
         // Force a complete reconnection
@@ -237,7 +243,6 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           // Wait a bit longer before reconnecting
           setTimeout(() => {
             if (socket) {
-              console.log('[Socket] Attempting to reconnect after delay...');
               socket.connect();
             }
           }, 3000); // Increased delay to 3 seconds
@@ -245,8 +250,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       }
     };
 
-    const onReconnecting = (attemptNumber: number) => {
-      console.log(`[Socket] Reconnecting... Attempt ${attemptNumber}`);
+    const onReconnecting = () => {
       setConnectionStatus('reconnecting');
     };
 
@@ -277,7 +281,6 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         if (socket && socket.connected) {
           const sessionId = localStorage.getItem('sessionId');
           if (sessionId) {
-            console.log('[Socket] Sending health check ping');
             socket.emit('ping', { sessionId }, (response: { valid: boolean, error?: string }) => {
               if (response && !response.valid) {
                 console.warn('[Socket] Session invalid during health check:', response.error);
@@ -286,11 +289,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 const clientName = localStorage.getItem('clientName');
                 const passphrase = localStorage.getItem('passphrase');
                 if (clientName && passphrase && !isRejoining.current) {
-                  console.log('[Socket] Auto-rejoining after failed health check - DISABLED');
-                  // rejoinSession(sessionId, clientName, passphrase);
+                  // Auto-rejoin disabled
                 }
-              } else {
-                console.log('[Socket] Health check: Session valid');
               }
             });
           }
@@ -302,13 +302,10 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // Handle visibility change events with improved resilience
     const handleVisibilityChange = () => {
-      console.log(`[Socket] Visibility changed: ${document.visibilityState}`);
-      console.log(`[Socket] Socket connected: ${socket?.connected}`);
       
       if (document.visibilityState === 'visible') {
         // When app becomes visible again, check connection and rejoin if needed
         if (socket && !socket.connected) {
-          console.log('[Socket] App visible again, reconnecting...');
           
           // Add a small delay before reconnecting to allow browser to stabilize
           setTimeout(() => {
@@ -322,7 +319,6 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                 const passphrase = localStorage.getItem('passphrase');
                 
                 if (socket && socket.connected && sessionId && clientName && passphrase) {
-                  console.log(`[Socket] Auto-rejoining session ${sessionId} after visibility change - DISABLED`);
                   // rejoinSession(sessionId, clientName, passphrase);
                 }
               }, 1000);
@@ -335,11 +331,9 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           const passphrase = localStorage.getItem('passphrase');
           
           if (sessionId && clientName && passphrase) {
-            console.log(`[Socket] App visible again, verifying session ${sessionId}`);
             // We'll ping the server to verify our session is still valid
             socket.emit('ping', { sessionId }, (response: { valid: boolean }) => {
               if (!response || !response.valid) {
-                console.log('[Socket] Session invalid, rejoining...');
                 // Add a small delay before rejoining to ensure stability
                 if (!isRejoining.current) {
                   setTimeout(() => {
@@ -347,7 +341,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
                   }, 500);
                 }
               } else {
-                console.log('[Socket] Session still valid');
+                // Session is valid, no action needed
               }
             });
           }
@@ -357,9 +351,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     
     // Also handle window focus events for better cross-browser compatibility
     const handleFocus = () => {
-      console.log('[Socket] Window focused');
       if (socket && !socket.connected) {
-        console.log('[Socket] Socket not connected on focus, attempting to connect');
         socket.connect();
         
         // Check if we need to rejoin after connection
@@ -369,8 +361,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           const passphrase = localStorage.getItem('passphrase');
           
           if (socket && socket.connected && sessionId && clientName && passphrase && !isRejoining.current) {
-            console.log(`[Socket] Auto-rejoining session ${sessionId} after window focus - DISABLED`);
-            // rejoinSession(sessionId, clientName, passphrase);
+            // Auto-rejoin disabled
           }
         }, 1500);
       }
@@ -412,23 +403,19 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     
     // Prevent rejoin if main join is in progress
     if (joinState.current.isJoining) {
-      console.log('[Socket] Main join in progress, skipping rejoin attempt');
       return;
     }
     
     // Prevent multiple simultaneous rejoin attempts
     if (isRejoining.current) {
-      console.log('[Socket] Rejoin already in progress, skipping duplicate attempt');
       return;
     }
     
     try {
       isRejoining.current = true;
-      console.log(`[Socket] Rejoining session ${sessionId} as ${clientName}`);
       
       // Use the main joinSession function to ensure consistency
       await joinSession(sessionId, clientName, passphrase);
-      console.log('[Socket] Successfully rejoined session via main joinSession');
       
       // Notify application that we've rejoined
       if (socket) {
@@ -482,7 +469,6 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
             const parsedState = JSON.parse(savedState);
             const parsedContents = parsedState.contents || [];
             cachedContentIds = parsedContents.map(([contentId]: [string, unknown]) => contentId);
-            console.log(`[SocketContext] Found ${cachedContentIds.length} cached content IDs:`, cachedContentIds);
           }
         } catch (error) {
           console.error('[SocketContext] Error reading cached content IDs:', error);
@@ -501,15 +487,12 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
           fingerprint,
           cachedContentIds
         }, (response: JoinResponse) => {
-          console.log('[SocketContext] JOIN CALLBACK RECEIVED:', response); // DEBUG LOG
           clearTimeout(timeoutId);
           
           if (response.success && response.token) {
             localStorage.setItem('sessionToken', response.token);
-            console.log('[SocketContext] Join Promise resolving with success');
             resolve(response);
           } else {
-            console.log('[SocketContext] Join Promise rejecting with error:', response.error);
             reject(new Error(response.error || 'Failed to join session'));
           }
         });
@@ -530,7 +513,6 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const joinSession = async (sessionId: string, clientName: string, passphrase: string): Promise<JoinResponse> => {
     // If already joining the same session, return existing Promise
     if (joinState.current.isJoining && joinState.current.sessionId === sessionId) {
-      console.log('[SocketContext] Join already in progress for same session, returning existing Promise');
       if (joinState.current.currentJoinPromise) {
         return joinState.current.currentJoinPromise;
       }
@@ -538,12 +520,10 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     // If joining a different session, wait for current to complete
     if (joinState.current.isJoining && joinState.current.sessionId !== sessionId) {
-      console.log('[SocketContext] Different join in progress, waiting for completion');
       try {
         await joinState.current.currentJoinPromise;
       } catch (error) {
         // Ignore errors from previous join, continue with new one
-        console.log('[SocketContext] Previous join failed, continuing with new join');
       }
     }
 
@@ -557,7 +537,6 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
     try {
       const result = await joinPromise;
-      console.log('[SocketContext] Join completed successfully');
       return result;
     } catch (error) {
       console.error('[SocketContext] Join failed:', error);
@@ -589,10 +568,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    */
   const sendContent = (sessionId: string, content: ContentMetadata, data?: string) => {
     if (socket) {
-      console.log('[Socket] Sending content to session:', sessionId, 'Content ID:', content.contentId);
-      
       if (!socket.connected) {
-        console.warn('[Socket] Socket is not connected! Cannot send content.');
         // Attempt to reconnect
         socket.connect();
         return false;
@@ -601,17 +577,14 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // First verify session is still valid
       socket.emit('ping', { sessionId }, (pingResponse: { valid: boolean, error?: string }) => {
         if (!pingResponse || !pingResponse.valid) {
-          console.warn('[Socket] Session invalid before sending content:', pingResponse?.error);
           
           // Try to rejoin if possible
           const clientName = localStorage.getItem('clientName');
           const passphrase = localStorage.getItem('passphrase');
           if (clientName && passphrase) {
-            console.log('[Socket] Attempting to rejoin before sending content');
             rejoinSession(sessionId, clientName, passphrase)
               .then(() => {
                 // Try sending content again after rejoining
-                console.log('[Socket] Retrying content send after rejoining');
                 sendContent(sessionId, content, data);
               })
               .catch(err => {
@@ -623,7 +596,14 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         
         // Session is valid, proceed with sending content
         if (socket) {
+          
+          // Set a timeout to detect if callback is never called
+          const timeoutId = setTimeout(() => {
+            console.error('Content emit callback timeout');
+          }, 10000); // 10 second timeout
+          
           socket.emit('content', { sessionId, content, data }, (response: ContentResponse) => {
+          clearTimeout(timeoutId); // Clear timeout since callback was received
           if (response && !response.success) {
             console.error('[Socket] Failed to send content:', response.error);
             
@@ -633,18 +613,14 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               const passphrase = localStorage.getItem('passphrase');
               
               if (clientName && passphrase) {
-                console.log('[Socket] Session token invalid, attempting to rejoin');
                 rejoinSession(sessionId, clientName, passphrase);
               }
             }
-          } else {
-            console.log('[Socket] Content sent successfully for:', content.contentId);
           }
           });
         }
       });
     } else {
-      console.error('[Socket] Cannot send content: Socket is null');
       return false;
     }
     return true;
@@ -657,10 +633,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    */
   const sendChunk = (sessionId: string, chunk: ChunkData) => {
     if (socket) {
-      console.log(`[Socket] Sending chunk ${chunk.chunkIndex}/${chunk.totalChunks} for content ${chunk.contentId}`);
-      
       if (!socket.connected) {
-        console.warn('[Socket] Socket is not connected! Cannot send chunk.');
         // Attempt to reconnect
         socket.connect();
         return false;
@@ -669,17 +642,14 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // First verify session is still valid
       socket.emit('ping', { sessionId }, (pingResponse: { valid: boolean, error?: string }) => {
         if (!pingResponse || !pingResponse.valid) {
-          console.warn('[Socket] Session invalid before sending chunk:', pingResponse?.error);
           
           // Try to rejoin if possible
           const clientName = localStorage.getItem('clientName');
           const passphrase = localStorage.getItem('passphrase');
           if (clientName && passphrase) {
-            console.log('[Socket] Attempting to rejoin before sending chunk');
             rejoinSession(sessionId, clientName, passphrase)
               .then(() => {
                 // Try sending chunk again after rejoining
-                console.log('[Socket] Retrying chunk send after rejoining');
                 sendChunk(sessionId, chunk);
               })
               .catch(err => {
@@ -701,18 +671,14 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
               const passphrase = localStorage.getItem('passphrase');
               
               if (clientName && passphrase) {
-                console.log('[Socket] Session token invalid, attempting to rejoin');
                 rejoinSession(sessionId, clientName, passphrase);
               }
             }
-          } else {
-            console.log(`[Socket] Chunk sent successfully for chunk ${chunk.chunkIndex}`);
           }
           });
         }
       });
     } else {
-      console.error('[Socket] Cannot send chunk: Socket is null');
       return false;
     }
     return true;
@@ -725,13 +691,11 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    */
   const ensureConnected = async (sessionId: string): Promise<boolean> => {
     if (!socket) {
-      console.log('[Socket] Socket not initialized, attempting to connect');
       connect();
       return false;
     }
 
     if (!socket.connected) {
-      console.log('[Socket] Socket not connected, attempting to connect');
       socket.connect();
       return false;
     }
@@ -741,10 +705,8 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       if (socket) {
         socket.emit('ping', { sessionId }, (response: { valid: boolean }) => {
         if (!response || !response.valid) {
-          console.log('[Socket] Session invalid during connection check');
           resolve(false);
         } else {
-          console.log('[Socket] Connection check: Session valid');
           resolve(true);
         }
         });
@@ -763,18 +725,13 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const removeContent = (sessionId: string, contentId: string): Promise<{ success: boolean; error?: string }> => {
     return new Promise((resolve) => {
       if (socket && isConnected) {
-        console.log(`[SocketContext] Requesting removal of content ${contentId} from session ${sessionId}`);
-        
         socket.emit('remove-content', { sessionId, contentId }, (response: { success: boolean; error?: string }) => {
-          if (response.success) {
-            console.log(`[SocketContext] Content ${contentId} successfully removed from server`);
-          } else {
-            console.error(`[SocketContext] Failed to remove content ${contentId}:`, response.error);
+          if (!response.success) {
+            console.error(`Failed to remove content:`, response.error);
           }
           resolve(response);
         });
       } else {
-        console.error('[SocketContext] Cannot remove content: socket not connected');
         resolve({ success: false, error: 'Socket not connected' });
       }
     });
