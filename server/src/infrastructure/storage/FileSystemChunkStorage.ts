@@ -111,22 +111,57 @@ export class FileSystemChunkStorage implements IChunkStorage {
     }
 
     const { contentId, sessionId, chunkIndex, iv } = metadata;
+    console.log(`[DEBUG] saveChunk called for contentId: ${contentId}, sessionId: ${sessionId}, chunkIndex: ${chunkIndex}`);
 
     // Create content directory: ./data/sessions/{sessionId}/{contentId}/
     const contentDir = path.join(this.storagePath, sessionId, contentId);
+    console.log(`[DEBUG] Creating content directory: ${contentDir}`);
     await fs.mkdir(contentDir, { recursive: true });
 
     // Write chunk directly to disk: {chunkIndex}.bin
     const chunkPath = path.join(contentDir, `${chunkIndex}.bin`);
+    console.log(`[DEBUG] Writing chunk to: ${chunkPath}`);
     await fs.writeFile(chunkPath, chunk);
 
     // Store chunk IV for retrieval
-    await this.db.run(
+    console.log(`[DEBUG] About to insert chunk metadata. Database initialized: ${this.isInitialized}, DB exists: ${!!this.db}`);
+    
+    // First, let's check if the chunks table exists and its schema
+    try {
+      const tableInfo = await this.db.all("PRAGMA table_info(chunks)");
+      console.log(`[DEBUG] Chunks table schema:`, tableInfo);
+      
+      // If table doesn't exist, create it
+      if (tableInfo.length === 0) {
+        console.log(`[DEBUG] Chunks table doesn't exist, creating it...`);
+        await this.db.exec(`
+          CREATE TABLE IF NOT EXISTS chunks (
+            content_id TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            encryption_iv BLOB NOT NULL,
+            PRIMARY KEY (content_id, chunk_index)
+          );
+        `);
+        console.log(`[DEBUG] Chunks table created successfully`);
+      }
+    } catch (error) {
+      console.log(`[DEBUG] Error checking/creating chunks table:`, error);
+    }
+    
+    const insertResult = await this.db.run(
       `INSERT OR REPLACE INTO chunks (content_id, chunk_index, encryption_iv) VALUES (?, ?, ?)`,
       contentId,
       chunkIndex,
       Buffer.from(iv)
     );
+    console.log(`[DEBUG] Stored chunk metadata in database for ${contentId}, chunk ${chunkIndex}. Insert result:`, insertResult);
+    
+    // Verify the insert worked by immediately querying
+    const verifyResult = await this.db.get(
+      'SELECT COUNT(*) as count FROM chunks WHERE content_id = ?',
+      contentId
+    );
+    console.log(`[DEBUG] Immediate verification query for ${contentId}:`, verifyResult);
 
   }
 
@@ -331,12 +366,18 @@ export class FileSystemChunkStorage implements IChunkStorage {
       throw new Error('Storage not initialized');
     }
 
+    console.log(`[DEBUG] getReceivedChunkCount called for contentId: ${contentId}`);
+
     const result = await this.db.get<{ count: number }>(
       'SELECT COUNT(*) as count FROM chunks WHERE content_id = ?',
       contentId
     );
 
-    return result?.count || 0;
+    console.log(`[DEBUG] Chunk count query result for ${contentId}:`, result);
+    const count = result?.count || 0;
+    console.log(`[DEBUG] Final chunk count for ${contentId}: ${count}`);
+
+    return count;
   }
 
   async markContentComplete(contentId: string, contentType?: string): Promise<void> {
@@ -344,6 +385,7 @@ export class FileSystemChunkStorage implements IChunkStorage {
       throw new Error('Storage not initialized');
     }
 
+    console.log(`[DEBUG] markContentComplete called for contentId: ${contentId}, contentType: ${contentType}`);
     
     // Check if database record already exists
     const existingRecord = await this.db.get<{ id: string }>(
@@ -351,45 +393,68 @@ export class FileSystemChunkStorage implements IChunkStorage {
       contentId
     );
     
-    if (existingRecord) {
+    console.log(`[DEBUG] Existing record check for ${contentId}:`, existingRecord);
+    
+    if (existingRecord && existingRecord.id) {
+      console.log(`[DEBUG] Content ${contentId} already exists in database, skipping`);
       return;
     }
     
+    console.log(`[DEBUG] No existing record found, proceeding to create content record for ${contentId}`);
+    
     // Get chunk information to reconstruct metadata
     const chunkCount = await this.getReceivedChunkCount(contentId);
+    console.log(`[DEBUG] Chunk count for ${contentId}: ${chunkCount}`);
+    
     if (chunkCount === 0) {
+      console.log(`[DEBUG] No chunks found for ${contentId}, skipping`);
       return;
     }
     
     // Calculate total size from actual chunks
     const actualSize = await this.calculateActualContentSize(contentId);
+    console.log(`[DEBUG] Calculated size for ${contentId}: ${actualSize}`);
     
     // Get first chunk to extract encryption IV
     const firstChunkMetadata = await this.getChunkMetadata(contentId, 0);
     const encryptionIv = firstChunkMetadata?.iv || new Uint8Array(12);
+    console.log(`[DEBUG] Encryption IV for ${contentId}:`, encryptionIv);
     
     // Determine session ID from file path
     let sessionId = 'unknown';
+    console.log(`[DEBUG] Starting sessionId detection for ${contentId}, storagePath: ${this.storagePath}`);
     
     // Search for the content directory to find session ID
     // The structure is: {storagePath}/{sessionId}/{contentId}/
     try {
       const sessionDirs = await fs.readdir(this.storagePath, { withFileTypes: true });
+      console.log(`[DEBUG] Found directories in storage:`, sessionDirs.map(d => d.name));
+      
       for (const sessionDir of sessionDirs) {
-        if (!sessionDir.isDirectory() || sessionDir.name === 'metadata.db' || sessionDir.name === 'chunks') continue;
+        if (!sessionDir.isDirectory() || sessionDir.name === 'metadata.db' || sessionDir.name === 'chunks') {
+          console.log(`[DEBUG] Skipping non-session directory: ${sessionDir.name}`);
+          continue;
+        }
         
         const contentPath = path.join(this.storagePath, sessionDir.name, contentId);
+        console.log(`[DEBUG] Checking content path: ${contentPath}`);
+        
         try {
           await fs.access(contentPath);
           sessionId = sessionDir.name;
+          console.log(`[DEBUG] Found content in session: ${sessionId}`);
           break;
         } catch {
+          console.log(`[DEBUG] Content not found in session: ${sessionDir.name}`);
           // Content not in this session, continue
         }
       }
     } catch (error) {
+      console.log(`[DEBUG] Error during sessionId detection:`, error);
       // Could not determine session ID, use 'unknown'
     }
+    
+    console.log(`[DEBUG] Final detected sessionId for ${contentId}: ${sessionId}`);
     
     // Create basic metadata for orphaned content
     const basicMetadata = {

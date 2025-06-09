@@ -67,7 +67,18 @@ async function getChunkStorage(): Promise<FileSystemChunkStorage> {
 
 export function setupSocketHandlers(io: Server, sessionManager: SessionManager, chunkStorage?: FileSystemChunkStorage): { cleanup: () => Promise<void> } {
   // Use provided chunk storage or create one
-  const chunkStoragePromise = chunkStorage ? Promise.resolve(chunkStorage) : getChunkStorage();
+  let chunkStoragePromise: Promise<FileSystemChunkStorage>;
+  
+  if (chunkStorage) {
+    // For injected storage (like in tests), ensure it's initialized
+    // initialize() is safe to call multiple times due to guard at line 38
+    chunkStoragePromise = (async () => {
+      await chunkStorage.initialize();
+      return chunkStorage;
+    })();
+  } else {
+    chunkStoragePromise = getChunkStorage();
+  }
   
   // Cleanup function to close storage
   const cleanup = async (): Promise<void> => {

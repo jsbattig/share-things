@@ -17,6 +17,27 @@ async function createTestContent(chunkStorage: any, sessionId: string, count = 2
     const encryptedData = Buffer.from(testData);
     const iv = new Uint8Array(12);
     
+    // Create content metadata directly using saveContent method
+    const contentMetadata = {
+      contentId,
+      sessionId,
+      contentType: 'text',
+      totalChunks: 1,
+      totalSize: encryptedData.length,
+      createdAt: Date.now(),
+      isComplete: true,
+      encryptionIv: iv,
+      additionalMetadata: JSON.stringify({
+        mimeType: 'text/plain',
+        index: i
+      }),
+      isPinned: false,
+      isLargeFile: false
+    };
+    
+    // Save content metadata directly
+    await chunkStorage.saveContent(contentMetadata);
+    
     // Save the chunk
     await chunkStorage.saveChunk(
       new Uint8Array(encryptedData),
@@ -31,14 +52,6 @@ async function createTestContent(chunkStorage: any, sessionId: string, count = 2
         mimeType: 'text/plain'
       }
     );
-    
-    // Mark as complete
-    await chunkStorage.markContentComplete(contentId);
-    
-    // Update metadata if the method exists
-    if (typeof chunkStorage.updateContentMetadata === 'function') {
-      await chunkStorage.updateContentMetadata(contentId, { index: i });
-    }
   }
   
   console.log(`[TEST] Created ${count} test content items successfully`);

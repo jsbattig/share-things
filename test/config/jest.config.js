@@ -40,6 +40,19 @@ module.exports = {
           diagnostics: { warnOnly: true }
         }]
       }
+    },
+    // Shared tests for unified crypto library
+    {
+      displayName: 'shared',
+      rootDir: path.resolve(__dirname, '../../'),
+      testMatch: ['<rootDir>/shared/**/__tests__/**/*.test.ts'],
+      testEnvironment: 'node',
+      transform: {
+        '^.+\\.tsx?$': ['ts-jest', {
+          tsconfig: '<rootDir>/test/tsconfig.json',
+          diagnostics: { warnOnly: true }
+        }]
+      }
     }
   ],
   moduleFileExtensions: ['ts', 'js', 'json'],
