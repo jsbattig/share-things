@@ -4,6 +4,10 @@ import { Server } from 'socket.io';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+
+// Initialize crypto-js polyfill for Node.js environment BEFORE any other imports
+import './__mocks__/crypto-js';
+
 import { setupSocketHandlers } from './socket';
 import { setupRoutes } from './routes';
 import { SessionManager } from './services/SessionManager';

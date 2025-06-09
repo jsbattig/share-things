@@ -196,6 +196,7 @@ export class FileSystemChunkStorage implements IChunkStorage {
       throw new Error('Storage not initialized');
     }
 
+    console.log('[FileSystemChunkStorage] listContent called for sessionId:', sessionId);
 
     const rows = await this.db.all<ContentRow[]>(
       `SELECT
@@ -218,20 +219,35 @@ export class FileSystemChunkStorage implements IChunkStorage {
       limit
     );
 
+    console.log('[FileSystemChunkStorage] Raw database rows:', JSON.stringify(rows, null, 2));
 
-    return rows.map(row => ({
-      contentId: row.contentId,
-      sessionId: row.sessionId,
-      contentType: row.contentType,
-      totalChunks: row.totalChunks,
-      totalSize: row.totalSize || 0,
-      createdAt: row.createdAt,
-      isComplete: true,
-      encryptionIv: row.encryptionIv ? new Uint8Array(row.encryptionIv) : new Uint8Array(12),
-      additionalMetadata: row.additional_metadata || (row.mime_type ? JSON.stringify({ mimeType: row.mime_type }) : null),
-      isPinned: Boolean(row.isPinned),
-      isLargeFile: Boolean(row.isLargeFile || false)
-    }));
+    const mappedResults = rows.map(row => {
+      console.log('[FileSystemChunkStorage] Processing row:', {
+        contentId: row.contentId,
+        contentType: row.contentType,
+        rawRow: row
+      });
+      
+      const mapped = {
+        contentId: row.contentId,
+        sessionId: row.sessionId,
+        contentType: row.contentType,
+        totalChunks: row.totalChunks,
+        totalSize: row.totalSize || 0,
+        createdAt: row.createdAt,
+        isComplete: true,
+        encryptionIv: row.encryptionIv ? new Uint8Array(row.encryptionIv) : new Uint8Array(12),
+        additionalMetadata: row.additional_metadata || (row.mime_type ? JSON.stringify({ mimeType: row.mime_type }) : null),
+        isPinned: Boolean(row.isPinned),
+        isLargeFile: Boolean(row.isLargeFile || false)
+      };
+      
+      console.log('[FileSystemChunkStorage] Mapped result:', mapped);
+      return mapped;
+    });
+
+    console.log('[FileSystemChunkStorage] Final mapped results:', mappedResults);
+    return mappedResults;
   }
 
   async updateContentMetadata(contentId: string, metadata: Record<string, unknown>): Promise<void> {
@@ -323,7 +339,7 @@ export class FileSystemChunkStorage implements IChunkStorage {
     return result?.count || 0;
   }
 
-  async markContentComplete(contentId: string): Promise<void> {
+  async markContentComplete(contentId: string, contentType?: string): Promise<void> {
     if (!this.isInitialized || !this.db) {
       throw new Error('Storage not initialized');
     }
@@ -389,7 +405,7 @@ export class FileSystemChunkStorage implements IChunkStorage {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       contentId,
       sessionId,
-      'application/octet-stream',
+      contentType || 'file',
       null,
       chunkCount,
       actualSize,

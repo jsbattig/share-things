@@ -191,6 +191,17 @@ clean_container_images() {
 
 # Build and start containers
 build_and_start_containers() {
+    # Ensure data directory exists before starting containers
+    log_info "Ensuring data directory exists with proper permissions..."
+    if [ -f "$REPO_ROOT/ensure-data-directory.sh" ]; then
+        bash "$REPO_ROOT/ensure-data-directory.sh"
+    else
+        # Fallback: create data directory manually
+        mkdir -p "$REPO_ROOT/data/sessions"
+        chmod 755 "$REPO_ROOT/data" "$REPO_ROOT/data/sessions"
+        log_info "Data directory created at: $REPO_ROOT/data"
+    fi
+    
     # Determine if running in production mode
     if [ "$PRODUCTION_MODE" == "true" ]; then
         log_info "Creating temporary production podman-compose file without volume mounts..."
@@ -217,6 +228,8 @@ services:
     container_name: share-things-backend
     ports:
       - "${BACKEND_PORT}:${API_PORT:-15001}"
+    volumes:
+      - ./data:/app/data:Z  # CRITICAL: Mount data directory for persistence
     networks:
       app_network:
         aliases:
@@ -440,6 +453,8 @@ services:
         - PORT=${API_PORT:-15001}
     container_name: share-things-backend
     network_mode: "host"  # Use host networking instead of bridge
+    volumes:
+      - ./data:/app/data:Z  # CRITICAL: Mount data directory for persistence
     environment:
       - NODE_ENV=development
       - PORT=${API_PORT:-15001}

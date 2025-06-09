@@ -137,6 +137,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
           
           // Get total count first
           const allContentList = await chunkStorage.listContent(sessionId);
+          console.log('[Socket] Raw allContentList from storage:', JSON.stringify(allContentList, null, 2));
           const totalContentCount = allContentList.length;
 
           // Apply pagination - only send first page (default limit: 5)
@@ -155,29 +156,58 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
               continue;
             }
 
-            // Send content metadata
+            // CRITICAL FIX: For non-chunked content, include encrypted data in the content event
+            let contentData: string | undefined;
+            
+            // For non-chunked content (single chunk), get the encrypted data and include it
+            if (content.totalChunks === 1 && !content.isLargeFile) {
+              try {
+                const chunkData = await chunkStorage.getChunk(content.contentId, 0);
+                if (chunkData) {
+                  // Convert chunk data to base64 string (same format as fresh content sharing)
+                  contentData = Buffer.from(chunkData).toString('base64');
+                }
+              } catch (error) {
+                console.error(`Error retrieving content data for ${content.contentId}:`, error);
+              }
+            }
+
+            // Send content metadata (with data for non-chunked content)
+            console.log('[Socket] Processing content for emission:', {
+              contentId: content.contentId,
+              originalContentType: content.contentType,
+              fallbackContentType: content.contentType || 'file',
+              rawContent: content
+            });
+            
+            const contentToEmit = {
+              contentId: content.contentId,
+              senderId: 'server',
+              senderName: 'Server',
+              contentType: content.contentType || 'file',
+              timestamp: content.createdAt,
+              metadata: content.additionalMetadata ? JSON.parse(content.additionalMetadata) : {},
+              isChunked: content.totalChunks > 1,
+              totalChunks: content.totalChunks,
+              totalSize: content.totalSize,
+              isPinned: content.isPinned || false,
+              isLargeFile: content.isLargeFile,
+              encryptionMetadata: {
+                iv: Array.from(content.encryptionIv)
+              }
+            };
+            
+            console.log('[Socket] Final content object being emitted:', JSON.stringify(contentToEmit, null, 2));
+            
             socket.emit('content', {
               sessionId: sessionId,
-              content: {
-                contentId: content.contentId,
-                senderId: 'server',
-                senderName: 'Server',
-                contentType: content.contentType,
-                timestamp: content.createdAt,
-                metadata: content.additionalMetadata ? JSON.parse(content.additionalMetadata) : {},
-                isChunked: content.totalChunks > 1,
-                totalChunks: content.totalChunks,
-                totalSize: content.totalSize,
-                isPinned: content.isPinned || false,
-                isLargeFile: content.isLargeFile,
-                encryptionMetadata: {
-                  iv: Array.from(content.encryptionIv)
-                }
-              }
+              content: contentToEmit,
+              // CRITICAL FIX: Include content data for non-chunked content
+              data: contentData
             });
 
-            // Only send chunks for non-large files
-            if (!content.isLargeFile) {
+            // Only send chunks for chunked content (multi-chunk) and non-large files
+            if (!content.isLargeFile && content.totalChunks > 1) {
               // Send chunks at full speed - client can handle rapid processing
               for (let i = 0; i < content.totalChunks; i++) {
                 const chunkData = await chunkStorage.getChunk(content.contentId, i);
@@ -360,7 +390,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
             );
 
             // Mark content as complete since it's a single chunk
-            await chunkStorage.markContentComplete(content.contentId);
+            await chunkStorage.markContentComplete(content.contentId, content.contentType);
             
             // Update the metadata with the full content metadata
             if (content.metadata && typeof chunkStorage.updateContentMetadata === 'function') {
@@ -382,7 +412,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
             await chunkStorage.saveContent({
               contentId: content.contentId,
               sessionId: sessionId,
-              contentType: content.contentType || 'application/octet-stream',
+              contentType: content.contentType || 'file',
               totalChunks: content.totalChunks || 1,
               totalSize: content.totalSize || 0,
               createdAt: Date.now(),
@@ -413,7 +443,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
               // For large files without metadata, create basic metadata with size info
               metadataToStore = {
                 size: content.totalSize,
-                mimeType: content.contentType || 'application/octet-stream',
+                mimeType: 'application/octet-stream',
                 fileName: 'File' // Default filename
               };
               console.log(`[METADATA-DEBUG] Created fallback metadata for large file:`, metadataToStore);
@@ -428,7 +458,7 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
             await chunkStorage.saveContent({
               contentId: content.contentId,
               sessionId: sessionId,
-              contentType: content.contentType || 'application/octet-stream',
+              contentType: content.contentType || 'file',
               totalChunks: content.totalChunks,
               totalSize: content.totalSize || 0,
               createdAt: Date.now(),
@@ -541,7 +571,10 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
           
           // Mark content as complete if all chunks have been received
           if (receivedChunks === chunk.totalChunks) {
-            await chunkStorage.markContentComplete(chunk.contentId);
+            // For multi-chunk content, try to get contentType from existing metadata
+            const existingMetadata = await chunkStorage.getContentMetadata(chunk.contentId);
+            const contentType = existingMetadata?.contentType || 'file';
+            await chunkStorage.markContentComplete(chunk.contentId, contentType);
             console.log(`File upload completed: ${chunk.contentId} (${chunk.totalChunks} chunks)`);
           }
         } catch (storageError) {
@@ -743,14 +776,30 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
             continue;
           }
 
-          // Send content metadata
+          // CRITICAL FIX: For non-chunked content, include encrypted data in the content event
+          let contentData: string | undefined;
+          
+          // For non-chunked content (single chunk), get the encrypted data and include it
+          if (content.totalChunks === 1 && !content.isLargeFile) {
+            try {
+              const chunkData = await chunkStorage.getChunk(content.contentId, 0);
+              if (chunkData) {
+                // Convert chunk data to base64 string (same format as fresh content sharing)
+                contentData = Buffer.from(chunkData).toString('base64');
+              }
+            } catch (error) {
+              console.error(`Error retrieving content data for ${content.contentId}:`, error);
+            }
+          }
+
+          // Send content metadata (with data for non-chunked content)
           socket.emit('content', {
             sessionId: sessionId,
             content: {
               contentId: content.contentId,
               senderId: 'server',
               senderName: 'Server',
-              contentType: content.contentType,
+              contentType: content.contentType || 'file',
               timestamp: content.createdAt,
               metadata: content.additionalMetadata ? JSON.parse(content.additionalMetadata) : {},
               isChunked: content.totalChunks > 1,
@@ -764,25 +813,29 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
               encryptionMetadata: {
                 iv: Array.from(content.encryptionIv)
               }
-            }
+            },
+            // CRITICAL FIX: Include content data for non-chunked content
+            data: contentData
           });
 
-          // Send chunks
-          for (let i = 0; i < content.totalChunks; i++) {
-            const chunkData = await chunkStorage.getChunk(content.contentId, i);
-            const chunkMetadata = await chunkStorage.getChunkMetadata(content.contentId, i);
-            
-            if (chunkData && chunkMetadata) {
-              socket.emit('chunk', {
-                sessionId: sessionId,
-                chunk: {
-                  contentId: content.contentId,
-                  chunkIndex: i,
-                  totalChunks: content.totalChunks,
-                  encryptedData: Array.from(chunkData),
-                  iv: Array.from(chunkMetadata.iv)
-                }
-              });
+          // Only send chunks for chunked content (multi-chunk) and non-large files
+          if (!content.isLargeFile && content.totalChunks > 1) {
+            for (let i = 0; i < content.totalChunks; i++) {
+              const chunkData = await chunkStorage.getChunk(content.contentId, i);
+              const chunkMetadata = await chunkStorage.getChunkMetadata(content.contentId, i);
+              
+              if (chunkData && chunkMetadata) {
+                socket.emit('chunk', {
+                  sessionId: sessionId,
+                  chunk: {
+                    contentId: content.contentId,
+                    chunkIndex: i,
+                    totalChunks: content.totalChunks,
+                    encryptedData: Array.from(chunkData),
+                    iv: Array.from(chunkMetadata.iv)
+                  }
+                });
+              }
             }
           }
         }

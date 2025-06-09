@@ -393,10 +393,6 @@ interface ContentItemProps {
  * Content item component
  */
 const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
-  // DIAGNOSTIC: Track render count for ContentItem
-  const renderCountRef = React.useRef(0);
-  renderCountRef.current += 1;
-  
   
   // Context
   const { getContent, updateContentLastAccessed, removeContent, pinContent, unpinContent } = useContentStore();
@@ -482,8 +478,19 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   const { metadata } = content;
   
   // Determine the most appropriate content type based on metadata and actual content
-  let effectiveContentType = metadata.contentType;
+  // CRITICAL FIX: Ensure we use enum values, not string values from server
+  let effectiveContentType: ContentType = metadata.contentType as ContentType;
   
+  // DIAGNOSTIC: Log the actual contentType value received from server
+  console.log(`[ContentItem] Processing content ${contentId}:`, {
+    rawContentType: metadata.contentType,
+    effectiveContentType,
+    contentTypeType: typeof metadata.contentType,
+    isValidEnum: Object.values(ContentType).includes(metadata.contentType as ContentType),
+    availableEnumValues: Object.values(ContentType),
+    mimeType: metadata.metadata.mimeType,
+    fileName: metadata.metadata.fileName
+  });
   
   // Check if this is actually text content based on the metadata or content
   if (metadata.contentType === ContentType.FILE || metadata.contentType === ContentType.IMAGE) {
@@ -521,6 +528,7 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
       // The ImageRenderer component will handle validation
     }
   }
+  
   
   
   
@@ -867,6 +875,7 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
    * Renders content preview based on type
    */
   const renderContentPreview = () => {
+    
     // Check if this is a large file
     const isLargeFile = metadata.isLargeFile || false;
     
@@ -902,6 +911,7 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
         </Flex>
       );
     }
+    
     
     switch (effectiveContentType) {
       case ContentType.TEXT:

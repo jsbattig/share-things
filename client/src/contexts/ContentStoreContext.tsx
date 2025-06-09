@@ -180,28 +180,24 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       currentSessionId.current = sessionId;
       const passphrase = getSessionPassphrase();
       
-      
-      // Update the ref immediately for synchronous access
-      const newContentEntry: ContentEntry = {
-        metadata: content,
-        // Large files are complete even though they're chunked (stored on server)
-        // Regular chunked content is incomplete until chunks are reassembled
-        isComplete: content.isLargeFile || !content.isChunked,
-        lastAccessed: new Date(),
-        data: undefined // Will be set when chunks are reassembled
-      };
-      
-      contentsRef.current.set(content.contentId, newContentEntry);
-      
-      // Also update state for UI reactivity
-      setContents(prevContents => {
-        const newContents = new Map(prevContents);
-        newContents.set(content.contentId, newContentEntry);
-        return newContents;
+      // DIAGNOSTIC: Log the content received from server
+      console.log(`[ContentStoreContext] Received content from server:`, {
+        contentId: content.contentId,
+        rawContentType: content.contentType,
+        contentTypeType: typeof content.contentType,
+        isValidEnum: Object.values(ContentType).includes(content.contentType as ContentType),
+        availableEnumValues: Object.values(ContentType),
+        mimeType: content.metadata.mimeType,
+        fileName: content.metadata.fileName,
+        hasData: !!contentData,
+        isChunked: content.isChunked,
+        isLargeFile: content.isLargeFile
       });
       
       // Add content to store
       if (contentData) {
+        // If data is provided, process it immediately and mark as complete
+        // This happens for session persistence where server sends encrypted data
         try {
           // If data is provided, it's a small content that needs decryption
           let parsedData: Blob | string;
@@ -234,6 +230,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
             parsedData = new Blob([decryptedData], { type: content.metadata.mimeType });
           }
           
+          
           // CRITICAL FIX: Update existing content with decrypted data instead of calling addContent
           setContents(prevContents => {
             const newContents = new Map(prevContents);
@@ -265,8 +262,38 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
           addContent(content);
         }
       } else {
-        // If no data is provided, it's a chunked content
-        addContent(content);
+        // If no data is provided, create content entry without data
+        // This happens for chunked content or large files
+        const newContentEntry: ContentEntry = {
+          metadata: content,
+          // Large files are complete even though they're chunked (stored on server)
+          // Regular chunked content is incomplete until chunks are reassembled
+          isComplete: content.isLargeFile || !content.isChunked,
+          lastAccessed: new Date(),
+          data: undefined // Will be set when chunks are reassembled
+        };
+        
+        contentsRef.current.set(content.contentId, newContentEntry);
+        
+        // Also update state for UI reactivity
+        setContents(prevContents => {
+          const newContents = new Map(prevContents);
+          newContents.set(content.contentId, newContentEntry);
+          return newContents;
+        });
+        
+        // Initialize chunk store for chunked content
+        if (content.isChunked) {
+          setChunkStores(prevChunkStores => {
+            const newChunkStores = new Map(prevChunkStores);
+            newChunkStores.set(content.contentId, {
+              chunks: new Map(),
+              totalChunks: content.totalChunks || 0,
+              receivedChunks: 0
+            });
+            return newChunkStores;
+          });
+        }
       }
     };
 

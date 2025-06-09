@@ -9,6 +9,8 @@ services:
         - PORT=15001
     container_name: share-things-backend
     network_mode: "host"  # Use host networking instead of bridge
+    volumes:
+      - ./data:/app/data:Z  # CRITICAL: Mount data directory for persistence
     environment:
       - NODE_ENV=development
       - PORT=15001
