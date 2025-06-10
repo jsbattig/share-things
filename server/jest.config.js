@@ -62,11 +62,13 @@ module.exports = {
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov'],
   
-  // Watch plugins for better test watching
-  watchPlugins: [
-    'jest-watch-typeahead/filename',
-    'jest-watch-typeahead/testname',
-  ],
+  // Watch plugins for better test watching (only in development)
+  ...(process.env.CI || process.env.NODE_ENV === 'test' ? {} : {
+    watchPlugins: [
+      'jest-watch-typeahead/filename',
+      'jest-watch-typeahead/testname',
+    ],
+  }),
   
   // Node.js options for memory management
   maxWorkers: 1, // Use single worker to avoid memory conflicts
