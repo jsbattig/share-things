@@ -150,12 +150,12 @@ export PODMAN_USERNS=keep-id
 
 # Build the backend container directly with podman
 echo -e "${YELLOW}Building backend container...${NC}"
-podman build --no-cache -t share-things-backend-test -f server/Dockerfile.test ./server
+podman build --no-cache -t localhost/share-things-backend-test:latest -f server/Dockerfile.test .
 
 # We'll use the node:18-alpine image for the frontend as specified in the docker-compose file
 echo -e "${YELLOW}Pulling frontend image...${NC}"
 podman pull linner.ddns.net:4443/docker.io.proxy/node:18-alpine
-podman tag linner.ddns.net:4443/docker.io.proxy/node:18-alpine share-things-frontend-test
+podman tag linner.ddns.net:4443/docker.io.proxy/node:18-alpine localhost/share-things-frontend-test:latest
 BUILD_EXIT_CODE=$?
 
 if [ $BUILD_EXIT_CODE -ne 0 ]; then
@@ -180,7 +180,7 @@ echo -e "${YELLOW}Temp output file: $TEMP_OUTPUT${NC}"
 
 # Run tests and capture both output and exit code more reliably
 set +e  # Don't exit on error
-podman run --rm --name share-things-backend-test --network host -e NODE_ENV=test -e PORT=3001 share-things-backend-test npm test > "$TEMP_OUTPUT" 2>&1
+podman run --rm --name share-things-backend-test --network host -e NODE_ENV=test -e PORT=3001 localhost/share-things-backend-test:latest npm test > "$TEMP_OUTPUT" 2>&1
 SERVER_TEST_EXIT_CODE=$?
 set -e  # Re-enable exit on error
 
@@ -196,7 +196,7 @@ echo -e "${YELLOW}=== END IMMEDIATE OUTPUT ===${NC}"
 echo -e "${YELLOW}Ensuring client has crypto-js installed...${NC}"
 # Ensure client has crypto-js installed directly with podman
 echo -e "${YELLOW}Ensuring client has crypto-js installed...${NC}"
-podman run --rm --name share-things-frontend-test -v ./client:/app:Z -w /app share-things-frontend-test npm install crypto-js @types/crypto-js
+podman run --rm --name share-things-frontend-test -v ./client:/app:Z -v ./shared:/app/shared:Z -w /app localhost/share-things-frontend-test:latest npm install crypto-js @types/crypto-js
 
 if [ $SERVER_TEST_EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}Server unit tests passed.${NC}"
@@ -220,7 +220,7 @@ else
     fi
     
     echo -e "${YELLOW}=== RUNNING TEST AGAIN FOR DEBUGGING ===${NC}"
-    podman run --rm --name share-things-backend-test-debug --network host -e NODE_ENV=test -e PORT=3001 share-things-backend-test npm test
+    podman run --rm --name share-things-backend-test-debug --network host -e NODE_ENV=test -e PORT=3001 localhost/share-things-backend-test:latest npm test
     echo -e "${YELLOW}=== DEBUG TEST COMPLETE ===${NC}"
 fi
 
@@ -229,7 +229,7 @@ rm -f "$TEMP_OUTPUT"
 
 # Run client unit tests
 echo -e "${YELLOW}Running client unit tests...${NC}"
-podman run --rm --name share-things-frontend-test -v ./client:/app:Z -w /app share-things-frontend-test sh -c "npm install && npm test"
+podman run --rm --name share-things-frontend-test -v ./client:/app:Z -v ./shared:/app/shared:Z -w /app localhost/share-things-frontend-test:latest sh -c "npm install && npm test"
 CLIENT_TEST_EXIT_CODE=$?
 
 if [ $CLIENT_TEST_EXIT_CODE -eq 0 ]; then

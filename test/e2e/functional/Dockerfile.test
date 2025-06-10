@@ -25,8 +25,8 @@ COPY test/e2e/functional/package*.json ./
 # Install npm dependencies
 RUN npm install
 
-# Copy the project root mocks directory to make it available at the expected path
-COPY test/mocks /mocks
+# Copy shared directory for crypto modules
+COPY shared/ /shared
 
 # Copy test files
 COPY test/e2e/functional .

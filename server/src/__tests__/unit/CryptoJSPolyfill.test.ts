@@ -1,13 +1,17 @@
 /**
- * Unit tests for CryptoJS Node.js Compatibility Wrapper
- * These tests ensure the polyfill provides browser-compatible functionality in Node.js
+ * Unit tests for Node.js Crypto Implementation
+ * These tests ensure the NodeCrypto class provides CryptoJS-compatible functionality in Node.js
  */
 
 import { describe, test, expect } from '@jest/globals';
 import * as crypto from 'crypto';
+import { NodeCrypto } from '../../../shared/crypto/node';
 
-// Import the Jest mock (which is our shared polyfill)
-import CryptoJSWrapper, { WordArray, Utf8, Hex, PBKDF2, SHA256, AES } from '../../../../shared/__mocks__/crypto-js';
+// Create instance for testing
+const nodeCrypto = new NodeCrypto();
+const { enc, lib, PBKDF2, SHA256, AES } = nodeCrypto;
+const { WordArray } = lib;
+const { Utf8, Hex } = enc;
 
 describe('CryptoJS Node.js Compatibility Wrapper', () => {
   
@@ -275,30 +279,30 @@ describe('CryptoJS Node.js Compatibility Wrapper', () => {
     });
   });
   
-  describe('CryptoJS Wrapper Integration', () => {
+  describe('NodeCrypto Integration', () => {
     test('should provide all required properties', () => {
-      expect(CryptoJSWrapper.enc).toBeDefined();
-      expect(CryptoJSWrapper.enc.Utf8).toBeDefined();
-      expect(CryptoJSWrapper.enc.Hex).toBeDefined();
-      expect(CryptoJSWrapper.enc.Base64).toBeDefined();
+      expect(nodeCrypto.enc).toBeDefined();
+      expect(nodeCrypto.enc.Utf8).toBeDefined();
+      expect(nodeCrypto.enc.Hex).toBeDefined();
+      expect(nodeCrypto.enc.Base64).toBeDefined();
       
-      expect(CryptoJSWrapper.lib).toBeDefined();
-      expect(CryptoJSWrapper.lib.WordArray).toBeDefined();
+      expect(nodeCrypto.lib).toBeDefined();
+      expect(nodeCrypto.lib.WordArray).toBeDefined();
       
-      expect(CryptoJSWrapper.algo).toBeDefined();
-      expect(CryptoJSWrapper.algo.SHA256).toBeDefined();
+      expect(nodeCrypto.algo).toBeDefined();
+      expect(nodeCrypto.algo.SHA256).toBeDefined();
       
-      expect(CryptoJSWrapper.PBKDF2).toBeDefined();
-      expect(CryptoJSWrapper.SHA256).toBeDefined();
-      expect(CryptoJSWrapper.AES).toBeDefined();
+      expect(nodeCrypto.PBKDF2).toBeDefined();
+      expect(nodeCrypto.SHA256).toBeDefined();
+      expect(nodeCrypto.AES).toBeDefined();
     });
     
     test('should work with client encryption pattern', () => {
       // Simulate the exact pattern used in client encryption
       const passphrase = 'test-passphrase';
-      const salt = CryptoJSWrapper.enc.Utf8.parse('ShareThings-Salt-2025');
+      const salt = nodeCrypto.enc.Utf8.parse('ShareThings-Salt-2025');
       
-      const key = CryptoJSWrapper.PBKDF2(passphrase, salt, {
+      const key = nodeCrypto.PBKDF2(passphrase, salt, {
         keySize: 256/32,
         iterations: 100000
       });
@@ -307,20 +311,19 @@ describe('CryptoJS Node.js Compatibility Wrapper', () => {
       expect(key.sigBytes).toBe(32); // 256 bits
     });
     
-    test('should be available globally', () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((global as any).CryptoJS).toBeDefined();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((global as any).CryptoJS.enc).toBeDefined();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect((global as any).CryptoJS.enc.Utf8).toBeDefined();
+    test('should provide crypto functionality', () => {
+      // Test that the NodeCrypto instance provides the expected functionality
+      expect(nodeCrypto.deriveKeyFromPassphrase).toBeDefined();
+      expect(nodeCrypto.encryptData).toBeDefined();
+      expect(nodeCrypto.decryptData).toBeDefined();
+      expect(nodeCrypto.generateFingerprint).toBeDefined();
     });
   });
   
   describe('Base64 Encoding', () => {
     test('should parse base64 string to WordArray', () => {
       const base64String = Buffer.from('Hello World').toString('base64');
-      const wordArray = CryptoJSWrapper.enc.Base64.parse(base64String);
+      const wordArray = nodeCrypto.enc.Base64.parse(base64String);
       
       expect(wordArray).toBeInstanceOf(WordArray);
     });
@@ -329,7 +332,7 @@ describe('CryptoJS Node.js Compatibility Wrapper', () => {
       const testString = 'Hello World';
       const expectedBase64 = Buffer.from(testString).toString('base64');
       const wordArray = Utf8.parse(testString);
-      const base64Result = CryptoJSWrapper.enc.Base64.stringify(wordArray);
+      const base64Result = nodeCrypto.enc.Base64.stringify(wordArray);
       
       expect(base64Result).toBe(expectedBase64);
     });
@@ -338,8 +341,8 @@ describe('CryptoJS Node.js Compatibility Wrapper', () => {
       const originalData = 'This is a test message for base64 encoding!';
       const originalBase64 = Buffer.from(originalData).toString('base64');
       
-      const wordArray = CryptoJSWrapper.enc.Base64.parse(originalBase64);
-      const resultBase64 = CryptoJSWrapper.enc.Base64.stringify(wordArray);
+      const wordArray = nodeCrypto.enc.Base64.parse(originalBase64);
+      const resultBase64 = nodeCrypto.enc.Base64.stringify(wordArray);
       
       expect(resultBase64).toBe(originalBase64);
     });
@@ -358,7 +361,7 @@ describe('CryptoJS Node.js Compatibility Wrapper', () => {
       const testData = new WordArray([0x12345678], 4);
       const testIV = new WordArray([0x87654321], 4);
       
-      const cipherParams = CryptoJSWrapper.lib.CipherParams.create({
+      const cipherParams = nodeCrypto.lib.CipherParams.create({
         ciphertext: testData,
         iv: testIV
       });
@@ -372,8 +375,8 @@ describe('CryptoJS Node.js Compatibility Wrapper', () => {
       
       // These are no-ops in our polyfill since Node.js handles padding
       expect(() => {
-        CryptoJSWrapper.pad.Pkcs7.pad(testData, 4);
-        CryptoJSWrapper.pad.Pkcs7.unpad(testData);
+        nodeCrypto.pad.Pkcs7.pad(testData, 4);
+        nodeCrypto.pad.Pkcs7.unpad(testData);
       }).not.toThrow();
     });
   });

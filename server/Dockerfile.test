@@ -34,8 +34,8 @@ RUN npm install --verbose || \
     (echo "Second npm install failed, retrying with cache clean..." && npm cache clean --force && npm install --verbose)
 
 # Copy source code and shared directory
-COPY . .
-COPY ../shared ./shared
+COPY server/ .
+COPY shared/ ./shared
 
 # Expose the port
 EXPOSE ${PORT}

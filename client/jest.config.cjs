@@ -6,6 +6,11 @@ module.exports = {
     // Map shared crypto imports to use our mock
     '^../shared/crypto$': '<rootDir>/src/__mocks__/shared-crypto.ts',
     '^../shared/crypto/(.*)$': '<rootDir>/src/__mocks__/shared-crypto.ts',
+    '^../../../shared/crypto$': '<rootDir>/src/__mocks__/shared-crypto.ts',
+    '^../../../shared/crypto/(.*)$': '<rootDir>/src/__mocks__/shared-crypto.ts',
+    // Also handle the containerized path
+    '^./shared/crypto$': '<rootDir>/src/__mocks__/shared-crypto.ts',
+    '^./shared/crypto/(.*)$': '<rootDir>/src/__mocks__/shared-crypto.ts',
   },
   transform: {
     '^.+\\.(ts|tsx)$': ['ts-jest', { useESM: true }],
