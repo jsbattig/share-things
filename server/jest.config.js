@@ -16,6 +16,7 @@ module.exports = {
     // Try container path first, then local path
     '^../../../shared/crypto/(.*)$': ['<rootDir>/shared/crypto/$1', '<rootDir>/../shared/crypto/$1'],
     '^crypto-js$': '<rootDir>/../shared/__mocks__/crypto-js',
+    '^sqlite3$': '<rootDir>/src/__mocks__/sqlite.js',
   },
   
   // Transform settings
