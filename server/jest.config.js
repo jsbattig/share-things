@@ -13,7 +13,8 @@ module.exports = {
     '\\.(bin|data|wasm)$': '<rootDir>/src/__mocks__/fileMock.js',
     '^../../../../test/mocks/crypto-js$': '<rootDir>/../shared/__mocks__/crypto-js',
     '^../../../client/src/utils/(.*)$': '<rootDir>/../client/src/utils/$1',
-    '^../../../shared/crypto/(.*)$': '<rootDir>/shared/crypto/$1',
+    // Try container path first, then local path
+    '^../../../shared/crypto/(.*)$': ['<rootDir>/shared/crypto/$1', '<rootDir>/../shared/crypto/$1'],
     '^crypto-js$': '<rootDir>/../shared/__mocks__/crypto-js',
   },
   
