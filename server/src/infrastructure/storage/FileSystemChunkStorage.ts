@@ -29,9 +29,11 @@ export class FileSystemChunkStorage implements IChunkStorage {
   private storagePath: string;
   private db: Database | null = null;
   private isInitialized = false;
+  private sharedDb?: Database; // For sharing database instances in tests
 
-  constructor(options: FileSystemChunkStorageOptions = {}) {
+  constructor(options: FileSystemChunkStorageOptions = {}, sharedDb?: Database) {
     this.storagePath = options.storagePath || './data/sessions';
+    this.sharedDb = sharedDb;
   }
 
   async initialize(): Promise<void> {
@@ -40,13 +42,25 @@ export class FileSystemChunkStorage implements IChunkStorage {
     // Ensure storage directory exists
     await fs.mkdir(this.storagePath, { recursive: true });
 
-    // Initialize simple SQLite database
-    const dbPath = path.join(this.storagePath, 'metadata.db');
-    
-    this.db = await open({
-      filename: dbPath,
-      driver: sqlite3.Database
-    });
+    // Use shared database if provided (for tests), otherwise create new one
+    if (this.sharedDb) {
+      this.db = this.sharedDb;
+      console.log('[DEBUG] Using shared database instance');
+    } else {
+      // Initialize simple SQLite database
+      // Use in-memory database for tests to avoid file system conflicts
+      const isTest = process.env.NODE_ENV === 'test';
+      const dbPath = isTest ? ':memory:' : path.join(this.storagePath, 'metadata.db');
+      
+      this.db = await open({
+        filename: dbPath,
+        driver: sqlite3.Database
+      });
+      console.log(`[DEBUG] Created new database instance at: ${isTest ? ':memory:' : dbPath}`);
+    }
+
+    // Always ensure schema is created, even for shared databases
+    console.log('[DEBUG] Ensuring database schema is created');
 
     // Configure database for immediate commits
     await this.db.exec('PRAGMA journal_mode = WAL');
@@ -170,9 +184,44 @@ export class FileSystemChunkStorage implements IChunkStorage {
       throw new Error('Storage not initialized');
     }
 
+    console.log(`[DEBUG] saveContent called for contentId: ${metadata.contentId}, sessionId: ${metadata.sessionId}`);
+    
+    // First, let's check if the content table exists and its schema
+    try {
+      const tableInfo = await this.db.all("PRAGMA table_info(content)");
+      console.log(`[DEBUG] Content table schema:`, tableInfo);
+      
+      // If table doesn't exist, create it
+      if (tableInfo.length === 0) {
+        console.log(`[DEBUG] Content table doesn't exist, creating it...`);
+        await this.db.exec(`
+          CREATE TABLE IF NOT EXISTS content (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            content_type TEXT NOT NULL,
+            mime_type TEXT,
+            total_chunks INTEGER NOT NULL,
+            total_size INTEGER,
+            created_at INTEGER NOT NULL,
+            encryption_iv BLOB,
+            additional_metadata TEXT,
+            is_pinned BOOLEAN NOT NULL DEFAULT 0,
+            is_large_file BOOLEAN NOT NULL DEFAULT 0
+          );
+          
+          CREATE INDEX IF NOT EXISTS idx_content_session ON content(session_id);
+          CREATE INDEX IF NOT EXISTS idx_content_created ON content(created_at);
+          CREATE INDEX IF NOT EXISTS idx_content_pinned ON content(is_pinned, created_at);
+          CREATE INDEX IF NOT EXISTS idx_content_large_file ON content(is_large_file);
+        `);
+        console.log(`[DEBUG] Content table created successfully`);
+      }
+    } catch (error) {
+      console.log(`[DEBUG] Error checking/creating content table:`, error);
+    }
     
     // Insert content metadata into database
-    await this.db.run(
+    const result = await this.db.run(
       `INSERT OR REPLACE INTO content
        (id, session_id, content_type, mime_type, total_chunks, total_size, created_at, encryption_iv, additional_metadata, is_large_file, is_pinned)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -189,6 +238,14 @@ export class FileSystemChunkStorage implements IChunkStorage {
       metadata.isPinned ? 1 : 0 // Include is_pinned field
     );
     
+    console.log(`[DEBUG] saveContent result for ${metadata.contentId}:`, result);
+    
+    // Verify the insert worked by immediately querying
+    const verifyResult = await this.db.get(
+      'SELECT COUNT(*) as count FROM content WHERE id = ?',
+      metadata.contentId
+    );
+    console.log(`[DEBUG] Immediate verification query for content ${metadata.contentId}:`, verifyResult);
   }
 
   async getChunk(contentId: string, chunkIndex: number): Promise<Uint8Array | null> {
@@ -741,8 +798,12 @@ export class FileSystemChunkStorage implements IChunkStorage {
   }
 
   async close(): Promise<void> {
-    if (this.db) {
+    if (this.db && !this.sharedDb) {
+      // Only close the database if it's not a shared instance
       await this.db.close();
+      this.db = null;
+    } else if (this.sharedDb) {
+      // For shared databases, just clear the reference
       this.db = null;
     }
     this.isInitialized = false;

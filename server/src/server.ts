@@ -5,8 +5,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 
-// Initialize crypto-js polyfill for Node.js environment BEFORE any other imports
-import './__mocks__/crypto-js';
+// Initialize crypto polyfills for Node.js environment BEFORE any other imports
+import './crypto-polyfills';
 
 import { setupSocketHandlers } from './socket';
 import { setupRoutes } from './routes';

@@ -6,8 +6,8 @@
 import { describe, test, expect } from '@jest/globals';
 import * as crypto from 'crypto';
 
-// Import the Jest mock (which is our new polyfill)
-import CryptoJSWrapper, { WordArray, Utf8, Hex, PBKDF2, SHA256, AES } from '../../../../test/mocks/crypto-js';
+// Import the Jest mock (which is our shared polyfill)
+import CryptoJSWrapper, { WordArray, Utf8, Hex, PBKDF2, SHA256, AES } from '../../../../shared/__mocks__/crypto-js';
 
 describe('CryptoJS Node.js Compatibility Wrapper', () => {
   
@@ -300,8 +300,7 @@ describe('CryptoJS Node.js Compatibility Wrapper', () => {
       
       const key = CryptoJSWrapper.PBKDF2(passphrase, salt, {
         keySize: 256/32,
-        iterations: 100000,
-        hasher: CryptoJSWrapper.algo.SHA256
+        iterations: 100000
       });
       
       expect(key).toBeInstanceOf(WordArray);

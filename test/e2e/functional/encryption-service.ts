@@ -2,8 +2,17 @@
  * Service for handling encryption and decryption - using CryptoJS only
  */
 
-// Import our CryptoJS polyfill instead of direct CryptoJS
-import CryptoJS from './cryptojs-node-polyfill';
+// Import our unified crypto system
+import '../../../shared/crypto/polyfills';
+
+// Lazy access to CryptoJS - only check when needed
+function getCryptoJS() {
+  const CryptoJS = (globalThis as any).CryptoJS || (global as any).CryptoJS;
+  if (!CryptoJS) {
+    throw new Error('CryptoJS polyfill not available. Make sure polyfills are loaded.');
+  }
+  return CryptoJS;
+}
 
 // Define interface for our crypto key
 interface CryptoKey {
@@ -69,6 +78,7 @@ export class EncryptionService {
         (dataArray[i + 3] || 0)
       );
     }
+    const CryptoJS = getCryptoJS();
     const dataWordArray = CryptoJS.lib.WordArray.create(dataWords, dataArray.length);
 
     // Convert IV to WordArray
@@ -133,6 +143,8 @@ export class EncryptionService {
           (encryptedArray[i + 3] || 0)
         );
       }
+      
+      const CryptoJS = getCryptoJS();
       
       // Create WordArray from encryptedData
       const encryptedWordArray = CryptoJS.lib.WordArray.create(encryptedWords, encryptedArray.length);
@@ -219,6 +231,7 @@ export class EncryptionService {
         (salt[i + 3] || 0)
       );
     }
+    const CryptoJS = getCryptoJS();
     const saltWordArray = CryptoJS.lib.WordArray.create(saltWords, salt.length);
 
     // Derive the key using PBKDF2

@@ -3,7 +3,6 @@
  * This implementation uses the actual crypto-js library in browser environments
  */
 
-import * as CryptoJS from 'crypto-js';
 import {
   CryptoInterface,
   CryptoKey,
@@ -12,9 +11,28 @@ import {
   PassphraseFingerprint
 } from './types';
 
+// Dynamic import of crypto-js to avoid dependency issues during compilation
+let CryptoJS: any = null;
+
+async function getCryptoJS() {
+  if (!CryptoJS) {
+    try {
+      // Use completely dynamic import to avoid static analysis
+      const moduleName = 'crypto-js';
+      const cryptoModule = await import(/* @vite-ignore */ moduleName);
+      CryptoJS = cryptoModule.default || cryptoModule;
+    } catch (error) {
+      throw new Error('crypto-js is required for browser crypto operations. Please install crypto-js: npm install crypto-js');
+    }
+  }
+  return CryptoJS;
+}
+
 export class BrowserCrypto implements CryptoInterface {
   async deriveKeyFromPassphrase(passphrase: string): Promise<CryptoKey> {
     try {
+      const CryptoJS = await getCryptoJS();
+      
       // Use a fixed salt for deterministic key derivation
       const salt = CryptoJS.enc.Utf8.parse('ShareThings-Salt-2025');
       
@@ -40,6 +58,8 @@ export class BrowserCrypto implements CryptoInterface {
 
   async generateDeterministicIV(passphrase: string, data: ArrayBuffer | Uint8Array): Promise<Uint8Array> {
     try {
+      const CryptoJS = await getCryptoJS();
+      
       // Convert data to array
       const dataArray = new Uint8Array(data instanceof ArrayBuffer ? data : data.buffer);
       
@@ -87,6 +107,8 @@ export class BrowserCrypto implements CryptoInterface {
     passphrase: string
   ): Promise<EncryptionResult> {
     try {
+      const CryptoJS = await getCryptoJS();
+      
       // Generate IV
       const iv = await this.generateDeterministicIV(passphrase, data);
       
@@ -147,6 +169,8 @@ export class BrowserCrypto implements CryptoInterface {
     options?: DecryptionOptions
   ): Promise<ArrayBuffer> {
     try {
+      const CryptoJS = await getCryptoJS();
+      
       // Convert encryptedData to WordArray
       const encryptedArray = new Uint8Array(encryptedData instanceof ArrayBuffer ? encryptedData : encryptedData.buffer);
       const encryptedWords: number[] = [];
@@ -272,6 +296,8 @@ export class BrowserCrypto implements CryptoInterface {
 
   async generateFingerprint(passphrase: string): Promise<PassphraseFingerprint> {
     try {
+      const CryptoJS = await getCryptoJS();
+      
       // Use a fixed IV for fingerprint generation
       const fixedIv = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
       

@@ -11,9 +11,9 @@ module.exports = {
     '^\\.\/database$': '<rootDir>/src/__mocks__/database',
     '^.*FileSystemChunkStorage$': '<rootDir>/src/__mocks__/FileSystemChunkStorage',
     '\\.(bin|data|wasm)$': '<rootDir>/src/__mocks__/fileMock.js',
-    '^../../../../test/mocks/crypto-js$': '<rootDir>/src/__mocks__/crypto-js',
+    '^../../../../test/mocks/crypto-js$': '<rootDir>/../shared/__mocks__/crypto-js',
     '^../../../client/src/utils/(.*)$': '<rootDir>/../client/src/utils/$1',
-    '^crypto-js$': '<rootDir>/src/__mocks__/crypto-js',
+    '^crypto-js$': '<rootDir>/../shared/__mocks__/crypto-js',
   },
   
   // Transform settings

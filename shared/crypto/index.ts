@@ -4,14 +4,12 @@
  */
 
 import { CryptoEnvironment, detectEnvironment } from './environment';
-import { BrowserCrypto } from './browser';
-import { NodeCrypto } from './node';
-import { 
-  CryptoKey, 
-  EncryptionResult, 
+import {
+  CryptoKey,
+  EncryptionResult,
   DecryptionOptions,
   PassphraseFingerprint,
-  CryptoInterface 
+  CryptoInterface
 } from './types';
 
 // Global crypto instance
@@ -20,7 +18,7 @@ let cryptoInstance: CryptoInterface | null = null;
 /**
  * Initialize the crypto library with environment detection
  */
-export function initializeCrypto(): CryptoInterface {
+export async function initializeCrypto(): Promise<CryptoInterface> {
   if (cryptoInstance) {
     return cryptoInstance;
   }
@@ -29,14 +27,17 @@ export function initializeCrypto(): CryptoInterface {
   
   switch (environment) {
     case CryptoEnvironment.Browser:
+      const { BrowserCrypto } = await import('./browser');
       cryptoInstance = new BrowserCrypto();
       break;
     case CryptoEnvironment.Node:
-      cryptoInstance = new NodeCrypto();
+      const { NodeCrypto: NodeCryptoClass } = await import('./node');
+      cryptoInstance = new NodeCryptoClass();
       break;
     case CryptoEnvironment.Test:
       // Use Node crypto for tests but with browser-compatible interface
-      cryptoInstance = new NodeCrypto();
+      const { NodeCrypto: NodeCryptoTestClass } = await import('./node');
+      cryptoInstance = new NodeCryptoTestClass();
       break;
     default:
       throw new Error(`Unsupported crypto environment: ${environment}`);
@@ -48,19 +49,29 @@ export function initializeCrypto(): CryptoInterface {
 /**
  * Get the current crypto instance (auto-initialize if needed)
  */
-export function getCrypto(): CryptoInterface {
-  return cryptoInstance || initializeCrypto();
+export async function getCrypto(): Promise<CryptoInterface> {
+  return cryptoInstance || await initializeCrypto();
 }
 
 // Re-export all types and utilities
 export * from './types';
 export * from './environment';
-export { BrowserCrypto } from './browser';
-export { NodeCrypto } from './node';
+
+// Dynamic re-exports to avoid loading modules at import time
+export async function getBrowserCrypto() {
+  const { BrowserCrypto } = await import('./browser');
+  return BrowserCrypto;
+}
+
+export async function getNodeCrypto() {
+  const { NodeCrypto } = await import('./node');
+  return NodeCrypto;
+}
 
 // Convenience functions that use the global instance
 export async function deriveKeyFromPassphrase(passphrase: string): Promise<CryptoKey> {
-  return getCrypto().deriveKeyFromPassphrase(passphrase);
+  const crypto = await getCrypto();
+  return crypto.deriveKeyFromPassphrase(passphrase);
 }
 
 export async function encryptData(
@@ -68,7 +79,8 @@ export async function encryptData(
   data: ArrayBuffer | Uint8Array,
   passphrase: string
 ): Promise<EncryptionResult> {
-  return getCrypto().encryptData(key, data, passphrase);
+  const crypto = await getCrypto();
+  return crypto.encryptData(key, data, passphrase);
 }
 
 export async function decryptData(
@@ -77,14 +89,16 @@ export async function decryptData(
   iv: Uint8Array,
   options?: DecryptionOptions
 ): Promise<ArrayBuffer> {
-  return getCrypto().decryptData(key, encryptedData, iv, options);
+  const crypto = await getCrypto();
+  return crypto.decryptData(key, encryptedData, iv, options);
 }
 
 export async function encryptText(
   passphrase: string,
   text: string
 ): Promise<{ encryptedText: string; iv: string }> {
-  return getCrypto().encryptText(passphrase, text);
+  const crypto = await getCrypto();
+  return crypto.encryptText(passphrase, text);
 }
 
 export async function decryptText(
@@ -92,18 +106,21 @@ export async function decryptText(
   encryptedText: string,
   ivBase64: string
 ): Promise<string> {
-  return getCrypto().decryptText(passphrase, encryptedText, ivBase64);
+  const crypto = await getCrypto();
+  return crypto.decryptText(passphrase, encryptedText, ivBase64);
 }
 
 export async function generateFingerprint(passphrase: string): Promise<PassphraseFingerprint> {
-  return getCrypto().generateFingerprint(passphrase);
+  const crypto = await getCrypto();
+  return crypto.generateFingerprint(passphrase);
 }
 
 export async function encryptBlob(
   passphrase: string,
   blob: Blob
 ): Promise<{ encryptedBlob: Blob; iv: Uint8Array }> {
-  return getCrypto().encryptBlob(passphrase, blob);
+  const crypto = await getCrypto();
+  return crypto.encryptBlob(passphrase, blob);
 }
 
 export async function decryptBlob(
@@ -112,5 +129,6 @@ export async function decryptBlob(
   iv: Uint8Array,
   mimeType: string
 ): Promise<Blob> {
-  return getCrypto().decryptBlob(passphrase, encryptedBlob, iv, mimeType);
+  const crypto = await getCrypto();
+  return crypto.decryptBlob(passphrase, encryptedBlob, iv, mimeType);
 }

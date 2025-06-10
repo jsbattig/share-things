@@ -9,8 +9,13 @@ if (typeof (global as any).XMLHttpRequest === 'undefined') {
 
 import 'blob-polyfill';
 
-// Import CryptoJS Node.js compatibility layer FIRST
-import './cryptojs-node-polyfill';
+// Import unified crypto system for Node.js environment
+import '../../../shared/crypto/polyfills';
+
+// Ensure CryptoJS is available globally
+if (!(global as any).CryptoJS && !(globalThis as any).CryptoJS) {
+  console.log('CryptoJS polyfill setup in test environment');
+}
 
 // Simple crypto.getRandomValues polyfill for Node.js (only needed for random number generation)
 if (typeof (global as any).crypto === 'undefined') {

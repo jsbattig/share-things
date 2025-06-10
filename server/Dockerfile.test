@@ -21,10 +21,21 @@ RUN apt-get update && apt-get install -y \
 
 # Copy package files and install all dependencies (including dev dependencies)
 COPY package*.json ./
-RUN npm install
 
-# Copy source code
+# Configure npm for better timeout handling and retry logic
+RUN npm config set fetch-timeout 600000 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-retries 5
+
+# Install dependencies with retry logic
+RUN npm install --verbose || \
+    (echo "First npm install failed, retrying..." && sleep 10 && npm install --verbose) || \
+    (echo "Second npm install failed, retrying with cache clean..." && npm cache clean --force && npm install --verbose)
+
+# Copy source code and shared directory
 COPY . .
+COPY ../shared ./shared
 
 # Expose the port
 EXPOSE ${PORT}

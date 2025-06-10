@@ -13,7 +13,7 @@ module.exports = {
       setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
       testEnvironment: 'node',
       moduleNameMapper: {
-        '^crypto-js$': '<rootDir>/test/mocks/crypto-js.ts'
+        '^crypto-js$': '<rootDir>/shared/__mocks__/crypto-js'
       },
       transform: {
         '^.+\\.tsx?$': ['ts-jest', {

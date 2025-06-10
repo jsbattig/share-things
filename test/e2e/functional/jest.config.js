@@ -5,7 +5,7 @@ export default {
   setupFilesAfterEnv: ['<rootDir>/setupTests.ts'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
-    '^crypto-js$': '<rootDir>/../../mocks/crypto-js.ts'
+    '^crypto-js$': '<rootDir>/../../../shared/__mocks__/crypto-js.ts'
   },
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {
