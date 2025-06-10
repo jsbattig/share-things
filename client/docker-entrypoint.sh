@@ -36,4 +36,4 @@ fi
 
 # Execute the static server
 echo "Starting Node.js static server..."
-exec node /app/static-server.js
+exec node /app/static-server.mjs

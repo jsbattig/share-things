@@ -215,8 +215,8 @@ version: '3'
 services:
   backend:
     build:
-      context: ../../server
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: server/Dockerfile
       args:
         - PORT=${API_PORT}
     container_name: share-things-backend
@@ -238,8 +238,8 @@ services:
 
   frontend:
     build:
-      context: ../../client
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: client/Dockerfile
       args:
         - API_URL=${PROTOCOL}://${HOSTNAME}
         - SOCKET_URL=${PROTOCOL}://${HOSTNAME}
@@ -402,8 +402,8 @@ perform_update() {
 services:
   backend:
     build:
-      context: ./server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: server/Dockerfile
       args:
         - PORT=${API_PORT:-15001}
     container_name: share-things-backend
@@ -427,8 +427,8 @@ services:
 
   frontend:
     build:
-      context: ./client
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: client/Dockerfile
       args:
         - API_URL=auto
         - SOCKET_URL=auto

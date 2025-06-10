@@ -66,11 +66,14 @@ RUN npm install --verbose || \
     (echo "First npm install failed, retrying..." && sleep 10 && npm install --verbose) || \
     (echo "Second npm install failed, retrying with cache clean..." && npm cache clean --force && npm install --verbose)
 
+# Install additional dependencies needed for the static server
+RUN npm install express@4.19.2 compression@1.7.4
+
 # Copy built files from builder stage
 COPY --from=builder /app/dist /app/public
 
 # Copy static server script
-COPY client/static-server.js /app/
+COPY client/static-server.mjs /app/
 
 # Create health check directory with proper permissions for non-root user
 RUN mkdir -p /app/public/health && \

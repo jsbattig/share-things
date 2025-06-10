@@ -221,8 +221,8 @@ build_and_start_containers() {
 services:
   backend:
     build:
-      context: $SERVER_DIR
-      dockerfile: Dockerfile
+      context: $REPO_ROOT
+      dockerfile: server/Dockerfile
       args:
         - PORT=${API_PORT:-15001}
     container_name: share-things-backend
@@ -246,8 +246,8 @@ services:
 
   frontend:
     build:
-      context: $CLIENT_DIR
-      dockerfile: Dockerfile
+      context: $REPO_ROOT
+      dockerfile: client/Dockerfile
       args:
         - API_URL=auto
         - SOCKET_URL=auto
@@ -447,8 +447,8 @@ EOF
 services:
   backend:
     build:
-      context: $SERVER_DIR
-      dockerfile: Dockerfile
+      context: $REPO_ROOT
+      dockerfile: server/Dockerfile
       args:
         - PORT=${API_PORT:-15001}
     container_name: share-things-backend
@@ -467,8 +467,8 @@ services:
 
   frontend:
     build:
-      context: $CLIENT_DIR
-      dockerfile: Dockerfile
+      context: $REPO_ROOT
+      dockerfile: client/Dockerfile
       args:
         - API_URL=auto
         - SOCKET_URL=auto

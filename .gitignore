@@ -14,6 +14,9 @@ test-logs-*
 build/*
 !build/scripts/
 !build/config/
+# Ignore temporary compose files with hardcoded paths
+build/config/*.temp.yml
+build/config/*temp*.yml
 dist/
 out/
 
@@ -48,7 +51,11 @@ yarn-error.log*
 # Logs
 logs
 *.log
-*.mjs
+# Ignore temporary .mjs files but allow source files
+/logs/*.mjs
+/build/*.mjs
+/dist/*.mjs
+/out/*.mjs
 /client/build/assets
 /test/e2e/functional/test/e2e/functional/.npm-cache
 /test/e2e/functional/.npm-cache
