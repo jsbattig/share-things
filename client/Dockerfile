@@ -6,8 +6,9 @@ WORKDIR /app
 # Copy package files and install dependencies
 COPY client/package*.json ./
 
-# Configure npm for better timeout handling
-RUN npm config set fetch-timeout 600000 && \
+# Configure npm for better timeout handling and use local proxy registry
+RUN npm config set registry https://linner.ddns.net:4873 && \
+    npm config set fetch-timeout 600000 && \
     npm config set fetch-retry-mintimeout 20000 && \
     npm config set fetch-retry-maxtimeout 120000 && \
     npm config set fetch-retries 5
@@ -55,8 +56,9 @@ WORKDIR /app
 WORKDIR /app
 COPY client/package.json /app/
 
-# Configure npm for better timeout handling in production stage
-RUN npm config set fetch-timeout 600000 && \
+# Configure npm for better timeout handling in production stage and use local proxy registry
+RUN npm config set registry https://linner.ddns.net:4873 && \
+    npm config set fetch-timeout 600000 && \
     npm config set fetch-retry-mintimeout 20000 && \
     npm config set fetch-retry-maxtimeout 120000 && \
     npm config set fetch-retries 5
@@ -67,7 +69,13 @@ RUN npm install --verbose || \
     (echo "Second npm install failed, retrying with cache clean..." && npm cache clean --force && npm install --verbose)
 
 # Install additional dependencies needed for the static server
-RUN npm install express@4.19.2 compression@1.7.4
+# Install additional dependencies with timeout configuration and local proxy registry
+RUN npm config set registry https://linner.ddns.net:4873 && \
+    npm config set fetch-timeout 600000 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-retries 5 && \
+    npm install express@4.19.2 compression@1.7.4
 
 # Copy built files from builder stage
 COPY --from=builder /app/dist /app/public

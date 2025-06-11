@@ -215,9 +215,9 @@ if [ "$CI" = "true" ]; then
   export PODMAN_ROOTLESS_ADJUST=1
   log_info "Set additional environment variables for CI"
   
-  # Run with an increased timeout for CI environments
-  log_info "Using increased timeout (600s) for CI environment"
-  timeout 600 ./setup.sh --non-interactive --force-install
+  # Run with a much longer timeout for CI environments due to slow npm installs
+  log_info "Using extended timeout (1800s/30min) for CI environment due to slow network"
+  timeout 1800 ./setup.sh --non-interactive --force-install
 else
   # Run with a standard timeout for local environments
   log_info "Using standard timeout (600s) for local environment"

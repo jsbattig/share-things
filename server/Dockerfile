@@ -14,6 +14,13 @@ RUN apt-get update && apt-get install -y \
 
 # Copy package files and install dependencies
 COPY server/package*.json ./
+# Configure npm for CI environments with slow networks and use local proxy registry
+RUN npm config set registry https://linner.ddns.net:4873 && \
+    npm config set fetch-timeout 600000 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-retries 5
+
 RUN npm install
 
 # Copy source code
@@ -36,6 +43,13 @@ RUN apt-get update && apt-get install -y \
 
 # Copy package files and install production dependencies only
 COPY server/package*.json ./
+# Configure npm for CI environments with slow networks and use local proxy registry
+RUN npm config set registry https://linner.ddns.net:4873 && \
+    npm config set fetch-timeout 600000 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-retries 5
+
 RUN npm install --only=production
 
 # Copy built application from builder stage
