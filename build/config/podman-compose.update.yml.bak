@@ -3,8 +3,8 @@
 services:
   backend:
     build:
-      context: ./server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: server/Dockerfile
       args:
         - PORT=15001
     container_name: share-things-backend
@@ -28,8 +28,8 @@ services:
 
   frontend:
     build:
-      context: ./client
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: client/Dockerfile
       args:
         - API_URL=auto
         - SOCKET_URL=auto

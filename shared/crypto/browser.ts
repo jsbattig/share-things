@@ -17,11 +17,14 @@ let CryptoJS: any = null;
 async function getCryptoJS() {
   if (!CryptoJS) {
     try {
+      console.log('[BrowserCrypto] Attempting to load crypto-js...');
       // Use completely dynamic import to avoid static analysis
       const moduleName = 'crypto-js';
       const cryptoModule = await import(/* @vite-ignore */ moduleName);
       CryptoJS = cryptoModule.default || cryptoModule;
+      console.log('[BrowserCrypto] Successfully loaded crypto-js:', !!CryptoJS);
     } catch (error) {
+      console.error('[BrowserCrypto] Failed to load crypto-js:', error);
       throw new Error('crypto-js is required for browser crypto operations. Please install crypto-js: npm install crypto-js');
     }
   }
@@ -296,14 +299,19 @@ export class BrowserCrypto implements CryptoInterface {
 
   async generateFingerprint(passphrase: string): Promise<PassphraseFingerprint> {
     try {
+      console.log('[BrowserCrypto] generateFingerprint called with passphrase length:', passphrase.length);
       const CryptoJS = await getCryptoJS();
+      console.log('[BrowserCrypto] Got CryptoJS instance:', !!CryptoJS);
       
       // Use a fixed IV for fingerprint generation
       const fixedIv = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+      console.log('[BrowserCrypto] Created fixed IV');
       
       // Create a deterministic hash of the passphrase
       const passphraseWordArray = CryptoJS.enc.Utf8.parse(passphrase);
+      console.log('[BrowserCrypto] Parsed passphrase to WordArray');
       const hash = CryptoJS.SHA256(passphraseWordArray);
+      console.log('[BrowserCrypto] Generated SHA256 hash');
       
       // Convert hash to bytes
       const hashWords = hash.words;
@@ -315,15 +323,19 @@ export class BrowserCrypto implements CryptoInterface {
         if (i + 2 < hashBytes.length) hashBytes[i + 2] = (word >>> 8) & 0xff;
         if (i + 3 < hashBytes.length) hashBytes[i + 3] = word & 0xff;
       }
+      console.log('[BrowserCrypto] Converted hash to bytes');
       
       // Use the first 16 bytes of the hash as the "encrypted data"
       const dataBytes = hashBytes.slice(0, 16);
       
-      return {
+      const result = {
         iv: Array.from(fixedIv),
         data: Array.from(dataBytes)
       };
+      console.log('[BrowserCrypto] Successfully generated fingerprint');
+      return result;
     } catch (error) {
+      console.error('[BrowserCrypto] generateFingerprint error:', error);
       throw new Error(`Failed to generate fingerprint: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }

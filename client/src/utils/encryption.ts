@@ -1,14 +1,9 @@
 /**
  * Encryption utilities for client-side end-to-end encryption
- * Using unified crypto library for consistency
+ * Using CryptoJS directly for browser compatibility
  */
 
-// Import unified crypto library
-import { deriveKeyFromPassphrase as unifiedDeriveKey, generateFingerprint as unifiedGenerateFingerprint } from '../../../shared/crypto';
 import * as CryptoJS from 'crypto-js';
-
-// Re-export the unified crypto functions
-export const deriveKeyFromPassphrase = unifiedDeriveKey;
 
 // Define interface for our crypto key (for compatibility)
 interface CryptoKey {
@@ -147,8 +142,78 @@ export interface PassphraseFingerprint {
   data: number[];
 }
 
-// Re-export unified generateFingerprint
-export const generateFingerprint = unifiedGenerateFingerprint;
+/**
+ * Derives an encryption key from a passphrase
+ * @param passphrase The passphrase to derive the key from
+ * @returns The derived key
+ */
+export async function deriveKeyFromPassphrase(passphrase: string): Promise<CryptoKey> {
+  try {
+    console.log('Deriving key from passphrase using CryptoJS');
+    
+    // Use a fixed salt for deterministic key derivation
+    const salt = CryptoJS.enc.Utf8.parse('ShareThings-Salt-2025');
+    
+    // Derive the key using PBKDF2
+    const key = CryptoJS.PBKDF2(passphrase, salt, {
+      keySize: 256/32, // 256 bits
+      iterations: 100000,
+      hasher: CryptoJS.algo.SHA256
+    });
+    
+    // Return a crypto key object
+    return {
+      key: key,
+      algorithm: 'AES',
+      usages: ['encrypt', 'decrypt'],
+      type: 'secret',
+      extractable: true
+    };
+  } catch (error) {
+    console.error('Error deriving key from passphrase:', error);
+    throw new Error(`Failed to derive key: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+/**
+ * Generates a deterministic fingerprint from a passphrase
+ * @param passphrase The passphrase to generate the fingerprint from
+ * @returns The fingerprint
+ */
+export async function generateFingerprint(passphrase: string): Promise<PassphraseFingerprint> {
+  try {
+    console.log('Generating fingerprint using CryptoJS');
+    
+    // Use a fixed IV for fingerprint generation
+    const fixedIv = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    
+    // Create a deterministic hash of the passphrase
+    const passphraseWordArray = CryptoJS.enc.Utf8.parse(passphrase);
+    const hash = CryptoJS.SHA256(passphraseWordArray);
+    
+    // Convert hash to bytes
+    const hashWords = hash.words;
+    const hashBytes = new Uint8Array(hash.sigBytes);
+    for (let i = 0; i < hashBytes.length; i += 4) {
+      const word = hashWords[i / 4];
+      hashBytes[i] = (word >>> 24) & 0xff;
+      if (i + 1 < hashBytes.length) hashBytes[i + 1] = (word >>> 16) & 0xff;
+      if (i + 2 < hashBytes.length) hashBytes[i + 2] = (word >>> 8) & 0xff;
+      if (i + 3 < hashBytes.length) hashBytes[i + 3] = word & 0xff;
+    }
+    
+    // Use the first 16 bytes of the hash as the "encrypted data"
+    const dataBytes = hashBytes.slice(0, 16);
+    
+    return {
+      iv: Array.from(fixedIv),
+      data: Array.from(dataBytes)
+    };
+  } catch (error) {
+    console.error('Error generating fingerprint:', error);
+    throw new Error(`Failed to generate fingerprint: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
 
 /**
  * Decrypts data with a key
