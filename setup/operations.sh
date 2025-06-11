@@ -508,7 +508,7 @@ EOL
         # Verify that images were actually built
         if ! podman images | grep -q "share-things"; then
             log_error "Images were not built successfully. Trying one more time with force..."
-            podman-compose -f "$COMPOSE_UPDATE_PATH" build --no-cache --force-rm
+            podman-compose -f "$COMPOSE_UPDATE_PATH" build --no-cache
             
             # Check again
             if ! podman images | grep -q "share-things"; then
