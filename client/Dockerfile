@@ -16,8 +16,8 @@ RUN npm install
 RUN npm install crypto-js @types/crypto-js
 
 # Copy source code AND shared directory (needed for crypto imports)
-COPY . .
-COPY ../shared ./shared
+COPY client/ .
+COPY shared/ ./shared
 
 # Set build arguments with defaults
 ARG API_URL=auto
@@ -73,7 +73,7 @@ RUN npm install express@4.19.2 compression@1.7.4
 COPY --from=builder /app/dist /app/public
 
 # Copy static server script
-COPY client/static-server.mjs /app/
+COPY static-server.mjs /app/
 
 # Create health check directory with proper permissions for non-root user
 RUN mkdir -p /app/public/health && \
@@ -93,7 +93,7 @@ HEALTHCHECK --interval=5s --timeout=3s --retries=3 \
   CMD wget -q -O - http://localhost:15000/health || exit 1
 
 # Copy entrypoint script
-COPY client/docker-entrypoint.sh /app/
+COPY docker-entrypoint.sh /app/
 RUN chmod +x /app/docker-entrypoint.sh
 
 # Start with entrypoint script
