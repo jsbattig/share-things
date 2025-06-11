@@ -13,11 +13,12 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy package files and install dependencies
-COPY package*.json ./
+COPY server/package*.json ./
 RUN npm install
 
 # Copy source code
-COPY . .
+COPY server/ .
+COPY shared/ ./shared
 
 # Build the application
 RUN npm run build
@@ -38,7 +39,7 @@ COPY server/package*.json ./
 RUN npm install --only=production
 
 # Copy built application from builder stage
-COPY --from=builder /app/server/dist ./dist
+COPY --from=builder /app/dist ./dist
 
 # Create data directory with proper permissions for non-root user
 RUN mkdir -p /app/data && chown -R 1001:1001 /app/data && chmod -R 755 /app/data

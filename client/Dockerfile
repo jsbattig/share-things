@@ -4,7 +4,7 @@ FROM linner.ddns.net:4443/docker.io.proxy/node:18-alpine as builder
 WORKDIR /app
 
 # Copy package files and install dependencies
-COPY package*.json ./
+COPY client/package*.json ./
 
 # Configure npm for better timeout handling
 RUN npm config set fetch-timeout 600000 && \
@@ -53,7 +53,7 @@ WORKDIR /app
 
 # Install necessary dependencies
 WORKDIR /app
-COPY package.json /app/
+COPY client/package.json /app/
 
 # Configure npm for better timeout handling in production stage
 RUN npm config set fetch-timeout 600000 && \
