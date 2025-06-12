@@ -13,12 +13,8 @@ RUN npm config set registry https://linner.ddns.net:4873 && \
     npm config set fetch-retry-maxtimeout 120000 && \
     npm config set fetch-retries 5
 
-RUN npm install --verbose || \
-    (echo "First npm install failed, retrying..." && sleep 10 && npm install --verbose) || \
-    (echo "Second npm install failed, retrying with cache clean..." && npm cache clean --force && npm install --verbose)
-RUN npm install crypto-js @types/crypto-js --verbose || \
-    (echo "First crypto-js install failed, retrying..." && sleep 5 && npm install crypto-js @types/crypto-js --verbose) || \
-    (echo "Second crypto-js install failed, retrying with cache clean..." && npm cache clean --force && npm install crypto-js @types/crypto-js --verbose)
+RUN npm install
+RUN npm install crypto-js @types/crypto-js
 
 # Copy source code AND shared directory (needed for crypto imports)
 COPY client/ .
@@ -67,10 +63,8 @@ RUN npm config set registry https://linner.ddns.net:4873 && \
     npm config set fetch-retry-maxtimeout 120000 && \
     npm config set fetch-retries 5
 
-# Install dependencies with retry logic
-RUN npm install --verbose || \
-    (echo "First npm install failed, retrying..." && sleep 10 && npm install --verbose) || \
-    (echo "Second npm install failed, retrying with cache clean..." && npm cache clean --force && npm install --verbose)
+# Install dependencies
+RUN npm install
 
 # Install additional dependencies needed for the static server
 # Install additional dependencies with timeout configuration and local proxy registry
