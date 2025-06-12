@@ -80,27 +80,8 @@ check_podman() {
         exit 1
     fi
     
-    # Check if podman is working properly
-    if ! podman info &> /dev/null; then
-        log_warning "Podman service may not be running properly. Attempting to reset..."
-        
-        # Try to reset the podman service
-        podman system migrate &> /dev/null || true
-        
-        # If that doesn't work, try a more aggressive reset
-        if ! podman info &> /dev/null; then
-            log_warning "First reset attempt failed. Trying podman system reset..."
-            podman system reset --force &> /dev/null || true
-        fi
-        
-        # Check again after reset attempts
-        if ! podman info &> /dev/null; then
-            log_warning "Podman service still not running properly. Continuing anyway..."
-            log_warning "Some container operations may fail."
-        else
-            log_info "Podman service reset successfully."
-        fi
-    fi
+    # Use the centralized Podman check function
+    podman_pre_operation_check
     
     log_success "Podman $(podman --version) and Podman Compose are installed."
 }

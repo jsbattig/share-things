@@ -324,6 +324,9 @@ cd "$REPO_ROOT"
 log_info "Changed to repository root directory: $(pwd)"
 
 # Verify containers are running from previous test
+# Perform pre-operation Podman check
+podman_pre_operation_check
+
 log_info "Verifying containers are running from previous test..."
 if podman ps | grep -q "share-things"; then
   log_success "Containers are running from previous test"

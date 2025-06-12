@@ -2,6 +2,10 @@
 
 # Container management functions for ShareThings setup scripts
 
+# Source Podman cleanup functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/podman-cleanup.sh"
+
 # Always use the private registry URL
 # This registry is accessible both internally and externally
 REGISTRY_URL="linner.ddns.net:4443/docker.io.proxy"
@@ -9,6 +13,9 @@ REGISTRY_URL="linner.ddns.net:4443/docker.io.proxy"
 # Stop and remove containers
 stop_containers() {
     log_info "Stopping running containers..."
+    
+    # Perform pre-operation Podman check
+    podman_pre_operation_check
     
     # Save the currently running container IDs for later verification
     # Use a simpler approach to avoid command substitution issues
@@ -20,20 +27,6 @@ stop_containers() {
     # Force stop and remove all containers with share-things in the name
     log_info "Force stopping and removing all share-things containers..."
     podman rm -f $(podman ps -a -q --filter name=share-things) 2>/dev/null || log_warning "No share-things containers to remove"
-    
-    # Check if podman is working properly
-    if ! podman info &> /dev/null; then
-        log_warning "Podman service may not be running properly. Attempting to reset..."
-        podman system migrate &> /dev/null || true
-        podman system reset --force &> /dev/null || true
-        
-        # Check again after reset
-        if ! podman info &> /dev/null; then
-            log_warning "Podman service still not running properly. Container operations may fail."
-        else
-            log_info "Podman service reset successfully."
-        fi
-    fi
     
     # First attempt with podman-compose down
     log_info "Stopping containers with podman-compose..."
@@ -151,19 +144,8 @@ stop_containers() {
 clean_container_images() {
     log_info "Cleaning container image cache..."
     
-    # Check if podman is working properly
-    if ! podman info &> /dev/null; then
-        log_warning "Podman service may not be running properly. Attempting to reset..."
-        podman system migrate &> /dev/null || true
-        podman system reset --force &> /dev/null || true
-        
-        # Check again after reset
-        if ! podman info &> /dev/null; then
-            log_warning "Podman service still not running properly. Image cleanup may fail."
-        else
-            log_info "Podman service reset successfully."
-        fi
-    fi
+    # Perform pre-operation Podman check
+    podman_pre_operation_check
     
     # Force remove share-things images
     log_info "Force removing share-things images..."
@@ -191,6 +173,9 @@ clean_container_images() {
 
 # Build and start containers
 build_and_start_containers() {
+    # Perform pre-operation Podman check
+    podman_pre_operation_check
+    
     # Ensure data directory exists before starting containers
     log_info "Ensuring data directory exists with proper permissions..."
     if [ -f "$REPO_ROOT/ensure-data-directory.sh" ]; then
@@ -672,19 +657,8 @@ EOF
 
 # Verify containers are running
 verify_containers() {
-    # Check if podman is working properly
-    if ! podman info &> /dev/null; then
-        log_warning "Podman service may not be running properly. Attempting to reset..."
-        podman system migrate &> /dev/null || true
-        podman system reset --force &> /dev/null || true
-        
-        # Check again after reset
-        if ! podman info &> /dev/null; then
-            log_warning "Podman service still not running properly. Container verification may fail."
-        else
-            log_info "Podman service reset successfully."
-        fi
-    fi
+    # Perform pre-operation Podman check
+    podman_pre_operation_check
     
     log_info "Checking container status..."
     echo "Running: podman ps | grep share-things"

@@ -3,6 +3,10 @@
 # ShareThings Build and Test Script
 # This script sets up, builds, and tests the ShareThings application using Docker
 
+# Source Podman cleanup functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../../setup/podman-cleanup.sh"
+
 # Text colors
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -23,6 +27,10 @@ fi
 echo -e "${BLUE}=== ShareThings Build and Test ===${NC}"
 echo "This script will build and test the ShareThings application using Docker."
 echo ""
+
+# Perform Podman hard cleanup and reset for CI/CD reliability
+echo -e "${YELLOW}Performing Podman cleanup for CI/CD reliability...${NC}"
+podman_hard_cleanup_and_reset
 
 # Check if Docker is installed
 if ! command -v podman &> /dev/null; then
@@ -145,6 +153,9 @@ echo -e "${GREEN}Cleanup complete.${NC}"
 
 # Build the containers
 echo -e "${YELLOW}Building containers...${NC}"
+# Perform pre-operation check before building
+podman_pre_operation_check
+
 # Add environment variable for rootless Podman
 export PODMAN_USERNS=keep-id
 

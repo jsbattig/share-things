@@ -106,6 +106,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Main execution flow based on mode
+# Perform Podman pre-operation check and cleanup if needed
+podman_pre_operation_check
+
 check_podman
 
 # If debug mode is enabled, show more verbose output

@@ -2,6 +2,10 @@
 #
 # setup-test-install.sh - Test script for setup.sh
 #
+
+# Source Podman cleanup functions
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../../setup/podman-cleanup.sh"
 # IMPORTANT TESTING GUIDELINES:
 # 1. Tests MUST use the full setup.sh process without shortcuts or simplifications
 # 2. DO NOT attempt to use any CI flags to minimize setup, remove steps, or simplify configuration
