@@ -45,7 +45,6 @@ show_help() {
     echo "Usage: $SCRIPT_NAME [OPTIONS]"
     echo ""
     echo "Mode Selection:"
-    echo "  --update              Update an existing installation"
     echo "  --reinstall           Remove and reinstall"
     echo "  --uninstall           Remove the installation"
     echo "  (no flag)             Perform a fresh installation"

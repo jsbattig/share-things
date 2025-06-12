@@ -111,7 +111,6 @@ To set up the application, use the setup.sh script:
 
 This script supports various flags for different operations:
 
-- `--update`: Update an existing installation
 - `--reinstall`: Remove and reinstall
 - `--uninstall`: Remove the installation
 - `--hostname=VALUE`: Set the hostname
@@ -140,4 +139,4 @@ The GitHub Actions workflow uses the following scripts:
 
 1. `./build/scripts/build-and-test.sh` for building and testing
 2. `./test-setup.sh` for testing the setup process
-3. `./setup.sh --update --non-interactive` for updating the application in production
+3. Fresh install approach for production deployments (uninstall + install)

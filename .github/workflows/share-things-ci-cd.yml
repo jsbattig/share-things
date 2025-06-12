@@ -325,20 +325,20 @@ jobs:
             sudo yum install -y sshpass
           fi
           
-          # Function to check if setup.sh --update is running
-          check_update_script_running() {
-            sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "pgrep -f 'setup.sh --update'" > /dev/null
+          # Function to check if setup.sh is running
+          check_setup_script_running() {
+            sshpass -p "${{ secrets.GHRUserPassword }}" ssh -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "pgrep -f 'setup.sh'" > /dev/null
             return $?
           }
           
-          # Wait until any existing setup.sh --update process completes
-          echo "Checking if setup.sh --update is already running on the production server..."
-          while check_update_script_running; do
-            echo "setup.sh --update is currently running. Waiting 30 seconds before checking again..."
+          # Wait until any existing setup.sh process completes
+          echo "Checking if setup.sh is already running on the production server..."
+          while check_setup_script_running; do
+            echo "setup.sh is currently running. Waiting 30 seconds before checking again..."
             sleep 30
           done
           
-          echo "No running setup.sh --update process detected. Proceeding with deployment..."
+          echo "No running setup.sh process detected. Proceeding with deployment..."
           
           # Set up SSH connection and run the update script with verbose output
           echo "Starting deployment with verbose logging..."
@@ -372,9 +372,20 @@ jobs:
           echo "Copying compose file to production server..."
           sshpass -p "${{ secrets.GHRUserPassword }}" scp -o StrictHostKeyChecking=no simple-compose.yml ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }}:~/share-things/build/config/podman-compose.yml
           
-          # Run the setup script with update mode, non-interactive, and debug flags (with 20-minute timeout)
-          echo "Running setup.sh with update mode for production deployment..."
-          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -v -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && timeout 1200 bash -x ./setup.sh --update --non-interactive --debug 2>&1" | tee deployment-logs/deploy-$(date +%Y%m%d-%H%M%S).log
+          # Run fresh install (uninstall + install) for production deployment
+          echo "Running fresh install for production deployment..."
+          echo "Step 1: Uninstalling existing installation..."
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -v -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && timeout 600 bash -x ./setup.sh --uninstall --non-interactive --debug 2>&1" | tee deployment-logs/deploy-uninstall-$(date +%Y%m%d-%H%M%S).log
+          UNINSTALL_EXIT_CODE=$?
+          
+          if [ $UNINSTALL_EXIT_CODE -ne 0 ] && [ $UNINSTALL_EXIT_CODE -ne 1 ]; then
+            echo "Uninstall failed with exit code $UNINSTALL_EXIT_CODE, but continuing with fresh install..."
+          else
+            echo "Uninstall completed successfully"
+          fi
+          
+          echo "Step 2: Installing fresh deployment..."
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -v -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && timeout 1200 bash -x ./setup.sh --non-interactive --force-install --debug 2>&1" | tee deployment-logs/deploy-install-$(date +%Y%m%d-%H%M%S).log
           DEPLOY_EXIT_CODE=$?
           
           # Get container status after deployment

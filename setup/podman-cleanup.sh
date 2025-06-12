@@ -12,19 +12,19 @@ NC='\033[0m' # No Color
 
 # Logging functions
 log_info() {
-    echo -e "${BLUE}[PODMAN-CLEANUP]${NC} $1"
+    echo -e "${BLUE}[PODMAN-SETUP]${NC} $1"
 }
 
 log_warning() {
-    echo -e "${YELLOW}[PODMAN-CLEANUP]${NC} $1"
+    echo -e "${YELLOW}[PODMAN-SETUP]${NC} $1"
 }
 
 log_error() {
-    echo -e "${RED}[PODMAN-CLEANUP]${NC} $1"
+    echo -e "${RED}[PODMAN-SETUP]${NC} $1"
 }
 
 log_success() {
-    echo -e "${GREEN}[PODMAN-CLEANUP]${NC} $1"
+    echo -e "${GREEN}[PODMAN-SETUP]${NC} $1"
 }
 
 # Hard cleanup and Podman state reset function

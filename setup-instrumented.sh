@@ -555,10 +555,6 @@ perform_installation_instrumented() {
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --update)
-            INSTALL_MODE="update"
-            shift
-            ;;
         --reinstall)
             INSTALL_MODE="reinstall"
             shift
@@ -683,7 +679,6 @@ case $INSTALL_MODE in
         start_timer "Installation Check"
         if check_installation && [ "$FORCE_INSTALL" != "true" ]; then
             log_error "ShareThings is already installed."
-            log_info "Use --update to update the existing installation."
             log_info "Use --reinstall to remove and reinstall."
             log_info "Or use --force-install to force a fresh installation."
             exit 1
@@ -699,19 +694,6 @@ case $INSTALL_MODE in
         
         log_info "Starting ShareThings installation..."
         perform_installation_instrumented
-        ;;
-        
-    "update")
-        start_timer "Update Installation Check"
-        if ! check_installation; then
-            log_error "ShareThings is not installed. Cannot update."
-            log_info "Use the script without flags to perform a fresh installation."
-            exit 1
-        fi
-        end_timer "Update Installation Check"
-        
-        log_info "Starting ShareThings update..."
-        perform_update
         ;;
         
     "reinstall")

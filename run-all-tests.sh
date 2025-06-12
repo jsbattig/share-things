@@ -79,12 +79,10 @@ run_test "Setup Install Test" "bash test/setup/setup-test-install.sh" "."
 echo -e "${YELLOW}Cleaning up containers from setup test...${NC}"
 ./setup.sh --uninstall --non-interactive > /dev/null 2>&1 || true
 
-# 7. Data Persistence Test
-run_test "Setup Data Persistence Test" "bash test/setup/setup-test-data-persistence.sh" "."
-
-# Clean up any containers from data persistence test
-echo -e "${YELLOW}Cleaning up containers from data persistence test...${NC}"
-./setup.sh --uninstall --non-interactive > /dev/null 2>&1 || true
+# 7. Data Persistence Test - REMOVED
+# Note: Data persistence testing was removed when we eliminated the --update functionality.
+# Data persistence is now validated as part of the main setup test (setup-test-install.sh)
+# which tests the complete fresh install workflow including data directory creation.
 
 # Summary
 echo ""
