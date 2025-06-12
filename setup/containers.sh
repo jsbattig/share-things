@@ -222,6 +222,8 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=${API_PORT:-15001}
+      - SQLITE_DB_PATH=/app/data/sessions.db
+      - STORAGE_PATH=/app/data/sessions
     restart: always
     logging:
       driver: "json-file"
@@ -443,6 +445,8 @@ services:
     environment:
       - NODE_ENV=development
       - PORT=${API_PORT:-15001}
+      - SQLITE_DB_PATH=/app/data/sessions.db
+      - STORAGE_PATH=/app/data/sessions
     restart: always
     logging:
       driver: "json-file"
