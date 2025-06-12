@@ -14,17 +14,17 @@ RUN apt-get update && apt-get install -y \
 
 # Copy package files and install dependencies
 COPY server/package*.json ./
-# Configure npm for CI environments with slow networks and use local proxy registry
+# Configure npm for CI environments with optimized timeouts and use local proxy registry
 RUN npm config set registry https://linner.ddns.net:4873 && \
-    npm config set fetch-timeout 600000 && \
-    npm config set fetch-retry-mintimeout 20000 && \
-    npm config set fetch-retry-maxtimeout 120000 && \
-    npm config set fetch-retries 5
+    npm config set fetch-timeout 120000 && \
+    npm config set fetch-retry-mintimeout 5000 && \
+    npm config set fetch-retry-maxtimeout 30000 && \
+    npm config set fetch-retries 2 && \
+    npm config set progress false && \
+    npm config set loglevel warn
 
-# Install dependencies with retry logic for network stability
-RUN npm install || \
-    (echo "npm install failed, retrying in 5 seconds..." && sleep 5 && npm install) || \
-    (echo "Second attempt failed, cleaning cache and retrying..." && npm cache clean --force && npm install)
+# Install dependencies with simplified retry logic
+RUN npm install --no-audit --no-fund || npm install --no-audit --no-fund
 
 # Copy source code
 COPY server/ .
@@ -46,17 +46,17 @@ RUN apt-get update && apt-get install -y \
 
 # Copy package files and install production dependencies only
 COPY server/package*.json ./
-# Configure npm for CI environments with slow networks and use local proxy registry
+# Configure npm for CI environments with optimized timeouts and use local proxy registry
 RUN npm config set registry https://linner.ddns.net:4873 && \
-    npm config set fetch-timeout 600000 && \
-    npm config set fetch-retry-mintimeout 20000 && \
-    npm config set fetch-retry-maxtimeout 120000 && \
-    npm config set fetch-retries 5
+    npm config set fetch-timeout 120000 && \
+    npm config set fetch-retry-mintimeout 5000 && \
+    npm config set fetch-retry-maxtimeout 30000 && \
+    npm config set fetch-retries 2 && \
+    npm config set progress false && \
+    npm config set loglevel warn
 
-# Install production dependencies with retry logic for network stability
-RUN npm install --only=production || \
-    (echo "npm install --only=production failed, retrying in 5 seconds..." && sleep 5 && npm install --only=production) || \
-    (echo "Second attempt failed, cleaning cache and retrying..." && npm cache clean --force && npm install --only=production)
+# Install production dependencies with simplified retry logic
+RUN npm install --only=production --no-audit --no-fund || npm install --only=production --no-audit --no-fund
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist

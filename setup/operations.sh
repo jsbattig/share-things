@@ -97,95 +97,15 @@ perform_installation() {
     cleanup_backup_files
 }
 
-# Detect and backup existing data before update
-detect_and_backup_existing_data() {
-    log_info "Detecting and backing up existing data..."
-    
-    # Create backup directory with timestamp
-    BACKUP_DIR="./backups/data/$(date +%Y%m%d_%H%M%S)"
-    mkdir -p "$BACKUP_DIR"
-    
-    # Check if containers are running and have data
-    if podman ps | grep -q "share-things-backend"; then
-        log_info "Found running backend container, backing up container data..."
-        
-        # Backup data from running container
-        if podman exec share-things-backend test -d /app/data; then
-            podman exec share-things-backend tar -czf /tmp/container-data-backup.tar.gz -C /app data
-            podman cp share-things-backend:/tmp/container-data-backup.tar.gz "$BACKUP_DIR/container-data-backup.tar.gz"
-            podman exec share-things-backend rm -f /tmp/container-data-backup.tar.gz
-            log_success "Container data backed up to $BACKUP_DIR/container-data-backup.tar.gz"
-        else
-            log_info "No container data directory found"
-        fi
-    fi
-    
-    # Check if host data directory exists
-    if [ -d "./data" ]; then
-        log_info "Found host data directory, backing up..."
-        cp -r "./data" "$BACKUP_DIR/host-data"
-        log_success "Host data backed up to $BACKUP_DIR/host-data"
-    else
-        log_info "No host data directory found"
-    fi
-    
-    # Store backup location for potential restoration
-    echo "$BACKUP_DIR" > "/tmp/data-backup-location"
-    log_success "Data backup completed at $BACKUP_DIR"
-}
-
-# Capture volume configuration from running containers
-capture_volume_configuration() {
-    log_info "Capturing volume configuration from running containers..."
-    
-    # Create volume config directory
-    mkdir -p "/tmp/volume-config"
-    
-    # Check backend container mounts
-    if podman ps | grep -q "share-things-backend"; then
-        podman inspect share-things-backend --format '{{range .Mounts}}{{.Source}}:{{.Destination}}:{{.Type}} {{end}}' > "/tmp/volume-config/backend-mounts.txt" 2>/dev/null || echo "no-mounts" > "/tmp/volume-config/backend-mounts.txt"
-        log_info "Backend container mounts: $(cat /tmp/volume-config/backend-mounts.txt)"
-    else
-        echo "no-container" > "/tmp/volume-config/backend-mounts.txt"
-    fi
-    
-    # Check frontend container mounts
-    if podman ps | grep -q "share-things-frontend"; then
-        podman inspect share-things-frontend --format '{{range .Mounts}}{{.Source}}:{{.Destination}}:{{.Type}} {{end}}' > "/tmp/volume-config/frontend-mounts.txt" 2>/dev/null || echo "no-mounts" > "/tmp/volume-config/frontend-mounts.txt"
-        log_info "Frontend container mounts: $(cat /tmp/volume-config/frontend-mounts.txt)"
-    else
-        echo "no-container" > "/tmp/volume-config/frontend-mounts.txt"
-    fi
-    
-    log_success "Volume configuration captured"
-}
-
 # Ensure host data directory exists and has proper structure
 ensure_host_data_directory() {
     log_info "Ensuring host data directory exists with proper structure..."
     
-    # Create host data directory structure
+    # Create host data directory structure if it doesn't exist
     mkdir -p "./data/sessions"
     
     # Set proper permissions
     chmod -R 755 "./data"
-    
-    # If we have a backup and no current data, restore from backup
-    if [ -f "/tmp/data-backup-location" ] && [ ! -f "./data/sessions.db" ]; then
-        BACKUP_DIR=$(cat /tmp/data-backup-location)
-        
-        if [ -f "$BACKUP_DIR/container-data-backup.tar.gz" ]; then
-            log_info "Restoring data from container backup..."
-            cd "./data"
-            tar -xzf "$BACKUP_DIR/container-data-backup.tar.gz" --strip-components=1
-            cd - > /dev/null
-            log_success "Data restored from container backup"
-        elif [ -d "$BACKUP_DIR/host-data" ]; then
-            log_info "Restoring data from host backup..."
-            cp -r "$BACKUP_DIR/host-data"/* "./data/"
-            log_success "Data restored from host backup"
-        fi
-    fi
     
     log_success "Host data directory prepared at ./data"
 }
@@ -354,12 +274,9 @@ perform_update() {
     echo "Step 3: Capturing current configuration..."
     capture_current_configuration
     
-    # NEW: Data persistence steps
-    echo "Step 3a: Detecting and backing up existing data..."
-    detect_and_backup_existing_data
-    
-    echo "Step 3b: Capturing volume configuration..."
-    capture_volume_configuration
+    # Ensure data directory exists (no backup needed - data is already there)
+    echo "Step 3a: Ensuring data directory exists..."
+    ensure_host_data_directory
     
     # Determine which compose file to use
     if [ -f build/config/podman-compose.prod.yml ]; then
@@ -468,7 +385,7 @@ EOL
     export VITE_API_PORT="${API_PORT}"
     log_info "Using environment variables: FRONTEND_PORT=$FRONTEND_PORT, BACKEND_PORT=$BACKEND_PORT, API_PORT=$API_PORT, VITE_API_PORT=$VITE_API_PORT"
     
-    # NEW: Create update compose file with data persistence
+    # Create update compose file with data persistence
     log_info "Step 8: Creating update compose file with data persistence..."
     create_update_compose_with_data_volumes
     
@@ -620,7 +537,7 @@ EOL
     echo "Step 10: Verifying containers..."
     verify_containers
     
-    # NEW: Verify data integrity after update
+    # Verify data integrity after update
     echo "Step 10a: Verifying data integrity after update..."
     verify_data_integrity_after_update
     

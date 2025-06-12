@@ -8,19 +8,18 @@ COPY client/package*.json ./
 
 # Configure npm for better timeout handling and use local proxy registry
 RUN npm config set registry https://linner.ddns.net:4873 && \
-    npm config set fetch-timeout 600000 && \
-    npm config set fetch-retry-mintimeout 20000 && \
-    npm config set fetch-retry-maxtimeout 120000 && \
-    npm config set fetch-retries 5
+    npm config set fetch-timeout 120000 && \
+    npm config set fetch-retry-mintimeout 5000 && \
+    npm config set fetch-retry-maxtimeout 30000 && \
+    npm config set fetch-retries 2 && \
+    npm config set progress false && \
+    npm config set loglevel warn
 
-# Install dependencies with retry logic for network stability
-RUN npm install || \
-    (echo "npm install failed, retrying in 5 seconds..." && sleep 5 && npm install) || \
-    (echo "Second attempt failed, cleaning cache and retrying..." && npm cache clean --force && npm install)
+# Install dependencies with simplified retry logic
+RUN npm install --no-audit --no-fund || npm install --no-audit --no-fund
 
-# Install additional crypto dependencies with retry logic
-RUN npm install crypto-js @types/crypto-js || \
-    (echo "crypto-js install failed, retrying..." && sleep 3 && npm install crypto-js @types/crypto-js)
+# Install additional crypto dependencies
+RUN npm install crypto-js @types/crypto-js --no-audit --no-fund
 
 # Copy source code AND shared directory (needed for crypto imports)
 COPY client/ .
@@ -64,24 +63,18 @@ COPY client/package.json /app/
 
 # Configure npm for better timeout handling in production stage and use local proxy registry
 RUN npm config set registry https://linner.ddns.net:4873 && \
-    npm config set fetch-timeout 600000 && \
-    npm config set fetch-retry-mintimeout 20000 && \
-    npm config set fetch-retry-maxtimeout 120000 && \
-    npm config set fetch-retries 5
+    npm config set fetch-timeout 120000 && \
+    npm config set fetch-retry-mintimeout 5000 && \
+    npm config set fetch-retry-maxtimeout 30000 && \
+    npm config set fetch-retries 2 && \
+    npm config set progress false && \
+    npm config set loglevel warn
 
-# Install dependencies with retry logic for network stability
-RUN npm install || \
-    (echo "npm install failed, retrying in 5 seconds..." && sleep 5 && npm install) || \
-    (echo "Second attempt failed, cleaning cache and retrying..." && npm cache clean --force && npm install)
+# Install dependencies with simplified retry logic
+RUN npm install --no-audit --no-fund || npm install --no-audit --no-fund
 
 # Install additional dependencies needed for the static server
-# Install additional dependencies with timeout configuration and local proxy registry
-RUN npm config set registry https://linner.ddns.net:4873 && \
-    npm config set fetch-timeout 600000 && \
-    npm config set fetch-retry-mintimeout 20000 && \
-    npm config set fetch-retry-maxtimeout 120000 && \
-    npm config set fetch-retries 5 && \
-    npm install express@4.19.2 compression@1.7.4
+RUN npm install express@4.19.2 compression@1.7.4 --no-audit --no-fund
 
 # Copy built files from builder stage
 COPY --from=builder /app/dist /app/public
