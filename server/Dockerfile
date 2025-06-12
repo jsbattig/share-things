@@ -21,7 +21,10 @@ RUN npm config set registry https://linner.ddns.net:4873 && \
     npm config set fetch-retry-maxtimeout 120000 && \
     npm config set fetch-retries 5
 
-RUN npm install
+# Install dependencies with retry logic for network stability
+RUN npm install || \
+    (echo "npm install failed, retrying in 5 seconds..." && sleep 5 && npm install) || \
+    (echo "Second attempt failed, cleaning cache and retrying..." && npm cache clean --force && npm install)
 
 # Copy source code
 COPY server/ .
@@ -50,7 +53,10 @@ RUN npm config set registry https://linner.ddns.net:4873 && \
     npm config set fetch-retry-maxtimeout 120000 && \
     npm config set fetch-retries 5
 
-RUN npm install --only=production
+# Install production dependencies with retry logic for network stability
+RUN npm install --only=production || \
+    (echo "npm install --only=production failed, retrying in 5 seconds..." && sleep 5 && npm install --only=production) || \
+    (echo "Second attempt failed, cleaning cache and retrying..." && npm cache clean --force && npm install --only=production)
 
 # Copy built application from builder stage
 COPY --from=builder /app/dist ./dist
