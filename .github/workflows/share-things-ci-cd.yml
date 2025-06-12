@@ -203,9 +203,9 @@ jobs:
         echo "Available memory: $(free -m)"
         echo "Available disk space: $(df -h)"
         
-        # Use a longer timeout for the full installation test
-        timeout 600 ./test/setup/setup-test-install.sh
-      timeout-minutes: 15  # Increased timeout for the entire job
+        # Use a longer timeout for the full installation test (20 minutes to accommodate slower builds)
+        timeout 1200 ./test/setup/setup-test-install.sh
+      timeout-minutes: 25  # Increased timeout for the entire job to accommodate slower builds
       env:
         CI: true
         PODMAN_USERNS: keep-id
@@ -301,6 +301,7 @@ jobs:
     needs: [test-setup, integration]
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
     runs-on: [self-hosted, Rocky Linux]
+    timeout-minutes: 30  # Increased timeout for deployment to accommodate slower builds
     
     steps:
       - name: Check Podman installation
@@ -371,9 +372,9 @@ jobs:
           echo "Copying compose file to production server..."
           sshpass -p "${{ secrets.GHRUserPassword }}" scp -o StrictHostKeyChecking=no simple-compose.yml ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }}:~/share-things/build/config/podman-compose.yml
           
-          # Run the setup script with update mode, non-interactive, and debug flags
+          # Run the setup script with update mode, non-interactive, and debug flags (with 20-minute timeout)
           echo "Running setup.sh with update mode for production deployment..."
-          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -v -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && bash -x ./setup.sh --update --non-interactive --debug 2>&1" | tee deployment-logs/deploy-$(date +%Y%m%d-%H%M%S).log
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -v -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && timeout 1200 bash -x ./setup.sh --update --non-interactive --debug 2>&1" | tee deployment-logs/deploy-$(date +%Y%m%d-%H%M%S).log
           DEPLOY_EXIT_CODE=$?
           
           # Get container status after deployment

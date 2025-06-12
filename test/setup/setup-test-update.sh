@@ -367,9 +367,9 @@ export PODMAN_TIMEOUT=300
 export PODMAN_ROOTLESS_ADJUST=1
 log_info "Set additional environment variables"
 
-# Run with a standard timeout
-log_info "Using standard timeout (600s)"
-timeout 600 ./setup.sh --update --non-interactive
+# Run with an extended timeout to accommodate slower builds
+log_info "Using extended timeout (1200s/20min)"
+timeout 1200 ./setup.sh --update --non-interactive
 UPDATE_EXIT_CODE=$?
 
 # Check the exit code
