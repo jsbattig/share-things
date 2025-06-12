@@ -76,6 +76,30 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       sourcemap: true,
+      // Optimize chunk splitting for better caching
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            // Separate vendor chunks for better caching
+            'react-vendor': ['react', 'react-dom'],
+            'chakra-vendor': ['@chakra-ui/react', '@emotion/react', '@emotion/styled'],
+            'icons': ['react-icons'],
+            'crypto': ['crypto-js'],
+            'socket': ['socket.io-client'],
+            'router': ['react-router-dom']
+          }
+        }
+      },
+      // Set chunk size warning limit
+      chunkSizeWarningLimit: 600,
+      // Enable tree shaking
+      minify: 'terser',
+      terserOptions: {
+        compress: {
+          drop_console: true, // Remove console logs in production
+          drop_debugger: true
+        }
+      }
     },
   };
 });

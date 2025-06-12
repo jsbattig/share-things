@@ -15,11 +15,8 @@ RUN npm config set registry https://linner.ddns.net:4873 && \
     npm config set progress false && \
     npm config set loglevel warn
 
-# Install dependencies with simplified retry logic
-RUN npm install --no-audit --no-fund || npm install --no-audit --no-fund
-
-# Install additional crypto dependencies
-RUN npm install crypto-js @types/crypto-js --no-audit --no-fund
+# Install ALL dependencies (including devDependencies) for building
+RUN npm ci --no-audit --no-fund || npm ci --no-audit --no-fund
 
 # Copy source code AND shared directory (needed for crypto imports)
 COPY client/ .
@@ -57,9 +54,8 @@ FROM linner.ddns.net:4443/docker.io.proxy/node:18-alpine
 # Create app directory
 WORKDIR /app
 
-# Install necessary dependencies
-WORKDIR /app
-COPY client/package.json /app/
+# Copy package files for production dependency installation
+COPY client/package*.json ./
 
 # Configure npm for better timeout handling in production stage and use local proxy registry
 RUN npm config set registry https://linner.ddns.net:4873 && \
@@ -70,11 +66,8 @@ RUN npm config set registry https://linner.ddns.net:4873 && \
     npm config set progress false && \
     npm config set loglevel warn
 
-# Install dependencies with simplified retry logic
-RUN npm install --no-audit --no-fund || npm install --no-audit --no-fund
-
-# Install additional dependencies needed for the static server
-RUN npm install express@4.19.2 compression@1.7.4 --no-audit --no-fund
+# Install ONLY production dependencies (skips devDependencies)
+RUN npm ci --only=production --no-audit --no-fund || npm ci --only=production --no-audit --no-fund
 
 # Copy built files from builder stage
 COPY --from=builder /app/dist /app/public
