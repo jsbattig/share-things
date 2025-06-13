@@ -767,26 +767,31 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
    * @returns Promise with success status
    */
   const renameContent = (sessionId: string, contentId: string, newName: string): Promise<{ success: boolean; error?: string }> => {
+    console.log(`[SocketContext] renameContent called: ${contentId} -> "${newName}" in session ${sessionId}`);
     return new Promise((resolve) => {
       if (socket && isConnected) {
         const token = localStorage.getItem('sessionToken');
         if (!token) {
+          console.error(`[SocketContext] No session token found`);
           resolve({ success: false, error: 'No session token' });
           return;
         }
 
+        console.log(`[SocketContext] Emitting rename-content event...`);
         socket.emit('rename-content', { 
           sessionId, 
           contentId, 
           newName, 
           token 
         }, (response: { success: boolean; error?: string }) => {
+          console.log(`[SocketContext] Server response:`, response);
           if (!response.success) {
-            console.error(`Failed to rename content:`, response.error);
+            console.error(`[SocketContext] Failed to rename content:`, response.error);
           }
           resolve(response);
         });
       } else {
+        console.error(`[SocketContext] Socket not connected: socket=${!!socket}, isConnected=${isConnected}`);
         resolve({ success: false, error: 'Socket not connected' });
       }
     });

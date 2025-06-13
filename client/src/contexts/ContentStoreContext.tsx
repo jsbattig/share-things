@@ -453,6 +453,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     // Handle content renamed by other clients
     const handleContentRenamed = (data: { contentId: string; newName: string; senderId: string; senderName: string }) => {
+      console.log(`[ContentStore] handleContentRenamed received:`, data);
       updateContentMetadata(data.contentId, { fileName: data.newName });
     };
 
@@ -1710,10 +1711,12 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   // Update content metadata method
   const updateContentMetadata = useCallback((contentId: string, metadata: Partial<ContentMetadata>): void => {
+    console.log(`[ContentStore] updateContentMetadata called for ${contentId}:`, metadata);
     setContents(prevContents => {
       const newContents = new Map(prevContents);
       const content = newContents.get(contentId);
       if (content) {
+        console.log(`[ContentStore] Before update - current metadata:`, content.metadata.metadata);
         const updatedContent = {
           ...content,
           metadata: {
@@ -1724,6 +1727,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
             }
           }
         };
+        console.log(`[ContentStore] After update - new metadata:`, updatedContent.metadata.metadata);
         newContents.set(contentId, updatedContent);
         contentsRef.current = newContents;
       }
@@ -1733,6 +1737,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
   // Rename content method
   const renameContent = useCallback(async (contentId: string, newName: string): Promise<void> => {
+    console.log(`[ContentStore] renameContent called for ${contentId} to "${newName}"`);
     if (!socket) {
       throw new Error('Socket not connected');
     }
@@ -1742,18 +1747,23 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       throw new Error('No session ID found');
     }
 
+    console.log(`[ContentStore] Sending rename request to server via socket...`);
     return new Promise((resolve, reject) => {
       socketContext.renameContent(sessionId, contentId, newName)
         .then((response) => {
+          console.log(`[ContentStore] Server response:`, response);
           if (response.success) {
+            console.log(`[ContentStore] Server rename successful, updating local metadata...`);
             // Update local state immediately for better UX
             updateContentMetadata(contentId, { fileName: newName });
             resolve();
           } else {
+            console.error(`[ContentStore] Server rename failed:`, response.error);
             reject(new Error(response.error || 'Failed to rename content'));
           }
         })
         .catch((error) => {
+          console.error(`[ContentStore] Socket rename error:`, error);
           reject(error);
         });
     });
