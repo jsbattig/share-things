@@ -180,19 +180,6 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       currentSessionId.current = sessionId;
       const passphrase = getSessionPassphrase();
       
-      // DIAGNOSTIC: Log the content received from server
-      console.log(`[ContentStoreContext] Received content from server:`, {
-        contentId: content.contentId,
-        rawContentType: content.contentType,
-        contentTypeType: typeof content.contentType,
-        isValidEnum: Object.values(ContentType).includes(content.contentType as ContentType),
-        availableEnumValues: Object.values(ContentType),
-        mimeType: content.metadata.mimeType,
-        fileName: content.metadata.fileName,
-        hasData: !!contentData,
-        isChunked: content.isChunked,
-        isLargeFile: content.isLargeFile
-      });
       
       // Add content to store
       if (contentData) {
@@ -771,13 +758,6 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         console.error(`[decryptAndReassemble] Content metadata not found for reassembly. This will cause "Unknown Sender" and missing metadata.`);
         console.error(`[decryptAndReassemble] Current contents map keys:`, Array.from(contents.keys()));
         
-        // Log all content IDs to help debug
-        console.log(`[decryptAndReassemble] All content IDs in store:`, Array.from(contents.keys()));
-        console.log(`[decryptAndReassemble] Looking for content ID: ${contentId}`);
-        
-        // DEBUG: Log the first few characters of each content ID to help identify partial matches
-        console.log(`[decryptAndReassemble] Content ID prefixes in store:`,
-          Array.from(contents.keys()).map(id => `${id.substring(0, 8)} (${id})`));
         
         // Continue with reassembly attempt - but we know metadata will be missing
       }
@@ -794,18 +774,15 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       if (!effectiveContent) {
         // Try to find content by matching the first part of the ID (in case of ID format changes)
         const shortId = contentId.substring(0, 8);
-        console.log(`[decryptAndReassemble] Trying to find content with ID starting with: ${shortId}`);
         
         // First try exact prefix match
         for (const [key, value] of contents.entries()) {
           if (key.startsWith(shortId) || contentId.startsWith(key.substring(0, 8))) {
-            console.log(`[decryptAndReassemble] Found potential matching content with ID: ${key}`);
             effectiveContent = value;
             
             // Update the content map to include an entry with the chunk's content ID
             // This ensures future lookups will succeed
             if (key !== contentId) {
-              console.log(`[decryptAndReassemble] Adding alias entry for content ID ${contentId} -> ${key}`);
               setContents(prev => {
                 const newContents = new Map(prev);
                 newContents.set(contentId, value);
@@ -819,7 +796,6 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         
         // If still not found, try to find the most recently added content
         if (!effectiveContent && contents.size > 0) {
-          console.log(`[decryptAndReassemble] No ID match found, trying to use most recent content`);
           
           // Convert to array and sort by timestamp (most recent first)
           const contentArray = Array.from(contents.entries())
@@ -828,12 +804,10 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
           
           if (contentArray.length > 0) {
             const mostRecent = contentArray[0];
-            console.log(`[decryptAndReassemble] Using most recent content with ID: ${mostRecent.key}, timestamp: ${new Date(mostRecent.timestamp).toISOString()}`);
             
             effectiveContent = mostRecent.value;
             
             // Add an alias entry for this content ID
-            console.log(`[decryptAndReassemble] Adding alias entry for content ID ${contentId} -> ${mostRecent.key}`);
             setContents(prev => {
               const newContents = new Map(prev);
               newContents.set(contentId, mostRecent.value);
@@ -845,7 +819,6 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       
       // If still not found, use fallback
       if (!effectiveContent) {
-        console.log(`[decryptAndReassemble] No matching content found, using fallback with default values`);
         
         // Try to extract sender info from localStorage if available
         const clientName = localStorage.getItem('clientName');
@@ -884,7 +857,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
               // If no image signature detected, keep as text
             }
           } catch (error) {
-            console.log(`[decryptAndReassemble] Could not detect content type from data, defaulting to text`);
+            // Silently handle content type detection errors
           }
         }
         
@@ -909,7 +882,6 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
           isComplete: false
         };
         
-        console.log(`[decryptAndReassemble] Created fallback content with sender: ${effectiveContent.metadata.senderName} (${effectiveContent.metadata.senderId}), detected type: ${defaultContentType}`);
       }
       
       // Log content info
@@ -923,9 +895,6 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
         } else {
           console.error(`[decryptAndReassemble] Missing chunk ${i} for content ${contentId}`);
           
-          // Log which chunks we do have
-          const availableChunks = Array.from(chunkStore.chunks.keys()).sort((a, b) => a - b);
-          console.log(`[decryptAndReassemble] Available chunks: [${availableChunks.join(', ')}]`);
           return;
         }
       }
@@ -974,7 +943,6 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
           });
           
           // Clean up and return early
-          console.log(`[decryptAndReassemble] Cleaning up after error for content ${contentId}`);
           
           // Remove from chunk stores to prevent memory leaks
           setChunkStores(prev => {
@@ -1079,7 +1047,6 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
           });
           
           // Use the content from the latest state instead of the variable from inside the state updater function
-          console.log(`[decryptAndReassemble] Image info:`, contents.get(contentId)?.metadata.metadata.imageInfo);
           
           // Double-check after a short delay to ensure content is marked as complete
           setTimeout(() => {
@@ -1198,7 +1165,6 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
               setTimeout(() => {
                 if (tempUrl) {
                   urlRegistry.revokeUrl(contentId, tempUrl);
-                  console.log(`[decryptAndReassemble] Revoked temporary URL`);
                 }
               }, 1000);
             } catch (urlError) {
@@ -1308,7 +1274,6 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // This prevents resource leaks when reassembly fails
       try {
         if (chunkStoresRef.current.has(contentId)) {
-          console.log(`[decryptAndReassemble] Cleaning up after error for content ${contentId}`);
           chunkStoresRef.current.delete(contentId);
           
           setChunkStores(prevChunkStores => {

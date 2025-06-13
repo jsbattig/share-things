@@ -149,7 +149,6 @@ export interface PassphraseFingerprint {
  */
 export async function deriveKeyFromPassphrase(passphrase: string): Promise<CryptoKey> {
   try {
-    console.log('Deriving key from passphrase using CryptoJS');
     
     // Use a fixed salt for deterministic key derivation
     const salt = CryptoJS.enc.Utf8.parse('ShareThings-Salt-2025');
@@ -182,7 +181,6 @@ export async function deriveKeyFromPassphrase(passphrase: string): Promise<Crypt
  */
 export async function generateFingerprint(passphrase: string): Promise<PassphraseFingerprint> {
   try {
-    console.log('Generating fingerprint using CryptoJS');
     
     // Use a fixed IV for fingerprint generation
     const fixedIv = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);

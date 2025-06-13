@@ -481,16 +481,6 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   // CRITICAL FIX: Ensure we use enum values, not string values from server
   let effectiveContentType: ContentType = metadata.contentType as ContentType;
   
-  // DIAGNOSTIC: Log the actual contentType value received from server
-  console.log(`[ContentItem] Processing content ${contentId}:`, {
-    rawContentType: metadata.contentType,
-    effectiveContentType,
-    contentTypeType: typeof metadata.contentType,
-    isValidEnum: Object.values(ContentType).includes(metadata.contentType as ContentType),
-    availableEnumValues: Object.values(ContentType),
-    mimeType: metadata.metadata.mimeType,
-    fileName: metadata.metadata.fileName
-  });
   
   // Check if this is actually text content based on the metadata or content
   if (metadata.contentType === ContentType.FILE || metadata.contentType === ContentType.IMAGE) {
