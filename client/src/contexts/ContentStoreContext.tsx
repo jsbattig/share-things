@@ -236,8 +236,24 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
               });
             } else {
               // Create new content entry with data
+              // Fix metadata structure: server sends metadata in content.metadata, we need to preserve the nested structure
+              const properMetadata = {
+                contentId: content.contentId,
+                senderId: content.senderId,
+                senderName: content.senderName,
+                contentType: content.contentType,
+                timestamp: content.timestamp,
+                metadata: content.metadata || {}, // This contains fileName and other metadata
+                isChunked: content.isChunked,
+                totalChunks: content.totalChunks,
+                totalSize: content.totalSize,
+                isPinned: content.isPinned,
+                isLargeFile: content.isLargeFile,
+                encryptionMetadata: content.encryptionMetadata
+              };
+              
               newContents.set(content.contentId, {
-                metadata: content,
+                metadata: properMetadata,
                 data: parsedData,
                 isComplete: true,
                 lastAccessed: new Date()
@@ -254,8 +270,24 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       } else {
         // If no data is provided, create content entry without data
         // This happens for chunked content or large files
+        // Fix metadata structure: server sends metadata in content.metadata, we need to preserve the nested structure
+        const properMetadata = {
+          contentId: content.contentId,
+          senderId: content.senderId,
+          senderName: content.senderName,
+          contentType: content.contentType,
+          timestamp: content.timestamp,
+          metadata: content.metadata || {}, // This contains fileName and other metadata
+          isChunked: content.isChunked,
+          totalChunks: content.totalChunks,
+          totalSize: content.totalSize,
+          isPinned: content.isPinned,
+          isLargeFile: content.isLargeFile,
+          encryptionMetadata: content.encryptionMetadata
+        };
+        
         const newContentEntry: ContentEntry = {
-          metadata: content,
+          metadata: properMetadata,
           // Large files are complete even though they're chunked (stored on server)
           // Regular chunked content is incomplete until chunks are reassembled
           isComplete: content.isLargeFile || !content.isChunked,
@@ -469,12 +501,24 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
 
     setContents(prevContents => {
       const newContents = new Map(prevContents);
+      // Fix metadata structure: ensure proper nesting for the ContentEntry
+      const properMetadata = {
+        contentId: content.contentId,
+        senderId: content.senderId,
+        senderName: content.senderName,
+        contentType: content.contentType,
+        timestamp: content.timestamp,
+        metadata: content.metadata || {}, // This contains fileName and other metadata
+        isChunked: content.isChunked,
+        totalChunks: content.totalChunks,
+        totalSize: content.totalSize,
+        isPinned: content.isPinned ?? false,
+        isLargeFile: content.isLargeFile,
+        encryptionMetadata: content.encryptionMetadata
+      };
+      
       const contentEntry: ContentEntry = {
-        metadata: {
-          ...content,
-          // Ensure isPinned field is always present, default to false if missing
-          isPinned: content.isPinned ?? false
-        },
+        metadata: properMetadata,
         data,
         lastAccessed: new Date(),
         // UNIFIED COMPLETION LOGIC: If we have data locally, it's complete
