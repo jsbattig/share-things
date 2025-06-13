@@ -1001,6 +1001,85 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
       }
     });
 
+    // Handle content renaming
+    socket.on('rename-content', async (data: { sessionId: string, contentId: string, newName: string, token: string }, callback?: SocketCallback) => {
+      try {
+        const { sessionId, contentId, newName, token } = data;
+        
+        console.log(`[Socket] Rename content request: ${contentId} to "${newName}" in session ${sessionId}`);
+        
+        // Verify client is in the session
+        if (socket.data.sessionId !== sessionId) {
+          console.error(`Client ${socket.id} tried to rename content in session ${sessionId} but is not in it`);
+          if (callback) {
+            callback({ success: false, error: 'Not in session' });
+          }
+          return;
+        }
+
+        // Validate session
+        const session = sessionManager.getSession(sessionId);
+        if (!session) {
+          console.error(`[Socket] Session not found: ${sessionId}`);
+          if (callback) {
+            callback({ success: false, error: 'Session not found' });
+          }
+          return;
+        }
+
+        // Validate session token
+        if (!token || !sessionManager.validateSessionToken(socket.id, token)) {
+          console.error(`[Socket] Invalid token for client ${socket.id} in session ${sessionId}`);
+          if (callback) {
+            callback({ success: false, error: 'Invalid session token' });
+          }
+          return;
+        }
+
+        // Validate new name
+        if (!newName || newName.trim().length === 0) {
+          if (callback) {
+            callback({ success: false, error: 'Name cannot be empty' });
+          }
+          return;
+        }
+
+        // Rename the content
+        const chunkStorage = await chunkStoragePromise;
+        const result = await chunkStorage.renameContent(contentId, newName.trim());
+        
+        if (result.success) {
+          // Get sender info for broadcasting
+          const client = session.clients.get(socket.id);
+          const senderName = client?.clientName || 'Unknown';
+          
+          // Notify all clients in the session
+          io.to(sessionId).emit('content-renamed', {
+            contentId: contentId,
+            newName: newName.trim(),
+            senderId: socket.id,
+            senderName: senderName
+          });
+          
+          console.log(`[Socket] Content renamed successfully: ${contentId} to "${newName}"`);
+          if (callback) {
+            callback({ success: true });
+          }
+        } else {
+          console.error(`[Socket] Error renaming content ${contentId}:`, result.error);
+          if (callback) {
+            callback({ success: false, error: result.error || 'Failed to rename content' });
+          }
+        }
+        
+      } catch (error) {
+        console.error(`[Socket] Error in rename-content handler:`, error);
+        if (callback) {
+          callback({ success: false, error: 'Internal server error' });
+        }
+      }
+    });
+
     // Handle disconnect
     socket.on('disconnect', async () => {
       console.log(`Client disconnected: ${socket.id}`);

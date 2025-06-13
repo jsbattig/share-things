@@ -364,6 +364,48 @@ export class MockFileSystemChunkStorage implements IChunkStorage {
     const metadata = this.contentMetadata.get(contentId);
     return metadata ? metadata.isLargeFile : false;
   }
+
+  async renameContent(contentId: string, newName: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.isInitialized) {
+      throw new Error('Storage not initialized');
+    }
+
+    try {
+      const metadata = this.contentMetadata.get(contentId);
+      if (!metadata) {
+        return { success: false, error: 'Content not found' };
+      }
+
+      // Parse current additional metadata or create new one
+      let additionalMetadata: Record<string, unknown> = {};
+      if (metadata.additionalMetadata) {
+        try {
+          additionalMetadata = JSON.parse(metadata.additionalMetadata);
+        } catch {
+          // If JSON parsing fails, start with empty metadata
+          additionalMetadata = {};
+        }
+      }
+
+      // Update filename in metadata
+      additionalMetadata.fileName = newName;
+
+      // Update the metadata with new additional metadata
+      const updatedMetadata = {
+        ...metadata,
+        additionalMetadata: JSON.stringify(additionalMetadata)
+      };
+
+      this.contentMetadata.set(contentId, updatedMetadata);
+
+      return { success: true };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error during rename' 
+      };
+    }
+  }
 }
 
 // Export the mock as the default export

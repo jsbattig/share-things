@@ -17,7 +17,9 @@ import {
   useToast,
   useClipboard,
   Image,
-  Spinner
+  Spinner,
+  Input,
+  useDisclosure
 } from '@chakra-ui/react';
 import {
   FaEllipsisV,
@@ -29,7 +31,8 @@ import {
   FaFileImage,
   FaUser,
   FaCheck,
-  FaExclamationTriangle
+  FaExclamationTriangle,
+  FaEdit
 } from 'react-icons/fa';
 import { RiPushpinFill, RiPushpinLine } from 'react-icons/ri';
 import { useContentStore, ContentType, SharedContent } from '../../contexts/ContentStoreContext';
@@ -395,7 +398,7 @@ interface ContentItemProps {
 const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   
   // Context
-  const { getContent, updateContentLastAccessed, removeContent, pinContent, unpinContent } = useContentStore();
+  const { getContent, updateContentLastAccessed, removeContent, pinContent, unpinContent, renameContent } = useContentStore();
   const { urlRegistry, chunkTrackingService } = useServices();
   
   // Toast
@@ -409,6 +412,11 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
   
   // Local state for UI rendering (triggers re-renders)
   const [isPinnedUI, setIsPinnedUI] = React.useState<boolean>(false);
+  
+  // Rename state
+  const { isOpen: isRenaming, onOpen: startRename, onClose: stopRename } = useDisclosure();
+  const [renameValue, setRenameValue] = React.useState<string>('');
+  const [isRenamingInProgress, setIsRenamingInProgress] = React.useState<boolean>(false);
   
   // Update pin status ref and UI state whenever content changes
   React.useEffect(() => {
@@ -469,6 +477,57 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
       });
     }
   }, [contentId, pinContent, unpinContent, toast]);
+
+  // Rename handlers
+  const handleStartRename = useCallback(() => {
+    const currentName = content?.metadata?.metadata?.fileName || '';
+    setRenameValue(currentName);
+    startRename();
+  }, [content?.metadata?.metadata?.fileName, startRename]);
+
+  const handleRenameSubmit = useCallback(async () => {
+    if (!renameValue.trim() || isRenamingInProgress) {
+      return;
+    }
+
+    setIsRenamingInProgress(true);
+    try {
+      await renameContent(contentId, renameValue.trim());
+      toast({
+        title: 'Content renamed',
+        status: 'success',
+        duration: 2000,
+        isClosable: true,
+      });
+      stopRename();
+    } catch (error) {
+      console.error('Rename failed:', error);
+      toast({
+        title: 'Rename failed',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    } finally {
+      setIsRenamingInProgress(false);
+    }
+  }, [contentId, renameValue, isRenamingInProgress, renameContent, toast, stopRename]);
+
+  const handleRenameCancel = useCallback(() => {
+    setRenameValue('');
+    stopRename();
+  }, [stopRename]);
+
+  const handleRenameKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleRenameSubmit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      handleRenameCancel();
+    }
+  }, [handleRenameSubmit, handleRenameCancel]);
   
   if (!content) {
     return null;
@@ -1057,40 +1116,72 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
         <Flex justify="space-between" align="center" mb={2}>
           <HStack spacing={2}>
             <Icon as={getContentIcon()} color="blue.500" />
-            <Text fontWeight="bold">
-              {(() => {
-                // CRITICAL FIX: Better filename handling for large files
-                // Try to get filename from metadata first
-                if (metadata.metadata.fileName) {
-                  return metadata.metadata.fileName;
-                }
-                
-                // For large files, check if we have any additional metadata stored
-                // The additionalMetadata is stored at the SharedContent level, not ContentMetadata level
-                if (metadata.isLargeFile && 'additionalMetadata' in metadata) {
-                  try {
-                    const additionalMeta = (metadata as SharedContent & { additionalMetadata?: string | object }).additionalMetadata;
-                    const parsed = typeof additionalMeta === 'string'
-                      ? JSON.parse(additionalMeta)
-                      : additionalMeta;
-                    if (parsed.fileName) {
-                      return parsed.fileName;
-                    }
-                  } catch (e) {
-                    // Ignore parsing errors
+            {isRenaming ? (
+              <HStack spacing={2}>
+                <Input
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={handleRenameKeyDown}
+                  size="sm"
+                  width="200px"
+                  isDisabled={isRenamingInProgress}
+                  autoFocus
+                  onBlur={handleRenameCancel}
+                />
+                <Button
+                  size="sm"
+                  colorScheme="blue"
+                  onClick={handleRenameSubmit}
+                  isLoading={isRenamingInProgress}
+                  isDisabled={!renameValue.trim()}
+                >
+                  Save
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleRenameCancel}
+                  isDisabled={isRenamingInProgress}
+                >
+                  Cancel
+                </Button>
+              </HStack>
+            ) : (
+              <Text fontWeight="bold" cursor="pointer" onDoubleClick={handleStartRename}>
+                {(() => {
+                  // CRITICAL FIX: Better filename handling for large files
+                  // Try to get filename from metadata first
+                  if (metadata.metadata.fileName) {
+                    return metadata.metadata.fileName;
                   }
-                }
-                
-                // Fallback based on content type
-                if (effectiveContentType === ContentType.TEXT) {
-                  return 'Text content';
-                } else if (effectiveContentType === ContentType.IMAGE) {
-                  return `Image-${contentId.substring(0, 8)}`;
-                } else {
-                  return 'File';
-                }
-              })()}
-            </Text>
+                  
+                  // For large files, check if we have any additional metadata stored
+                  // The additionalMetadata is stored at the SharedContent level, not ContentMetadata level
+                  if (metadata.isLargeFile && 'additionalMetadata' in metadata) {
+                    try {
+                      const additionalMeta = (metadata as SharedContent & { additionalMetadata?: string | object }).additionalMetadata;
+                      const parsed = typeof additionalMeta === 'string'
+                        ? JSON.parse(additionalMeta)
+                        : additionalMeta;
+                      if (parsed.fileName) {
+                        return parsed.fileName;
+                      }
+                    } catch (e) {
+                      // Ignore parsing errors
+                    }
+                  }
+                  
+                  // Fallback based on content type
+                  if (effectiveContentType === ContentType.TEXT) {
+                    return 'Text content';
+                  } else if (effectiveContentType === ContentType.IMAGE) {
+                    return `Image-${contentId.substring(0, 8)}`;
+                  } else {
+                    return 'File';
+                  }
+                })()}
+              </Text>
+            )}
             {!content.isComplete && (
               <Badge colorScheme="yellow">Loading</Badge>
             )}
@@ -1141,6 +1232,12 @@ const ContentItem: React.FC<ContentItemProps> = React.memo(({ contentId }) => {
                 <Icon as={FaEllipsisV} />
               </MenuButton>
               <MenuList zIndex={9999} boxShadow="lg" bg="white" border="1px solid" borderColor="gray.200">
+                <MenuItem
+                  icon={<Icon as={FaEdit} />}
+                  onClick={handleStartRename}
+                >
+                  Rename
+                </MenuItem>
                 <MenuItem
                   icon={<Icon as={hasCopied ? FaCheck : FaCopy} />}
                   onClick={copyContent}

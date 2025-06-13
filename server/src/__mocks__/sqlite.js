@@ -1,7 +1,7 @@
 // Create a mock database instance with all required methods
 const createMockDatabase = () => ({
   exec: jest.fn().mockResolvedValue(undefined),
-  run: jest.fn().mockImplementation((sql, paramsOrCallback, callback) => {
+  run: jest.fn().mockImplementation(function(sql, paramsOrCallback, callback) {
     // Handle both (sql, params, callback) and (sql, callback) patterns
     const actualCallback = typeof paramsOrCallback === 'function' ? paramsOrCallback : callback;
     

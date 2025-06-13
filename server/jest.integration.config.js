@@ -5,7 +5,7 @@ module.exports = {
   testEnvironment: 'node',
   testTimeout: 30000, // Global test timeout (30 seconds)
   
-  // Module resolution
+  // Module resolution - NO SQLITE MOCK for integration tests
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^\\.\/database$': '<rootDir>/src/__mocks__/database',
@@ -16,7 +16,7 @@ module.exports = {
     // Try container path first, then local path
     '^../../../shared/crypto/(.*)$': ['<rootDir>/shared/crypto/$1', '<rootDir>/../shared/crypto/$1'],
     '^crypto-js$': '<rootDir>/../shared/__mocks__/crypto-js',
-    '^sqlite3$': '<rootDir>/src/__mocks__/sqlite.js',
+    // NOTE: NO sqlite3 mock mapping for integration tests - use real SQLite
   },
   
   // Transform settings
@@ -37,8 +37,7 @@ module.exports = {
     '/node_modules/(?!(chalk|ansi-styles|strip-ansi|ansi-regex|supports-color)/)',
   ],
   testPathIgnorePatterns: [
-    '/node_modules/',
-    '.*/__tests__/integration/.*' // Exclude integration tests - use jest.integration.config.js instead
+    '/node_modules/'
   ],
   
   // Setup files
@@ -48,29 +47,13 @@ module.exports = {
   clearMocks: true,
   resetMocks: true,
   restoreMocks: true,
-  resetModules: true,
+  resetModules: false, // Don't reset modules for integration tests
   
-  // Test matching
-  testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.e2e.test.ts'],
+  // Test matching - ONLY integration tests
+  testMatch: ['**/__tests__/integration/*.test.ts'],
   
   // Coverage
-  collectCoverage: process.env.NODE_ENV !== 'test',
-  collectCoverageFrom: [
-    'src/**/*.ts',
-    '!src/**/*.d.ts',
-    '!src/**/__tests__/**',
-    '!src/__mocks__/**',
-  ],
-  coverageDirectory: 'coverage',
-  coverageReporters: ['text', 'lcov'],
-  
-  // Watch plugins for better test watching (only in development)
-  ...(process.env.CI || process.env.NODE_ENV === 'test' ? {} : {
-    watchPlugins: [
-      'jest-watch-typeahead/filename',
-      'jest-watch-typeahead/testname',
-    ],
-  }),
+  collectCoverage: false, // Disable coverage for integration tests
   
   // Node.js options for memory management
   maxWorkers: 1, // Use single worker to avoid memory conflicts

@@ -70,6 +70,7 @@ interface SocketContextType {
   ensureConnected: (sessionId: string) => Promise<boolean>;
   removeContent: (sessionId: string, contentId: string) => Promise<{ success: boolean; error?: string }>;
   clearAllContent: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+  renameContent: (sessionId: string, contentId: string, newName: string) => Promise<{ success: boolean; error?: string }>;
   isJoining: boolean;
 }
 
@@ -758,6 +759,39 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
 
+  /**
+   * Rename content in the session
+   * @param sessionId Session ID
+   * @param contentId Content ID to rename
+   * @param newName New name for the content
+   * @returns Promise with success status
+   */
+  const renameContent = (sessionId: string, contentId: string, newName: string): Promise<{ success: boolean; error?: string }> => {
+    return new Promise((resolve) => {
+      if (socket && isConnected) {
+        const token = localStorage.getItem('sessionToken');
+        if (!token) {
+          resolve({ success: false, error: 'No session token' });
+          return;
+        }
+
+        socket.emit('rename-content', { 
+          sessionId, 
+          contentId, 
+          newName, 
+          token 
+        }, (response: { success: boolean; error?: string }) => {
+          if (!response.success) {
+            console.error(`Failed to rename content:`, response.error);
+          }
+          resolve(response);
+        });
+      } else {
+        resolve({ success: false, error: 'Socket not connected' });
+      }
+    });
+  };
+
   // Context value
   const value: SocketContextType = {
     socket,
@@ -773,6 +807,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     ensureConnected,
     removeContent,
     clearAllContent,
+    renameContent,
     isJoining: joinState.current.isJoining
   };
 

@@ -12,6 +12,7 @@ import { v4 as uuidv4 } from 'uuid';
 export class TestOrchestrator {
   private serverController: ServerController;
   private clientEmulators: ClientEmulator[] = [];
+  private sharedContentStore: Map<string, Map<string, any>> = new Map(); // sessionId -> contentId -> content
   
   /**
    * Creates a new test orchestrator
@@ -79,6 +80,95 @@ export class TestOrchestrator {
    */
   getClient2(): ClientEmulator {
     return this.clientEmulators[1];
+  }
+
+  /**
+   * Creates or returns a client emulator with the given name
+   */
+  createClient(clientName: string): ClientEmulator {
+    // Check if we already have a client with this name
+    let client = this.clientEmulators.find(c => c.clientName === clientName);
+    
+    if (!client) {
+      console.log(`Creating new client emulator: ${clientName}`);
+      client = new ClientEmulator(clientName);
+      this.clientEmulators.push(client);
+      
+      // If server is already running, connect the new client
+      if (this.serverController) {
+        const serverUrl = this.serverController.getServerUrl();
+        // Use synchronous connect for immediate availability
+        client.connect(serverUrl);
+      }
+    } else {
+      console.log(`Reusing existing client emulator: ${clientName}`);
+    }
+    
+    // Always set orchestrator reference (for both new and existing clients)
+    client.setOrchestrator(this);
+    
+    return client;
+  }
+
+  /**
+   * Shares content across all clients in a session
+   * @param sessionId Session ID
+   * @param contentId Content ID
+   * @param content Content object
+   */
+  shareContentAcrossClients(sessionId: string, contentId: string, content: any): void {
+    console.log(`TestOrchestrator: Sharing content ${contentId} across all clients in session ${sessionId}`);
+    
+    // Store in shared content store
+    if (!this.sharedContentStore.has(sessionId)) {
+      this.sharedContentStore.set(sessionId, new Map());
+    }
+    this.sharedContentStore.get(sessionId)!.set(contentId, content);
+    
+    // Add content to all clients in the session
+    for (const client of this.clientEmulators) {
+      if (client.sessionId === sessionId) {
+        client.contentStore.set(contentId, content);
+        console.log(`TestOrchestrator: Added content ${contentId} to client ${client.clientName}`);
+      }
+    }
+  }
+
+  /**
+   * Updates content across all clients in a session
+   * @param sessionId Session ID
+   * @param contentId Content ID
+   * @param updatedContent Updated content object
+   */
+  updateContentAcrossClients(sessionId: string, contentId: string, updatedContent: any): void {
+    console.log(`TestOrchestrator: Updating content ${contentId} across all clients in session ${sessionId}`);
+    
+    // Update in shared content store
+    if (this.sharedContentStore.has(sessionId)) {
+      this.sharedContentStore.get(sessionId)!.set(contentId, updatedContent);
+    }
+    
+    // Update content in all clients in the session
+    for (const client of this.clientEmulators) {
+      if (client['sessionId'] === sessionId) {
+        client['contentStore'].set(contentId, updatedContent);
+        console.log(`TestOrchestrator: Updated content ${contentId} in client ${client.clientName}`);
+      }
+    }
+  }
+
+  /**
+   * Gets shared content for a session
+   * @param sessionId Session ID
+   * @param contentId Content ID
+   * @returns Content object or null
+   */
+  getSharedContent(sessionId: string, contentId: string): any | null {
+    const sessionContent = this.sharedContentStore.get(sessionId);
+    if (sessionContent) {
+      return sessionContent.get(contentId) || null;
+    }
+    return null;
   }
   
   /**

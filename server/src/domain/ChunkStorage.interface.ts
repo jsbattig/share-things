@@ -216,6 +216,14 @@ export interface IChunkStorage {
   getPinnedContentCount(sessionId: string): Promise<number>;
 
   /**
+   * Rename a content item
+   * @param contentId ID of the content to rename
+   * @param newName New name for the content
+   * @returns Success status and details
+   */
+  renameContent(contentId: string, newName: string): Promise<{ success: boolean; error?: string }>;
+
+  /**
    * Stream content chunks for download
    * @param contentId ID of the content to stream
    * @param onChunk Callback for each chunk

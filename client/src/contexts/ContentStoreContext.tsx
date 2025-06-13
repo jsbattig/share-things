@@ -107,6 +107,8 @@ interface ContentStoreContextType {
   pinContent: (contentId: string) => Promise<void>;
   unpinContent: (contentId: string) => Promise<void>;
   updateContentPinStatus: (contentId: string, isPinned: boolean) => void;
+  renameContent: (contentId: string, newName: string) => Promise<void>;
+  updateContentMetadata: (contentId: string, metadata: Partial<ContentMetadata>) => void;
 }
 
 // Create context
@@ -417,6 +419,11 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       // Optionally show toast notification here if needed
     };
 
+    // Handle content renamed by other clients
+    const handleContentRenamed = (data: { contentId: string; newName: string; senderId: string; senderName: string }) => {
+      updateContentMetadata(data.contentId, { fileName: data.newName });
+    };
+
     // Add event listeners
     socket.on('content', handleContent);
     socket.on('chunk', handleChunk);
@@ -427,6 +434,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     socket.on('content-unpinned', handleContentUnpinned);
     socket.on('pin-error', handlePinError);
     socket.on('unpin-error', handleUnpinError);
+    socket.on('content-renamed', handleContentRenamed);
 
     // Clean up on unmount
     return () => {
@@ -439,6 +447,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       socket.off('content-unpinned', handleContentUnpinned);
       socket.off('pin-error', handlePinError);
       socket.off('unpin-error', handleUnpinError);
+      socket.off('content-renamed', handleContentRenamed);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket]);
@@ -1655,6 +1664,57 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     });
   }, [socket, updateContentPinStatus]);
 
+  // Update content metadata method
+  const updateContentMetadata = useCallback((contentId: string, metadata: Partial<ContentMetadata>): void => {
+    setContents(prevContents => {
+      const newContents = new Map(prevContents);
+      const content = newContents.get(contentId);
+      if (content) {
+        const updatedContent = {
+          ...content,
+          metadata: {
+            ...content.metadata,
+            metadata: {
+              ...content.metadata.metadata,
+              ...metadata
+            }
+          }
+        };
+        newContents.set(contentId, updatedContent);
+        contentsRef.current = newContents;
+      }
+      return newContents;
+    });
+  }, []);
+
+  // Rename content method
+  const renameContent = useCallback(async (contentId: string, newName: string): Promise<void> => {
+    if (!socket) {
+      throw new Error('Socket not connected');
+    }
+
+    const sessionId = localStorage.getItem('sessionId');
+    if (!sessionId) {
+      throw new Error('No session ID found');
+    }
+
+    return new Promise((resolve, reject) => {
+      socketContext.renameContent(sessionId, contentId, newName)
+        .then((response) => {
+          if (response.success) {
+            // Update local state immediately for better UX
+            updateContentMetadata(contentId, { fileName: newName });
+            resolve();
+          } else {
+            reject(new Error(response.error || 'Failed to rename content'));
+          }
+        })
+        .catch((error) => {
+          reject(error);
+        });
+    });
+  }, [socket, socketContext, updateContentMetadata]);
+
   // Context value - properly memoized to prevent unnecessary re-renders
   const value: ContentStoreContextType = React.useMemo(() => ({
     contents,
@@ -1675,7 +1735,9 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     loadMoreContent,
     pinContent,
     unpinContent,
-    updateContentPinStatus
+    updateContentPinStatus,
+    renameContent,
+    updateContentMetadata
   }), [
     contents,
     paginationInfo,
@@ -1695,7 +1757,9 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     loadMoreContent,
     pinContent,
     unpinContent,
-    updateContentPinStatus
+    updateContentPinStatus,
+    renameContent,
+    updateContentMetadata
   ]);
 
   // Set up periodic cleanup for orphaned chunks and URLs

@@ -354,6 +354,52 @@ export class FileSystemChunkStorage implements IChunkStorage {
     );
   }
 
+  async renameContent(contentId: string, newName: string): Promise<{ success: boolean; error?: string }> {
+    if (!this.isInitialized || !this.db) {
+      throw new Error('Storage not initialized');
+    }
+
+    try {
+      // Get current metadata
+      const currentRow = await this.db.get<{ additional_metadata: string | null }>(
+        'SELECT additional_metadata FROM content WHERE id = ?',
+        contentId
+      );
+
+      if (!currentRow) {
+        return { success: false, error: 'Content not found' };
+      }
+
+      // Parse current metadata or create new one
+      let metadata: Record<string, unknown> = {};
+      if (currentRow.additional_metadata) {
+        try {
+          metadata = JSON.parse(currentRow.additional_metadata);
+        } catch {
+          // If JSON parsing fails, start with empty metadata
+          metadata = {};
+        }
+      }
+
+      // Update filename in metadata
+      metadata.fileName = newName;
+
+      // Save updated metadata
+      await this.db.run(
+        'UPDATE content SET additional_metadata = ? WHERE id = ?',
+        JSON.stringify(metadata),
+        contentId
+      );
+
+      return { success: true };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Unknown error during rename' 
+      };
+    }
+  }
+
   async fixLargeFileMetadata(): Promise<void> {
     if (!this.isInitialized || !this.db) {
       throw new Error('Storage not initialized');
