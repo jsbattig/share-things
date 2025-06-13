@@ -56,7 +56,6 @@ show_help() {
     echo "  --api-port=VALUE      Set the API port"
     echo "  --https               Use HTTPS instead of HTTP"
     echo "  --expose-ports        Expose container ports to host"
-    echo "  --production          Run in production mode (no volume mounts)"
     echo ""
     echo "Other Options:"
     echo "  --non-interactive     Run in non-interactive mode (use defaults or provided values)"

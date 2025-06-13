@@ -1,5 +1,6 @@
 /* eslint-disable react/display-name, react/prop-types */
 import React, { useState, useMemo, useCallback } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   Box,
   Flex,
@@ -15,7 +16,21 @@ import {
   MenuList,
   MenuItem,
   useToast,
-  Spinner
+  Spinner,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalFooter,
+  ModalBody,
+  ModalCloseButton,
+  useDisclosure,
+  Input,
+  FormControl,
+  FormLabel,
+  FormErrorMessage,
+  Alert,
+  AlertIcon
 } from '@chakra-ui/react';
 import {
   FaSortAmountDown,
@@ -25,18 +40,28 @@ import {
   FaFileAlt
 } from 'react-icons/fa';
 import { useContentStore } from '../../contexts/ContentStoreContext';
+import { useSocket } from '../../contexts/SocketContext';
 import ContentItem from './ContentItem';
 
 /**
  * Content list component
  */
 const ContentList: React.FC = React.memo(() => {
+  // Get session ID from URL
+  const { sessionId } = useParams<{ sessionId: string }>();
+  
   // State
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [confirmationInput, setConfirmationInput] = useState<string>('');
+  const [isClearingAll, setIsClearingAll] = useState<boolean>(false);
+  
+  // Modal state
+  const { isOpen, onOpen, onClose } = useDisclosure();
   
   // Context
-  const { getContentList, paginationInfo, loadMoreContent } = useContentStore();
+  const { getContentList, paginationInfo, loadMoreContent, clearContents } = useContentStore();
+  const { clearAllContent: clearAllContentSocket } = useSocket();
   
   // Toast
   const toast = useToast();
@@ -69,24 +94,73 @@ const ContentList: React.FC = React.memo(() => {
   }, [sortOrder]);
   
   /**
-   * Clears all content - memoized callback
+   * Opens the confirmation dialog for clearing all content
    */
   const clearAllContent = useCallback(() => {
-    // Show loading state while clearing content
-    setIsLoading(true);
+    setConfirmationInput('');
+    onOpen();
+  }, [onOpen]);
+
+  /**
+   * Handles the confirmation and performs the clear all operation
+   */
+  const handleConfirmClearAll = useCallback(async () => {
+    if (!sessionId) return;
     
-    // This would typically clear all content
-    toast({
-      title: 'Not implemented',
-      description: 'Clear all content functionality is not implemented yet',
-      status: 'info',
-      duration: 3000,
-      isClosable: true
-    });
+    // Check if the input matches the session name exactly
+    if (confirmationInput.trim() !== sessionId.trim()) {
+      toast({
+        title: 'Session name mismatch',
+        description: 'Please enter the exact session name to confirm.',
+        status: 'error',
+        duration: 3000,
+        isClosable: true
+      });
+      return;
+    }
+
+    setIsClearingAll(true);
     
-    // Reset loading state
-    setIsLoading(false);
-  }, [toast]);
+    try {
+      // Call the socket method to clear all content on the server
+      // This will also broadcast to all connected clients
+      if (clearAllContentSocket) {
+        await clearAllContentSocket(sessionId);
+      }
+      
+      // Clear local content store
+      clearContents();
+      
+      toast({
+        title: 'Content cleared',
+        description: 'All content has been successfully cleared from the session.',
+        status: 'success',
+        duration: 3000,
+        isClosable: true
+      });
+      
+      onClose();
+    } catch (error) {
+      toast({
+        title: 'Error clearing content',
+        description: 'Failed to clear all content. Please try again.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true
+      });
+    } finally {
+      setIsClearingAll(false);
+      setConfirmationInput('');
+    }
+  }, [sessionId, confirmationInput, clearAllContentSocket, clearContents, toast, onClose]);
+
+  /**
+   * Handles closing the confirmation dialog
+   */
+  const handleCloseConfirmation = useCallback(() => {
+    setConfirmationInput('');
+    onClose();
+  }, [onClose]);
 
   /**
    * Handle load more with loading state
@@ -204,6 +278,52 @@ const ContentList: React.FC = React.memo(() => {
           )}
         </Box>
       )}
+
+      {/* Clear All Content Confirmation Modal */}
+      <Modal isOpen={isOpen} onClose={handleCloseConfirmation} isCentered>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Clear All Content</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody pb={6}>
+            <Alert status="warning" mb={4}>
+              <AlertIcon />
+              This action will permanently delete all content from this session and cannot be undone.
+            </Alert>
+            
+            <FormControl isInvalid={confirmationInput.trim() !== '' && confirmationInput.trim() !== sessionId?.trim()}>
+              <FormLabel>
+                To confirm, type the session name: <strong>{sessionId}</strong>
+              </FormLabel>
+              <Input
+                value={confirmationInput}
+                onChange={(e) => setConfirmationInput(e.target.value)}
+                placeholder={`Enter "${sessionId}" to confirm`}
+                isDisabled={isClearingAll}
+              />
+              <FormErrorMessage>
+                Session name does not match. Please enter &quot;{sessionId}&quot; exactly.
+              </FormErrorMessage>
+            </FormControl>
+          </ModalBody>
+
+          <ModalFooter>
+            <Button
+              colorScheme="red"
+              mr={3}
+              onClick={handleConfirmClearAll}
+              isLoading={isClearingAll}
+              loadingText="Clearing..."
+              isDisabled={confirmationInput.trim() !== sessionId?.trim()}
+            >
+              Clear All Content
+            </Button>
+            <Button variant="ghost" onClick={handleCloseConfirmation} isDisabled={isClearingAll}>
+              Cancel
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Box>
   );
 });

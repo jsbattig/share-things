@@ -10,7 +10,7 @@ if (typeof (global as any).XMLHttpRequest === 'undefined') {
 import 'blob-polyfill';
 
 // Import unified crypto system for Node.js environment
-import '/shared/crypto/polyfills';
+import '../../../shared/crypto/polyfills';
 
 // Ensure CryptoJS is available globally
 if (!(global as any).CryptoJS && !(globalThis as any).CryptoJS) {

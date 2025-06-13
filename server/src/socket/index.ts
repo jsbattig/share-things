@@ -686,6 +686,60 @@ export function setupSocketHandlers(io: Server, sessionManager: SessionManager, 
       }
     });
 
+    // Handle clear all content
+    socket.on('clear-all-content', async (data: { sessionId: string }, callback?: SocketCallback) => {
+      try {
+        const { sessionId } = data;
+        
+        console.log(`Client ${socket.id} requesting to clear all content from session ${sessionId}`);
+
+        // Verify client is in the session
+        if (socket.data.sessionId !== sessionId) {
+          console.error(`Client ${socket.id} tried to clear all content from session ${sessionId} but is not in it`);
+          if (callback) {
+            callback({ success: false, error: 'Not in session' });
+          }
+          return;
+        }
+
+        const session = sessionManager.getSession(sessionId);
+        if (!session) {
+          console.error(`Session ${sessionId} not found`);
+          if (callback) {
+            callback({ success: false, error: 'Session not found' });
+          }
+          return;
+        }
+
+        try {
+          const chunkStorage = await chunkStoragePromise;
+          const result = await chunkStorage.cleanupAllSessionContent(sessionId);
+          
+          // Notify all clients in the session (including the sender)
+          io.to(sessionId).emit('all-content-cleared', {
+            sessionId,
+            clearedBy: socket.id
+          });
+
+          if (callback) {
+            callback({ success: true });
+          }
+
+          console.log(`All content cleared from session ${sessionId} by client ${socket.id}. Removed ${result.removed.length} items.`);
+        } catch (storageError) {
+          console.error(`Error clearing all content from session ${sessionId}:`, storageError);
+          if (callback) {
+            callback({ success: false, error: 'Storage error' });
+          }
+        }
+      } catch (error) {
+        console.error('Error in clear-all-content handler:', error);
+        if (callback) {
+          callback({ success: false, error: 'Internal server error' });
+        }
+      }
+    });
+
     // Handle ping for session validation
     socket.on('ping', async (data: { sessionId: string }, callback?: (response: { valid: boolean, error?: string }) => void) => {
       try {

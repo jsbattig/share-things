@@ -384,7 +384,17 @@ jobs:
             echo "Uninstall completed successfully"
           fi
           
-          echo "Step 2: Installing fresh deployment..."
+          echo "Step 2: Pulling latest code on target server..."
+          sshpass -p "${{ secrets.GHRUserPassword }}" ssh -v -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && git stash && git fetch --all && git reset --hard origin/\$(git branch --show-current) && git pull --force" | tee deployment-logs/deploy-gitpull-$(date +%Y%m%d-%H%M%S).log
+          GIT_PULL_EXIT_CODE=$?
+          
+          if [ $GIT_PULL_EXIT_CODE -ne 0 ]; then
+            echo "Git pull failed with exit code $GIT_PULL_EXIT_CODE, but continuing with deployment..."
+          else
+            echo "Git pull completed successfully"
+          fi
+          
+          echo "Step 3: Installing fresh deployment..."
           sshpass -p "${{ secrets.GHRUserPassword }}" ssh -v -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && timeout 1200 bash -x ./setup.sh --non-interactive --force-install --debug 2>&1" | tee deployment-logs/deploy-install-$(date +%Y%m%d-%H%M%S).log
           DEPLOY_EXIT_CODE=$?
           

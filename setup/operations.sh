@@ -56,23 +56,11 @@ perform_installation() {
         podman port share-things-frontend
         podman port share-things-backend
         
-        # Display mode information
-        if [ "$PRODUCTION_MODE" == "true" ]; then
-            echo ""
-            echo -e "${GREEN}Running in production mode (no volume mounts).${NC}"
-            echo "This means the containers are using the built files from the Dockerfile."
-            echo "Any changes to the source code will require rebuilding the containers."
-        else
-            echo ""
-            echo -e "${YELLOW}Running in development mode (with volume mounts).${NC}"
-            echo "This means the containers are using the local source code."
-            echo "Changes to the source code will be reflected in the containers."
-            echo ""
-            echo -e "${YELLOW}Note for Podman users:${NC}"
-            echo "If you encounter errors like 'Cannot find module '/app/dist/index.js'', try:"
-            echo "1. Stop the containers: podman-compose down"
-            echo "2. Restart in production mode: ./setup.sh --production"
-        fi
+        # Display deployment information
+        echo ""
+        echo -e "${GREEN}Running in production-optimized mode.${NC}"
+        echo "Containers use optimized builds from Dockerfiles with data persistence via volume mounts."
+        echo "The application data persists across container restarts and updates."
     else
         echo "The containers are running, but ports are not exposed to the host."
         echo "Make sure your HAProxy is properly configured to route traffic to the containers."

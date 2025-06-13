@@ -4,6 +4,8 @@
 
 ShareThings uses end-to-end encryption to ensure that all shared content is secure and private. The encryption is implemented entirely on the client side, ensuring that the server never has access to unencrypted content or encryption keys.
 
+The system implements a **unified crypto architecture** that works seamlessly across browser and Node.js environments through a shared abstraction layer located in `shared/crypto/`.
+
 This document outlines the encryption approach, key derivation, and implementation details based on the current implementation.
 
 ## Encryption Flow
@@ -39,22 +41,49 @@ graph TD
     P --> Q[Decrypted Content]
 ```
 
-## Implementation Approach
+## Unified Crypto Architecture
 
-The current implementation uses CryptoJS for encryption operations, which provides compatibility with non-HTTPS environments. This is different from the Web Crypto API approach that might be used in other contexts.
+The implementation uses a **unified crypto abstraction** that provides consistent APIs across different environments:
+
+### Architecture Components
 
 ```typescript
-// Import CryptoJS
-import * as CryptoJS from 'crypto-js';
-
-// Define interface for our crypto key
-interface CryptoKey {
-  key: CryptoJS.lib.WordArray;
-  algorithm: string;
-  usages: string[];
-  type: string;
-  extractable: boolean;
+// shared/crypto/types.ts - Common interfaces
+export interface CryptoInterface {
+  deriveKeyFromPassphrase(passphrase: string): Promise<CryptoKey>;
+  encryptData(key: CryptoKey, data: ArrayBuffer | Uint8Array, passphrase: string): Promise<EncryptionResult>;
+  decryptData(key: CryptoKey, encryptedData: ArrayBuffer | Uint8Array, iv: Uint8Array): Promise<ArrayBuffer>;
+  generateFingerprint(passphrase: string): Promise<PassphraseFingerprint>;
 }
+```
+
+### Environment-Specific Implementations
+
+**Browser Implementation** (`shared/crypto/browser.ts`):
+- Uses CryptoJS for broad browser compatibility
+- Works in non-HTTPS environments
+- Client-side encryption operations
+
+**Node.js Implementation** (`shared/crypto/node.ts`):
+- Uses Node.js native crypto module
+- Server-side testing and validation
+- High-performance operations
+
+**Polyfills** (`shared/crypto/polyfills.ts`):
+- Environment detection and setup
+- Consistent global crypto availability
+- Fallback implementations
+
+### Usage Pattern
+
+```typescript
+// Import from unified crypto system
+import { getCrypto } from '../../shared/crypto';
+
+// Works identically in browser and Node.js
+const crypto = await getCrypto();
+const key = await crypto.deriveKeyFromPassphrase(passphrase);
+const result = await crypto.encryptData(key, data, passphrase);
 ```
 
 ## Key Derivation

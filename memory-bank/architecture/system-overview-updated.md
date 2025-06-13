@@ -1,11 +1,14 @@
-# ShareThings System Overview - Updated (2025-05-28)
+# ShareThings System Overview - Updated (2025-06-13)
 
 ## Current System Status
 - ✅ **All linting issues resolved** (30+ fixes across client and server)
-- ✅ **All tests passing** (52 server tests + 17 client tests)
+- ✅ **All tests passing** (69 total: 52 server + 17 client tests)
 - ✅ **Performance optimizations implemented** (ContentItem re-rendering fix)
 - ✅ **Server-side storage fully operational** (SQLite + FileSystem)
 - ✅ **Session persistence working** (content survives server restarts)
+- ✅ **Clear All Content feature implemented** (with session name confirmation)
+- ✅ **Improved CI/CD pipeline** (fixed git pull issue in deployment)
+- ✅ **Unified crypto system** (browser/Node.js compatibility)
 - ✅ **Build and deployment ready** (all scripts passing)
 
 ## Architecture Overview
@@ -46,7 +49,26 @@
 
 ## Recent Major Improvements
 
-### 1. Performance Optimization (2025-05-28)
+### 1. Clear All Content Feature (2025-06-13)
+**Problem**: No way to clear all shared content from a session
+**Solution**: Implemented comprehensive clear all feature with session name confirmation
+**Components**:
+- Client-side confirmation dialog requiring exact session name input
+- Server-side `clear-all-content` socket handler using existing `cleanupAllSessionContent()` 
+- Broadcasting to all connected clients via `all-content-cleared` event
+- Complete cleanup of disk storage, database, and client cache
+**Impact**: Users can now safely clear all session content with proper validation
+
+### 2. CI/CD Pipeline Improvement (2025-06-13)
+**Problem**: GitHub Actions deployment succeeded but target server had stale code
+**Solution**: Added explicit git pull step in deployment workflow
+**Changes**:
+- Added Step 2 in `.github/workflows/share-things-ci-cd.yml` to pull latest code
+- Deployment now: uninstall → git pull → fresh install
+- Removed unused `pull_latest_code()` function from setup scripts
+**Impact**: Deployments now properly sync code between CI and production server
+
+### 3. Performance Optimization (2025-05-28)
 **Problem**: ContentItems were re-rendering excessively when new content was added
 **Solution**: Optimized `useCallback` dependencies in ContentStoreContext
 **Impact**: Significant UI responsiveness improvement, eliminated unnecessary re-renders
@@ -63,7 +85,17 @@
 - Efficient chunk-based storage for large files
 - Encrypted content with client-side keys
 
-### 3. Comprehensive Testing Suite
+### 4. Unified Crypto System (2025-06-13)
+**Problem**: Inconsistent crypto implementations between browser and Node.js environments
+**Solution**: Implemented shared crypto abstraction in `shared/crypto/`
+**Components**:
+- `types.ts`: Common interfaces for all crypto operations
+- `browser.ts`: CryptoJS implementation for client-side
+- `node.ts`: Node.js crypto implementation for server-side
+- `polyfills.ts`: Environment-specific polyfills
+**Impact**: Seamless encryption/decryption across client-server while maintaining same API
+
+### 5. Comprehensive Testing Suite
 **Coverage**:
 - **Server**: 52 tests (unit + integration)
   - Database operations, file system storage, chunk handling
@@ -72,7 +104,7 @@
 - **Client**: 17 tests
   - Encryption/decryption, chunking algorithms
   - Service layer functionality
-- **Functional**: End-to-end session workflows
+- **Functional**: End-to-end session workflows including new clear all content tests
 
 ## Key Technical Features
 

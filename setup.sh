@@ -15,7 +15,6 @@ export REPO_ROOT
 INSTALL_MODE="install"
 NON_INTERACTIVE="false"
 FORCE_MODE="false"
-PRODUCTION_MODE="false"
 EXPOSE_PORTS="false"
 PROTOCOL="http"
 COMPOSE_CMD="podman-compose"
@@ -67,10 +66,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --expose-ports)
             EXPOSE_PORTS="true"
-            shift
-            ;;
-        --production)
-            PRODUCTION_MODE="true"
             shift
             ;;
         --non-interactive)

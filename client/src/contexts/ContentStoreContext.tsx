@@ -4,6 +4,7 @@ import { useServices } from './ServiceContext';
 import { deriveKeyFromPassphrase, decryptData } from '../utils/encryption';
 import { deserializeChunk } from '../utils/chunking';
 import { ChunkStatus } from '../services/ChunkTrackingService';
+import { diskCacheService } from '../services/DiskCacheService';
 
 // Content types
 export enum ContentType {
@@ -363,6 +364,24 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       performLocalContentCleanup(data.contentId);
     };
 
+    // Handle all content cleared
+    const handleAllContentCleared = () => {
+      // Clear all local content
+      setContents(new Map());
+      setChunkStores(new Map());
+      
+      // Clear pagination info
+      setPaginationInfo({
+        totalCount: 0,
+        currentPage: 1,
+        pageSize: 10,
+        hasMore: false
+      });
+      
+      // Clear local cache
+      diskCacheService.clearAll();
+    };
+
     // Handle pagination info
     const handlePaginationInfo = (data: {
       sessionId: string;
@@ -402,6 +421,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
     socket.on('content', handleContent);
     socket.on('chunk', handleChunk);
     socket.on('content-removed', handleContentRemoved);
+    socket.on('all-content-cleared', handleAllContentCleared);
     socket.on('content-pagination-info', handlePaginationInfo);
     socket.on('content-pinned', handleContentPinned);
     socket.on('content-unpinned', handleContentUnpinned);
@@ -413,6 +433,7 @@ export const ContentStoreProvider: React.FC<{ children: React.ReactNode }> = ({ 
       socket.off('content', handleContent);
       socket.off('chunk', handleChunk);
       socket.off('content-removed', handleContentRemoved);
+      socket.off('all-content-cleared', handleAllContentCleared);
       socket.off('content-pagination-info', handlePaginationInfo);
       socket.off('content-pinned', handleContentPinned);
       socket.off('content-unpinned', handleContentUnpinned);

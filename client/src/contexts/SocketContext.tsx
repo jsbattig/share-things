@@ -69,6 +69,7 @@ interface SocketContextType {
   rejoinSession: (sessionId: string, clientName: string, passphrase: string) => Promise<void>;
   ensureConnected: (sessionId: string) => Promise<boolean>;
   removeContent: (sessionId: string, contentId: string) => Promise<{ success: boolean; error?: string }>;
+  clearAllContent: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
   isJoining: boolean;
 }
 
@@ -737,6 +738,26 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
   };
 
+  /**
+   * Clear all content from the session
+   * @param sessionId Session ID
+   * @returns Promise with success status
+   */
+  const clearAllContent = (sessionId: string): Promise<{ success: boolean; error?: string }> => {
+    return new Promise((resolve) => {
+      if (socket && isConnected) {
+        socket.emit('clear-all-content', { sessionId }, (response: { success: boolean; error?: string }) => {
+          if (!response.success) {
+            console.error(`Failed to clear all content:`, response.error);
+          }
+          resolve(response);
+        });
+      } else {
+        resolve({ success: false, error: 'Socket not connected' });
+      }
+    });
+  };
+
   // Context value
   const value: SocketContextType = {
     socket,
@@ -751,6 +772,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     rejoinSession,
     ensureConnected,
     removeContent,
+    clearAllContent,
     isJoining: joinState.current.isJoining
   };
 

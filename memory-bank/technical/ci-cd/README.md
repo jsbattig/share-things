@@ -2,6 +2,71 @@
 
 This directory contains tools and utilities related to Continuous Integration and Continuous Deployment (CI/CD) for the ShareThings project.
 
+## Git Pull Fix (June 2025)
+
+In June 2025, we identified and fixed a critical deployment synchronization issue where GitHub Actions CI was passing but production deployments were using stale code.
+
+### Problem Identified
+
+The GitHub Actions workflow was successfully testing the latest code, but the production deployment step was not pulling the latest commits on the target server. This resulted in:
+- ✅ CI pipeline showing green (testing latest code)
+- ❌ Production deployment using outdated code
+- 🔄 Manual `git pull` required on production server
+
+### Root Cause
+
+The deployment workflow was missing a crucial git pull step:
+
+```yaml
+# Before: Missing git pull
+- name: Deploy production
+  run: |
+    ssh production "cd ~/share-things && ./setup.sh --uninstall"
+    ssh production "cd ~/share-things && ./setup.sh --install"
+    # ❌ No synchronization with latest commits
+```
+
+### Solution Implemented
+
+Added explicit git pull step in `.github/workflows/share-things-ci-cd.yml`:
+
+```yaml
+# After: Added git pull step
+echo "Step 2: Pulling latest code on target server..."
+sshpass -p "${{ secrets.GHRUserPassword }}" ssh -v -o StrictHostKeyChecking=no ${{ secrets.GHRUserName }}@${{ secrets.DeploymentServerIP }} "cd ~/share-things && git stash && git fetch --all && git reset --hard origin/\$(git branch --show-current) && git pull --force" | tee deployment-logs/deploy-gitpull-$(date +%Y%m%d-%H%M%S).log
+```
+
+### Deployment Flow (Updated)
+
+1. **Step 1**: Uninstall existing installation
+2. **Step 2**: Pull latest code on target server (NEW!)
+3. **Step 3**: Install fresh deployment  
+4. **Verification**: Container status and health checks
+
+### Dead Code Cleanup
+
+Removed unused `pull_latest_code()` function from `setup/config.sh` that was:
+- Defined but never called
+- 50 lines of sophisticated git handling logic
+- Meant for manual deployments but superseded by CI/CD approach
+
+### Git Commands Used
+
+The git pull step uses robust commands to handle any local changes:
+```bash
+git stash                                    # Save any local changes
+git fetch --all                            # Get all remote updates
+git reset --hard origin/$(git branch --show-current)  # Reset to match remote exactly
+git pull --force                           # Force pull latest changes
+```
+
+### Impact
+
+- ✅ **Deployment Reliability**: Production now always uses latest tested code
+- ✅ **Developer Confidence**: No more manual git pull required
+- ✅ **Process Integrity**: CI testing matches deployment exactly
+- ✅ **Code Cleanliness**: Removed dead code and simplified setup scripts
+
 ## Badge Simplification (May 2025)
 
 In May 2025, we simplified the badge approach in the README.md file. Instead of using multiple job-specific badges, we now use a single consolidated badge that shows the overall status of the CI/CD pipeline.
