@@ -3,7 +3,6 @@ process.env.NODE_ENV = 'test';
 
 import { Server } from 'socket.io';
 import { createServer } from 'http';
-import { io as ClientIO, Socket as ClientSocket } from 'socket.io-client';
 import { setupSocketHandlers } from '../../socket';
 import { SessionManager } from '../../services/SessionManager';
 import { FileSystemChunkStorage } from '../../infrastructure/storage/FileSystemChunkStorage';
@@ -18,7 +17,6 @@ describe('Content Rename Persistence Across Session Rejoins', () => {
   let chunkStorage: FileSystemChunkStorage;
   let tempDir: string;
   let cleanup: () => Promise<void>;
-  let port: number;
 
   beforeEach(async () => {
     // Create temporary directory for storage
@@ -52,8 +50,6 @@ describe('Content Rename Persistence Across Session Rejoins', () => {
     // Start server
     await new Promise<void>((resolve) => {
       httpServer.listen(0, () => {
-        const address = httpServer.address();
-        port = typeof address === 'object' && address ? address.port : 3001;
         resolve();
       });
     });
@@ -112,7 +108,7 @@ describe('Content Rename Persistence Across Session Rejoins', () => {
     console.log('Full content from storage:', JSON.stringify(content, null, 2));
     expect(content.additionalMetadata).toBeDefined();
     
-    let metadata = JSON.parse(content.additionalMetadata!);
+    let metadata = JSON.parse(content.additionalMetadata || '{}');
     expect(metadata.fileName).toBe(originalFileName);
     console.log('Original metadata in storage:', metadata);
 
@@ -126,7 +122,7 @@ describe('Content Rename Persistence Across Session Rejoins', () => {
     content = contentList[0];
     expect(content.additionalMetadata).toBeDefined();
     
-    metadata = JSON.parse(content.additionalMetadata!);
+    metadata = JSON.parse(content.additionalMetadata || '{}');
     expect(metadata.fileName).toBe(renamedFileName);
     console.log('Renamed metadata in storage:', metadata);
 
